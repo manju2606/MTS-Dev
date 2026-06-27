@@ -4,7 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.core.config import settings
 
-engine = create_async_engine(settings.DATABASE_URL, echo=settings.DEBUG)
+_db_url = settings.DATABASE_URL.split("?")[0]  # asyncpg ignores URL ssl params; use connect_args
+engine = create_async_engine(_db_url, echo=settings.DEBUG, connect_args={"ssl": False})
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 

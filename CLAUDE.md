@@ -16,7 +16,7 @@ cd backend && pip install -e ".[dev]"
 # Backend — run dev server
 cd backend && uvicorn app.main:app --reload
 
-# Backend — tests
+# Backend — tests (integration; requires a real PostgreSQL DB at mts_test)
 cd backend && pytest
 cd backend && pytest tests/unit/test_auth.py::test_login   # single test
 cd backend && pytest --cov=app --cov-report=term-missing
@@ -25,7 +25,7 @@ cd backend && pytest --cov=app --cov-report=term-missing
 cd backend && ruff check . && mypy .
 cd backend && ruff check . --fix   # auto-fix
 
-# Database migrations
+# Database migrations (Alembic uses sync psycopg2 even though the app runs asyncpg)
 cd backend && alembic revision --autogenerate -m "description"
 cd backend && alembic upgrade head
 
@@ -41,9 +41,17 @@ docker compose up --build   # rebuild images
 docker compose down -v      # stop + remove volumes
 ```
 
+### Local dev setup (without Docker)
+Copy `.env.example` to `backend/.env`. The example file uses non-default ports to avoid conflicts with local services:
+- PostgreSQL: `localhost:5435`
+- Redis: `localhost:6381`
+- MongoDB: `localhost:27018`
+
+Generate `SECRET_KEY` with: `python -c "import secrets; print(secrets.token_hex(32))"`
+
 ---
 
-## Planned Architecture
+## Architecture
 
 Monorepo layout:
 
@@ -53,7 +61,7 @@ MTS-Dev/
 │   ├── app/
 │   │   ├── api/      # Route handlers (thin controllers)
 │   │   ├── core/     # Config, security, dependencies
-│   │   ├── domain/   # Business logic (no framework imports)
+│   │   ├── domain/   # Business logic — pure Python dataclasses, zero framework imports
 │   │   ├── infra/    # DB repos, external API clients, broker adapters
 │   │   └── services/ # Orchestration between domain and infra
 │   └── tests/
@@ -62,20 +70,45 @@ MTS-Dev/
 │   ├── components/
 │   └── lib/          # API clients, hooks, utilities
 ├── ml/               # AI/ML models and training pipelines
-│   ├── models/       # PyTorch, XGBoost, LightGBM model definitions
-│   ├── pipelines/    # MLflow training and evaluation pipelines
-│   └── signals/      # Feature engineering and signal generation
 ├── infra/            # Terraform + Kubernetes manifests
 └── docker-compose.yml
 ```
 
-### Clean Architecture constraint
-Backend must follow Clean Architecture: `domain/` has zero framework/infra imports. `infra/` implements interfaces defined in `domain/`. Services wire them together. All DB access goes through the Repository Pattern.
+### Backend: Clean Architecture with dual-model pattern
+
+`domain/models/` holds pure Python dataclasses (`User`, `Trade`). `infra/db/models.py` holds SQLAlchemy ORM classes (`UserORM`, `TradeORM`). The ORM models bridge the two layers via `to_domain()` and `from_domain()` methods — repositories only return domain objects, never ORM objects.
+
+`domain/interfaces/repositories.py` defines abstract base classes (`UserRepository`, `TradeRepository`). `infra/db/repositories/` provides the concrete SQLAlchemy implementations. Services and routes depend only on the abstract interface.
+
+### Request flow
+
+`api/v1/` route → `api/deps.py` dependency → `infra/db/repositories/` → domain model returned
+
+`DBSession` and `CurrentUser` in `api/deps.py` are `Annotated` type aliases for FastAPI's async session and authenticated user respectively. Use these in route signatures rather than calling `Depends(...)` directly.
+
+For RBAC, use `require_role(UserRole.ADMIN, UserRole.TRADER)` from `api/deps.py` as a FastAPI dependency. `UserRole` has three values: `admin`, `trader`, `viewer`.
+
+### Auth
+
+JWT bearer tokens via `python-jose`. `core/security.py` handles `hash_password`, `verify_password`, `create_access_token`, and `decode_token`. Token payload contains `sub` (user UUID as string). No refresh token endpoint exists yet.
+
+### Logging
+
+`structlog` configured in `core/logging.py` — outputs JSON to stdout with ISO timestamps. Use `structlog.get_logger()` everywhere; do not use `print` or stdlib `logging` directly.
 
 ### Data stores
-- **PostgreSQL** — user accounts, trades, portfolio positions, audit logs
-- **Redis** — real-time price cache, session store, rate limiting
-- **MongoDB** — trade journal entries, AI explanation logs, unstructured analysis
+- **PostgreSQL** — user accounts, trades, portfolio positions, audit logs (async via `asyncpg` + SQLAlchemy 2.0)
+- **Redis** — real-time price cache, session store, rate limiting (client: `redis[hiredis]`)
+- **MongoDB** — trade journal entries, AI explanation logs, unstructured analysis (client: `motor`)
+
+### Testing
+
+Integration tests connect to a real PostgreSQL database (`mts_test` on `localhost:5432`). `tests/conftest.py` creates all tables at session start and drops them on teardown. `pytest-asyncio` is configured in `auto` mode (`asyncio_mode = "auto"` in `pyproject.toml`) — no `@pytest.mark.asyncio` decorator needed. Do not mock the database.
+
+### What's implemented vs stubbed
+- **Auth** (`/api/v1/auth`): register, login, `/me` — fully working
+- **Scanner** (`/api/v1/scanner`): quote and watchlist endpoints exist but return stub responses pending a market data provider
+- **Alembic**: initial `users` table migration exists; `trades` table not yet migrated
 
 ---
 
@@ -121,6 +154,6 @@ Phase 2 (AI Engine, Risk Engine, Backtesting), Phase 3 (Broker integrations, Liv
 ## Key Constraints
 
 - Indian markets only (NSE/BSE) — all market data, instrument codes, and trading hours are India-specific.
-- Structured logging throughout (use a consistent log schema, not ad-hoc print statements).
+- Structured logging throughout — use `structlog`, not `print` or ad-hoc log statements.
 - API latency target: <200 ms. Trade execution target: <500 ms.
 - Broker integrations (Zerodha Kite, etc.) live in `backend/app/infra/brokers/` and are isolated behind interfaces.

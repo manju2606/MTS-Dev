@@ -23,5 +23,9 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str | None = None
     PAPER_CAPITAL: float = 100_000.0  # default paper trading capital in INR
 
+    # Phase 3 — Zerodha Kite Connect
+    KITE_API_KEY: str | None = None
+    KITE_API_SECRET: str | None = None
+
 
 settings = Settings()

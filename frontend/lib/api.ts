@@ -118,6 +118,65 @@ export type BacktestResult = {
   equity_curve: { date: string; value: number }[]
 }
 
+// Phase 3 — Broker & Live Trading
+export type BrokerStatus = {
+  broker: string
+  connected: boolean
+  note?: string
+}
+
+export type LiveOrder = {
+  id: string
+  user_id: string
+  symbol: string
+  exchange: string
+  signal: string
+  quantity: number
+  order_type: string
+  broker: string
+  broker_order_id: string | null
+  status: string
+  price: number | null
+  fill_price: number | null
+  fill_time: string | null
+  created_at: string
+}
+
+export type LivePosition = {
+  symbol: string
+  exchange: string
+  signal: string
+  quantity: number
+  avg_price: number
+}
+
+// Phase 4 — ML & Admin
+export type MLPrediction = {
+  symbol: string
+  prediction: 'UP' | 'DOWN'
+  probability: number
+  feature_importances: Record<string, number>
+  training_samples: number
+  accuracy_cv: number
+}
+
+export type AdminUser = {
+  id: string
+  email: string
+  full_name: string
+  role: string
+  is_active: boolean
+  created_at: string
+}
+
+export type AdminStats = {
+  total_users: number
+  active_users: number
+  total_trades: number
+  open_trades: number
+  users_by_role: Record<string, number>
+}
+
 function authHeaders(token: string): Record<string, string> {
   return { Authorization: `Bearer ${token}` }
 }
@@ -319,6 +378,112 @@ export async function placeTrade(token: string, body: PlaceTradeBody): Promise<T
   }
   return res.json()
 }
+
+// ── Phase 3: Broker ────────────────────────────────────────────────────────
+
+export async function getBrokerStatus(token: string): Promise<BrokerStatus> {
+  const res = await fetch(`${BASE}/api/v1/broker/status`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error('Failed to fetch broker status')
+  return res.json()
+}
+
+export async function getZerodhaLoginUrl(token: string): Promise<{ login_url: string }> {
+  const res = await fetch(`${BASE}/api/v1/broker/zerodha/login-url`, { headers: authHeaders(token) })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Failed') }
+  return res.json()
+}
+
+export async function connectZerodha(token: string, request_token: string): Promise<BrokerStatus> {
+  const res = await fetch(`${BASE}/api/v1/broker/zerodha/connect`, {
+    method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ request_token }),
+  })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Connect failed') }
+  return res.json()
+}
+
+export async function disconnectBroker(token: string): Promise<BrokerStatus> {
+  const res = await fetch(`${BASE}/api/v1/broker/disconnect`, { method: 'POST', headers: authHeaders(token) })
+  if (!res.ok) throw new Error('Failed to disconnect')
+  return res.json()
+}
+
+export async function useSimulatedBroker(token: string): Promise<BrokerStatus> {
+  const res = await fetch(`${BASE}/api/v1/broker/use-simulated`, { method: 'POST', headers: authHeaders(token) })
+  if (!res.ok) throw new Error('Failed')
+  return res.json()
+}
+
+// ── Phase 3: Live Trading ───────────────────────────────────────────────────
+
+export async function placeLiveOrder(token: string, body: {
+  symbol: string; signal: string; quantity: number; order_type: string;
+  price?: number; stop_loss?: number; target?: number;
+}): Promise<LiveOrder> {
+  const res = await fetch(`${BASE}/api/v1/live/orders`, {
+    method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Order failed') }
+  return res.json()
+}
+
+export async function listLiveOrders(token: string): Promise<LiveOrder[]> {
+  const res = await fetch(`${BASE}/api/v1/live/orders`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error('Failed to fetch orders')
+  return res.json()
+}
+
+export async function cancelLiveOrder(token: string, brokerOrderId: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/v1/live/orders/${encodeURIComponent(brokerOrderId)}`, {
+    method: 'DELETE', headers: authHeaders(token),
+  })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Cancel failed') }
+}
+
+export async function getLivePositions(token: string): Promise<LivePosition[]> {
+  const res = await fetch(`${BASE}/api/v1/live/positions`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error('Failed to fetch positions')
+  return res.json()
+}
+
+// ── Phase 4: ML ────────────────────────────────────────────────────────────
+
+export async function predictBatch(token: string, symbols: string[]): Promise<MLPrediction[]> {
+  const res = await fetch(`${BASE}/api/v1/ml/predict/batch`, {
+    method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ symbols }),
+  })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Prediction failed') }
+  return res.json()
+}
+
+// ── Phase 4: Admin ──────────────────────────────────────────────────────────
+
+export async function getAdminStats(token: string): Promise<AdminStats> {
+  const res = await fetch(`${BASE}/api/v1/admin/stats`, { headers: authHeaders(token) })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Forbidden') }
+  return res.json()
+}
+
+export async function listAdminUsers(token: string): Promise<AdminUser[]> {
+  const res = await fetch(`${BASE}/api/v1/admin/users`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error('Forbidden')
+  return res.json()
+}
+
+export async function updateAdminUser(
+  token: string, userId: string, body: { role?: string; is_active?: boolean }
+): Promise<AdminUser> {
+  const res = await fetch(`${BASE}/api/v1/admin/users/${userId}`, {
+    method: 'PATCH', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Update failed') }
+  return res.json()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 export async function closeTrade(token: string, tradeId: string): Promise<Trade> {
   const res = await fetch(`${BASE}/api/v1/paper/trades/${tradeId}/close`, {

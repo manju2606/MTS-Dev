@@ -20,6 +20,9 @@ dependencies = [
     "yfinance>=0.2.40",
     "anthropic>=0.40.0",
     "pandas>=2.0.0",
+    "scikit-learn>=1.4.0",
+    "numpy>=1.26.0",
+    "kiteconnect>=5.0.1",
 ]
 
 [project.optional-dependencies]

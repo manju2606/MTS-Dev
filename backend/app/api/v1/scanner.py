@@ -1,14 +1,23 @@
-from fastapi import APIRouter
+from dataclasses import asdict
 
-from app.api.deps import CurrentUser
+from fastapi import APIRouter, HTTPException, status
+
+from app.api.deps import CurrentUser, MarketDataDep
 
 router = APIRouter(prefix="/scanner", tags=["scanner"])
 
 
 @router.get("/quotes/{symbol}")
-async def get_quote(symbol: str, current_user: CurrentUser) -> dict:
-    # TODO: integrate NSE/BSE data provider (e.g. yfinance, Angel One, Zerodha)
-    return {"symbol": symbol.upper(), "status": "not_implemented"}
+async def get_quote(symbol: str, current_user: CurrentUser, market_data: MarketDataDep) -> dict:
+    try:
+        quote = await market_data.get_quote(symbol)
+        return asdict(quote)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
 
 
 @router.get("/watchlist")

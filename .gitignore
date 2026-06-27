@@ -45,6 +45,9 @@ infra/terraform/*.tfstate
 infra/terraform/*.tfstate.backup
 infra/terraform/.terraform.lock.hcl
 
+# Claude Code — local MCP config (contains secrets)
+.mcp.json
+
 # ML artifacts
 ml/runs/
 ml/artifacts/

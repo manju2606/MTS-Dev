@@ -6,8 +6,10 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import decode_token
+from app.domain.interfaces.market_data import MarketDataClient
 from app.domain.models.user import User, UserRole
 from app.infra.db.session import get_db
+from app.infra.market_data.yfinance_client import YFinanceClient
 
 security = HTTPBearer()
 
@@ -22,7 +24,9 @@ async def get_current_user(
         payload = decode_token(credentials.credentials)
         user_id = UUID(payload["sub"])
     except (ValueError, KeyError) as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
+        ) from exc
 
     repo = SQLUserRepository(db)
     user = await repo.get_by_id(user_id)
@@ -34,11 +38,18 @@ async def get_current_user(
 def require_role(*roles: UserRole):
     async def _check(user: Annotated[User, Depends(get_current_user)]) -> User:
         if user.role not in roles:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions"
+            )
         return user
 
     return _check
 
 
+def get_market_data_client() -> MarketDataClient:
+    return YFinanceClient()
+
+
 CurrentUser = Annotated[User, Depends(get_current_user)]
 DBSession = Annotated[AsyncSession, Depends(get_db)]
+MarketDataDep = Annotated[MarketDataClient, Depends(get_market_data_client)]

@@ -122,6 +122,45 @@ export async function getQuote(token: string, symbol: string): Promise<Quote> {
   return res.json()
 }
 
+export async function register(
+  email: string,
+  password: string,
+  fullName: string,
+): Promise<{ id: string; email: string }> {
+  const res = await fetch(`${BASE}/api/v1/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password, full_name: fullName }),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error((body as { detail?: string }).detail ?? 'Registration failed')
+  }
+  return res.json()
+}
+
+export async function forgotPassword(email: string): Promise<{ message: string; reset_token?: string }> {
+  const res = await fetch(`${BASE}/api/v1/auth/forgot-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  })
+  if (!res.ok) throw new Error('Request failed')
+  return res.json()
+}
+
+export async function resetPassword(token: string, newPassword: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/v1/auth/reset-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token, new_password: newPassword }),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error((body as { detail?: string }).detail ?? 'Reset failed')
+  }
+}
+
 export async function listTrades(token: string, status?: string): Promise<Trade[]> {
   const url = status
     ? `${BASE}/api/v1/paper/trades?status=${encodeURIComponent(status)}`

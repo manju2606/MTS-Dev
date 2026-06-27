@@ -8,6 +8,8 @@ from app.core.config import settings
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+_RESET_EXPIRE_MINUTES = 60
+
 
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
@@ -26,6 +28,26 @@ def create_access_token(subject: Any, expires_delta: timedelta | None = None) ->
         settings.SECRET_KEY,
         algorithm=settings.ALGORITHM,
     )
+
+
+def create_password_reset_token(user_id: Any) -> str:
+    expire = datetime.now(UTC) + timedelta(minutes=_RESET_EXPIRE_MINUTES)
+    return jwt.encode(
+        {"sub": str(user_id), "type": "password_reset", "exp": expire},
+        settings.SECRET_KEY,
+        algorithm=settings.ALGORITHM,
+    )
+
+
+def decode_password_reset_token(token: str) -> str:
+    """Returns user_id (str) or raises ValueError."""
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+    except JWTError as exc:
+        raise ValueError("Invalid or expired reset token") from exc
+    if payload.get("type") != "password_reset":
+        raise ValueError("Invalid token type")
+    return str(payload["sub"])
 
 
 def decode_token(token: str) -> dict:

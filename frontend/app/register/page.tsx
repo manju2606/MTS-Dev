@@ -1,12 +1,11 @@
 import type { Metadata } from 'next'
-import { Suspense } from 'react'
-import LoginForm from './login-form'
+import RegisterForm from './register-form'
 
 export const metadata: Metadata = {
-  title: 'Sign in — Manju Trade AI Pro',
+  title: 'Create account — Manju Trade AI Pro',
 }
 
-export default function LoginPage() {
+export default function RegisterPage() {
   return (
     <div className="flex min-h-full flex-col items-center justify-center bg-zinc-50 px-4 dark:bg-zinc-950">
       <div className="w-full max-w-sm">
@@ -15,14 +14,11 @@ export default function LoginPage() {
             Manju Trade AI Pro
           </h1>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            Sign in to your trading account
+            Create your trading account
           </p>
         </div>
-
         <div className="rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-          <Suspense>
-            <LoginForm />
-          </Suspense>
+          <RegisterForm />
         </div>
       </div>
     </div>

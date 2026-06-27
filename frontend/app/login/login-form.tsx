@@ -1,11 +1,15 @@
 'use client'
 
+import Link from 'next/link'
 import { useState, useTransition } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { login } from '@/lib/api'
 
 export default function LoginForm() {
   const router = useRouter()
+  const params = useSearchParams()
+  const registered = params.get('registered') === '1'
+
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
@@ -29,6 +33,12 @@ export default function LoginForm() {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      {registered && (
+        <p className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700 dark:bg-green-950 dark:text-green-300">
+          Account created! Sign in below.
+        </p>
+      )}
+
       <div className="flex flex-col gap-1">
         <label htmlFor="email" className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
           Email
@@ -74,6 +84,21 @@ export default function LoginForm() {
       >
         {isPending ? 'Signing in…' : 'Sign in'}
       </button>
+
+      <div className="flex items-center justify-between pt-1 text-xs">
+        <Link
+          href="/forgot-password"
+          className="text-zinc-500 hover:text-indigo-600 dark:text-zinc-400 dark:hover:text-indigo-400"
+        >
+          Forgot password?
+        </Link>
+        <Link
+          href="/register"
+          className="text-zinc-500 hover:text-indigo-600 dark:text-zinc-400 dark:hover:text-indigo-400"
+        >
+          Create account →
+        </Link>
+      </div>
     </form>
   )
 }

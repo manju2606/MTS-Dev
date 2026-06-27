@@ -46,3 +46,11 @@ class Trade:
         risk = abs(self.entry_price - self.stop_loss)
         reward = abs(self.target - self.entry_price)
         return round(reward / risk, 2) if risk > 0 else 0.0
+
+    @property
+    def pnl(self) -> float | None:
+        if self.exit_price is None:
+            return None
+        if self.signal == TradeSignal.BUY:
+            return round((self.exit_price - self.entry_price) * self.quantity, 2)
+        return round((self.entry_price - self.exit_price) * self.quantity, 2)

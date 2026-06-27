@@ -7,8 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import decode_token
 from app.domain.interfaces.market_data import MarketDataClient
-from app.domain.interfaces.repositories import WatchlistRepository
+from app.domain.interfaces.repositories import TradeRepository, WatchlistRepository
 from app.domain.models.user import User, UserRole
+from app.infra.db.repositories.trade_repo import SQLTradeRepository
 from app.infra.db.repositories.watchlist_repo import SQLWatchlistRepository
 from app.infra.db.session import get_db
 from app.infra.market_data.yfinance_client import YFinanceClient
@@ -56,7 +57,12 @@ def get_watchlist_repo(db: Annotated[AsyncSession, Depends(get_db)]) -> Watchlis
     return SQLWatchlistRepository(db)
 
 
+def get_trade_repo(db: Annotated[AsyncSession, Depends(get_db)]) -> TradeRepository:
+    return SQLTradeRepository(db)
+
+
 CurrentUser = Annotated[User, Depends(get_current_user)]
 DBSession = Annotated[AsyncSession, Depends(get_db)]
 MarketDataDep = Annotated[MarketDataClient, Depends(get_market_data_client)]
 WatchlistDep = Annotated[WatchlistRepository, Depends(get_watchlist_repo)]
+TradeDep = Annotated[TradeRepository, Depends(get_trade_repo)]

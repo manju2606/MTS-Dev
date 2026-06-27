@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
@@ -112,9 +113,17 @@ export default function DashboardView() {
     <div className="min-h-full bg-zinc-50 dark:bg-zinc-950">
       <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-          <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-            Manju Trade AI Pro
-          </span>
+          <div className="flex items-center gap-6">
+            <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+              Manju Trade AI Pro
+            </span>
+            <nav className="flex items-center gap-4 text-xs">
+              <span className="font-medium text-zinc-900 dark:text-zinc-50">Watchlist</span>
+              <Link href="/paper" className="text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100">
+                Paper Trading
+              </Link>
+            </nav>
+          </div>
           <div className="flex items-center gap-4">
             <span className="text-xs text-zinc-500 dark:text-zinc-400">{user?.full_name}</span>
             <button

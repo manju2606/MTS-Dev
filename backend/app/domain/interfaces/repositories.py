@@ -3,6 +3,7 @@ from uuid import UUID
 
 from app.domain.models.trade import Trade, TradeStatus
 from app.domain.models.user import User
+from app.domain.models.watchlist import WatchlistItem
 
 
 class UserRepository(ABC):
@@ -33,3 +34,17 @@ class TradeRepository(ABC):
 
     @abstractmethod
     async def update(self, trade: Trade) -> Trade: ...
+
+
+class WatchlistRepository(ABC):
+    @abstractmethod
+    async def list_by_user(self, user_id: UUID) -> list[WatchlistItem]: ...
+
+    @abstractmethod
+    async def get(self, user_id: UUID, symbol: str) -> WatchlistItem | None: ...
+
+    @abstractmethod
+    async def add(self, item: WatchlistItem) -> WatchlistItem: ...
+
+    @abstractmethod
+    async def remove(self, user_id: UUID, symbol: str) -> bool: ...

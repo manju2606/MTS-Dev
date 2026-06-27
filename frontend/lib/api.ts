@@ -82,6 +82,15 @@ export async function getMe(token: string): Promise<User> {
   return res.json()
 }
 
+export async function seedDefaultWatchlist(token: string): Promise<{ added: number }> {
+  const res = await fetch(`${BASE}/api/v1/scanner/watchlist/seed-defaults`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error('Failed to seed defaults')
+  return res.json()
+}
+
 export async function getWatchlist(token: string): Promise<WatchlistItem[]> {
   const res = await fetch(`${BASE}/api/v1/scanner/watchlist`, {
     headers: authHeaders(token),

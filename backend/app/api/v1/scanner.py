@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import asdict
 
 from fastapi import APIRouter, HTTPException, status
@@ -8,6 +9,19 @@ from app.api.deps import CurrentUser, MarketDataDep, WatchlistDep
 from app.domain.models.watchlist import WatchlistItem
 
 router = APIRouter(prefix="/scanner", tags=["scanner"])
+
+_DEFAULT_SYMBOLS = [
+    "RELIANCE.NS",
+    "TCS.NS",
+    "INFY.NS",
+    "HDFCBANK.NS",
+    "ICICIBANK.NS",
+    "HINDUNILVR.NS",
+    "SBIN.NS",
+    "BAJFINANCE.NS",
+    "ITC.NS",
+    "WIPRO.NS",
+]
 
 
 def _normalise(symbol: str) -> str:
@@ -63,6 +77,31 @@ async def add_to_watchlist(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"'{quote.symbol}' is already in your watchlist",
         ) from exc
+
+
+@router.post("/watchlist/seed-defaults")
+async def seed_default_watchlist(
+    current_user: CurrentUser,
+    repo: WatchlistDep,
+    market_data: MarketDataDep,
+) -> dict:
+    existing = {item.symbol for item in await repo.list_by_user(current_user.id)}
+    to_fetch = [s for s in _DEFAULT_SYMBOLS if s not in existing]
+    if not to_fetch:
+        return {"added": 0}
+
+    results = await asyncio.gather(
+        *[market_data.get_quote(sym) for sym in to_fetch],
+        return_exceptions=True,
+    )
+    added = 0
+    for r in results:
+        if isinstance(r, Exception):
+            continue
+        item = WatchlistItem(user_id=current_user.id, symbol=r.symbol, exchange=r.exchange)
+        await repo.add(item)
+        added += 1
+    return {"added": added}
 
 
 @router.delete("/watchlist/{symbol}", status_code=status.HTTP_204_NO_CONTENT)

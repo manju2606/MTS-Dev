@@ -57,6 +57,66 @@ export type PlaceTradeBody = {
   quantity: number
 }
 
+export type AIRecommendation = {
+  id: string
+  symbol: string
+  signal: 'BUY' | 'SELL' | 'HOLD'
+  confidence: number
+  entry_price: number
+  stop_loss: number
+  target: number
+  risk_reward_ratio: number
+  holding_period: string
+  explanation: string
+  generated_at: string
+}
+
+export type RiskCheckResult = {
+  passed: boolean
+  violations: string[]
+  max_quantity: number | null
+}
+
+export type RiskConfig = {
+  capital: number
+  max_position_pct: number
+  max_daily_loss_pct: number
+  max_drawdown_pct: number
+  min_risk_reward: number
+  max_stop_pct: number
+}
+
+export type RiskStatus = {
+  open_trades: number
+  circuit_breaker_active: boolean
+  daily_pnl: number
+}
+
+export type BacktestTrade = {
+  date_in: string
+  date_out: string
+  signal: string
+  entry: number
+  exit: number
+  pnl: number
+  pnl_pct: number
+}
+
+export type BacktestResult = {
+  symbol: string
+  strategy: string
+  period: string
+  start_date: string
+  end_date: string
+  total_return_pct: number
+  max_drawdown_pct: number
+  win_rate_pct: number
+  total_trades: number
+  sharpe_ratio: number
+  trades: BacktestTrade[]
+  equity_curve: { date: string; value: number }[]
+}
+
 function authHeaders(token: string): Record<string, string> {
   return { Authorization: `Bearer ${token}` }
 }
@@ -168,6 +228,73 @@ export async function resetPassword(token: string, newPassword: string): Promise
     const body = await res.json().catch(() => ({}))
     throw new Error((body as { detail?: string }).detail ?? 'Reset failed')
   }
+}
+
+export async function analyzeSymbol(token: string, symbol: string): Promise<AIRecommendation> {
+  const res = await fetch(`${BASE}/api/v1/ai/analyze/${encodeURIComponent(symbol)}`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'AI analysis failed')
+  }
+  return res.json()
+}
+
+export async function analyzeBatch(token: string, symbols: string[]): Promise<AIRecommendation[]> {
+  const res = await fetch(`${BASE}/api/v1/ai/analyze/batch`, {
+    method: 'POST',
+    headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ symbols }),
+  })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Batch analysis failed')
+  }
+  return res.json()
+}
+
+export async function validateTrade(
+  token: string,
+  params: { signal: string; entry_price: number; stop_loss: number; target: number; quantity: number },
+): Promise<RiskCheckResult> {
+  const res = await fetch(`${BASE}/api/v1/risk/validate`, {
+    method: 'POST',
+    headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  })
+  if (!res.ok) throw new Error('Validation request failed')
+  return res.json()
+}
+
+export async function getRiskConfig(token: string): Promise<RiskConfig> {
+  const res = await fetch(`${BASE}/api/v1/risk/config`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error('Failed to fetch risk config')
+  return res.json()
+}
+
+export async function getRiskStatus(token: string): Promise<RiskStatus> {
+  const res = await fetch(`${BASE}/api/v1/risk/status`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error('Failed to fetch risk status')
+  return res.json()
+}
+
+export async function runBacktest(
+  token: string,
+  symbol: string,
+  period: string,
+): Promise<BacktestResult> {
+  const res = await fetch(`${BASE}/api/v1/backtest/run`, {
+    method: 'POST',
+    headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ symbol, period }),
+  })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Backtest failed')
+  }
+  return res.json()
 }
 
 export async function listTrades(token: string, status?: string): Promise<Trade[]> {

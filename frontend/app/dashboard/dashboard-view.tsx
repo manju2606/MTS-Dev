@@ -173,9 +173,10 @@ export default function DashboardView() {
             </span>
             <nav className="flex items-center gap-4 text-xs">
               <span className="font-medium text-zinc-900 dark:text-zinc-50">Watchlist</span>
-              <Link href="/paper" className="text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100">
-                Paper Trading
-              </Link>
+              <Link href="/ai" className="text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100">AI Analysis</Link>
+              <Link href="/risk" className="text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100">Risk</Link>
+              <Link href="/backtest" className="text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100">Backtest</Link>
+              <Link href="/paper" className="text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100">Paper Trading</Link>
             </nav>
           </div>
           <div className="flex items-center gap-4">

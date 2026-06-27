@@ -7,8 +7,8 @@ import sys
 from app.core.security import hash_password
 from app.domain.models.user import User, UserRole
 from app.infra.db.models import Base
-from app.infra.db.session import AsyncSessionLocal, engine
 from app.infra.db.repositories.user_repo import SQLUserRepository
+from app.infra.db.session import AsyncSessionLocal, engine
 
 EMAIL = "admin@mts.dev"
 PASSWORD = "Admin123!"
@@ -33,7 +33,7 @@ async def main() -> None:
             role=UserRole.ADMIN,
         )
         created = await repo.create(user)
-        print(f"Created admin user")
+        print("Created admin user")
         print(f"  id:    {created.id}")
         print(f"  email: {created.email}")
         print(f"  role:  {created.role}")

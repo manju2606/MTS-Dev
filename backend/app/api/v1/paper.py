@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi import status as http_status
 from pydantic import BaseModel, Field
 
-from app.api.deps import CurrentUser, MarketDataDep, TradeDep
+from app.api.deps import CurrentUser, MarketDataDep, RiskDep, TradeDep
 from app.domain.models.trade import Trade, TradeMode, TradeSignal, TradeStatus
 
 router = APIRouter(prefix="/paper", tags=["paper-trading"])
@@ -33,6 +33,7 @@ async def place_trade(
     current_user: CurrentUser,
     repo: TradeDep,
     market_data: MarketDataDep,
+    risk_engine: RiskDep,
 ) -> dict:
     try:
         quote = await market_data.get_quote(body.symbol)
@@ -67,6 +68,19 @@ async def place_trade(
                 status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"SELL target ({body.target}) must be below entry price ({entry})",
             )
+
+    risk = risk_engine.validate_trade(
+        signal=body.signal,
+        entry=entry,
+        stop_loss=body.stop_loss,
+        target=body.target,
+        quantity=body.quantity,
+    )
+    if not risk.passed:
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Risk check failed: " + "; ".join(risk.violations),
+        )
 
     trade = Trade(
         user_id=current_user.id,

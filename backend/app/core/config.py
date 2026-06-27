@@ -19,5 +19,9 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     DEBUG: bool = False
 
+    # Phase 2
+    ANTHROPIC_API_KEY: str | None = None
+    PAPER_CAPITAL: float = 100_000.0  # default paper trading capital in INR
+
 
 settings = Settings()

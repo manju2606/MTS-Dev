@@ -13,6 +13,7 @@ from app.domain.models.risk import RiskConfig
 from app.domain.models.user import User, UserRole
 from app.domain.services.risk_engine import RiskEngine
 from app.infra.ai.claude_client import ClaudeAIClient
+from app.infra.ai.local_engine import LocalAIClient
 from app.infra.db.repositories.trade_repo import SQLTradeRepository
 from app.infra.db.repositories.watchlist_repo import SQLWatchlistRepository
 from app.infra.db.session import get_db
@@ -69,10 +70,10 @@ def get_risk_engine() -> RiskEngine:
     return RiskEngine(RiskConfig(capital=settings.PAPER_CAPITAL))
 
 
-def get_ai_client() -> ClaudeAIClient | None:
-    if not settings.ANTHROPIC_API_KEY:
-        return None
-    return ClaudeAIClient(settings.ANTHROPIC_API_KEY)
+def get_ai_client() -> ClaudeAIClient | LocalAIClient:
+    if settings.ANTHROPIC_API_KEY:
+        return ClaudeAIClient(settings.ANTHROPIC_API_KEY)
+    return LocalAIClient()
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
@@ -81,4 +82,4 @@ MarketDataDep = Annotated[MarketDataClient, Depends(get_market_data_client)]
 WatchlistDep = Annotated[WatchlistRepository, Depends(get_watchlist_repo)]
 TradeDep = Annotated[TradeRepository, Depends(get_trade_repo)]
 RiskDep = Annotated[RiskEngine, Depends(get_risk_engine)]
-AIDep = Annotated[ClaudeAIClient | None, Depends(get_ai_client)]
+AIDep = Annotated[ClaudeAIClient | LocalAIClient, Depends(get_ai_client)]

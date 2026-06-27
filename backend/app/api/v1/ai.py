@@ -9,18 +9,19 @@ from app.infra.ai.technical import fetch_indicators
 
 router = APIRouter(prefix="/ai", tags=["ai-engine"])
 
-_NO_KEY = "ANTHROPIC_API_KEY not configured — set it in backend/.env to enable the AI Engine"
-
 
 def _norm(symbol: str) -> str:
     s = symbol.upper()
     return s if s.endswith((".NS", ".BO")) else f"{s}.NS"
 
 
-def _require_ai(client: AIDep):  # type: ignore[return]
-    if client is None:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=_NO_KEY)
-    return client
+def _serialize(rec: object) -> dict:
+    from app.domain.models.recommendation import AIRecommendation
+    r: AIRecommendation = rec  # type: ignore[assignment]
+    d = asdict(r)
+    d["id"] = str(d["id"])
+    d["generated_at"] = r.generated_at.isoformat()
+    return d
 
 
 class BatchRequest(BaseModel):
@@ -34,7 +35,6 @@ async def analyze_symbol(
     market_data: MarketDataDep,
     ai_client: AIDep,
 ) -> dict:
-    client = _require_ai(ai_client)
     sym = _norm(symbol)
     try:
         quote, ta = await asyncio.gather(
@@ -48,11 +48,8 @@ async def analyze_symbol(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
         ) from exc
 
-    rec = await client.analyze(symbol=quote.symbol, quote=quote, ta=ta)
-    d = asdict(rec)
-    d["id"] = str(d["id"])
-    d["generated_at"] = rec.generated_at.isoformat()
-    return d
+    rec = await ai_client.analyze(symbol=sym, quote=quote, ta=ta)
+    return _serialize(rec)
 
 
 @router.post("/analyze/batch")
@@ -62,8 +59,6 @@ async def analyze_batch(
     market_data: MarketDataDep,
     ai_client: AIDep,
 ) -> list[dict]:
-    client = _require_ai(ai_client)
-
     async def _one(raw_symbol: str) -> dict | None:
         sym = _norm(raw_symbol)
         try:
@@ -71,11 +66,8 @@ async def analyze_batch(
                 market_data.get_quote(sym),
                 fetch_indicators(sym),
             )
-            rec = await client.analyze(symbol=sym, quote=quote, ta=ta)
-            d = asdict(rec)
-            d["id"] = str(d["id"])
-            d["generated_at"] = rec.generated_at.isoformat()
-            return d
+            rec = await ai_client.analyze(symbol=sym, quote=quote, ta=ta)
+            return _serialize(rec)
         except Exception:
             return None
 

@@ -14,5 +14,6 @@ class AIRecommendation:
     risk_reward_ratio: float
     holding_period: str  # e.g. "3–5 days"
     explanation: str
+    engine: str = "local"  # "local" | "claude"
     id: UUID = field(default_factory=uuid4)
     generated_at: datetime = field(default_factory=datetime.utcnow)

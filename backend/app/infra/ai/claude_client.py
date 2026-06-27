@@ -113,4 +113,5 @@ class ClaudeAIClient:
             risk_reward_ratio=rr,
             holding_period=str(data.get("holding_period", "2–5 days")),
             explanation=str(data.get("explanation", "")),
+            engine="claude",
         )

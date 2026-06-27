@@ -68,6 +68,7 @@ export type AIRecommendation = {
   risk_reward_ratio: number
   holding_period: string
   explanation: string
+  engine: 'local' | 'claude'
   generated_at: string
 }
 

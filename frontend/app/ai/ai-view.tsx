@@ -72,7 +72,12 @@ function RecCard({ rec }: { rec: AIRecommendation }) {
           <p className="text-base font-bold text-zinc-900 dark:text-zinc-50">{sym}</p>
           <p className="text-xs text-zinc-400">{rec.symbol.includes('.BO') ? 'BSE' : 'NSE'}</p>
         </div>
-        <SignalBadge signal={rec.signal as Signal} />
+        <div className="flex flex-col items-end gap-1">
+          <SignalBadge signal={rec.signal as Signal} />
+          <span className={`text-[10px] font-medium ${rec.engine === 'claude' ? 'text-indigo-500 dark:text-indigo-400' : 'text-zinc-400'}`}>
+            {rec.engine === 'claude' ? '✦ Claude' : 'Rule-based'}
+          </span>
+        </div>
       </div>
 
       <div>
@@ -157,7 +162,7 @@ export default function AIView() {
           <div>
             <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">AI Analysis</h1>
             <p className="text-xs text-zinc-400">
-              Powered by Claude — technical + momentum analysis on your watchlist
+              Technical analysis on your watchlist — Claude if API key set, rule-based otherwise
             </p>
           </div>
           <button

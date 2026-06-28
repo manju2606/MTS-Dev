@@ -1,8 +1,10 @@
 import asyncio
+import math
 from dataclasses import asdict
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+import yfinance as yf
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 
@@ -46,7 +48,75 @@ class WatchlistAddRequest(BaseModel):
     symbol: str
 
 
+_PERIOD_INTERVAL: dict[str, tuple[str, str]] = {
+    "1W": ("5d", "1h"),
+    "1M": ("1mo", "1d"),
+    "3M": ("3mo", "1d"),
+    "6M": ("6mo", "1d"),
+    "1Y": ("1y", "1d"),
+}
+
+
+def _safe_f(v: object) -> float:
+    try:
+        f = float(v)  # type: ignore[arg-type]
+        return 0.0 if math.isnan(f) else f
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _fetch_history_sync(symbol: str, period: str, interval: str) -> list[dict]:
+    ticker = yf.Ticker(symbol)
+    hist = ticker.history(period=period, interval=interval, auto_adjust=True)
+    if hist.empty:
+        return []
+    out = []
+    for ts, row in hist.iterrows():
+        o = _safe_f(row.get("Open"))
+        h = _safe_f(row.get("High"))
+        lo = _safe_f(row.get("Low"))
+        c = _safe_f(row.get("Close"))
+        v = int(_safe_f(row.get("Volume")))
+        if o == 0 or c == 0:
+            continue
+        out.append({
+            "time": int(ts.timestamp()),
+            "open": round(o, 2),
+            "high": round(h, 2),
+            "low": round(lo, 2),
+            "close": round(c, 2),
+            "volume": v,
+        })
+    return out
+
+
 # ── Market data ───────────────────────────────────────────────────────────────
+
+@router.get("/history/{symbol}")
+async def get_history(
+    symbol: str,
+    current_user: CurrentUser,
+    period: str = Query(default="1M", pattern="^(1W|1M|3M|6M|1Y)$"),
+) -> list[dict]:
+    norm = symbol.upper()
+    if not (norm.endswith(".NS") or norm.endswith(".BO")):
+        norm = f"{norm}.NS"
+    yf_period, yf_interval = _PERIOD_INTERVAL.get(period, ("1mo", "1d"))
+    loop = asyncio.get_running_loop()
+    try:
+        data = await loop.run_in_executor(None, _fetch_history_sync, norm, yf_period, yf_interval)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Failed to fetch history for '{norm}'",
+        ) from exc
+    if not data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No history available for '{norm}'",
+        )
+    return data
+
 
 @router.get("/quotes/{symbol}")
 async def get_quote(symbol: str, current_user: CurrentUser, market_data: MarketDataDep) -> dict:

@@ -415,6 +415,33 @@ export async function removeFromWatchlist(token: string, symbol: string): Promis
   }
 }
 
+export type HistoryBar = {
+  time: number   // Unix timestamp (seconds)
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number
+}
+
+export type ChartPeriod = '1W' | '1M' | '3M' | '6M' | '1Y'
+
+export async function getHistory(
+  token: string,
+  symbol: string,
+  period: ChartPeriod = '1M',
+): Promise<HistoryBar[]> {
+  const res = await fetch(
+    `${BASE}/api/v1/scanner/history/${encodeURIComponent(symbol)}?period=${period}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch history')
+  }
+  return res.json()
+}
+
 export async function getQuote(token: string, symbol: string): Promise<Quote> {
   const res = await fetch(`${BASE}/api/v1/scanner/quotes/${encodeURIComponent(symbol)}`, {
     headers: authHeaders(token),

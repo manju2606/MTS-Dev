@@ -6,6 +6,7 @@ import {
   addItemToWatchlist,
   createWatchlist,
   deleteWatchlist,
+  getHistory,
   getMe,
   getQuote,
   getWatchlistItems,
@@ -14,8 +15,10 @@ import {
   renameWatchlist,
   seedWatchlistDefaults,
 } from '@/lib/api'
-import type { Quote, User, Watchlist, WatchlistItem } from '@/lib/api'
+import type { ChartPeriod, HistoryBar, Quote, User, Watchlist, WatchlistItem } from '@/lib/api'
 import { NavBar } from '@/components/nav-bar'
+import { SparkLine } from '@/components/spark-line'
+import { PriceChart } from '@/components/price-chart'
 
 type Signal = 'BUY' | 'HOLD' | 'SELL'
 
@@ -62,16 +65,21 @@ export default function DashboardView() {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [items, setItems] = useState<WatchlistItem[]>([])
   const [quotes, setQuotes] = useState<Record<string, Quote>>({})
+  const [sparklines, setSparklines] = useState<Record<string, number[]>>({})
+
+  // Chart panel state
+  const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null)
+  const [chartPeriod, setChartPeriod] = useState<ChartPeriod>('1M')
+  const [chartData, setChartData] = useState<HistoryBar[]>([])
+  const [chartLoading, setChartLoading] = useState(false)
 
   const [loading, setLoading] = useState(true)
   const [itemsLoading, setItemsLoading] = useState(false)
 
-  // Create-watchlist inline form
+  // Watchlist sidebar state
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
   const [createError, setCreateError] = useState<string | null>(null)
-
-  // Rename inline
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameVal, setRenameVal] = useState('')
 
@@ -92,18 +100,35 @@ export default function DashboardView() {
     })
   }, [])
 
+  const fetchSparklines = useCallback(async (wl: WatchlistItem[]) => {
+    if (wl.length === 0) return
+    const results = await Promise.allSettled(
+      wl.map(i => getHistory(tokenRef.current, i.symbol, '1M')),
+    )
+    setSparklines(prev => {
+      const next = { ...prev }
+      results.forEach((r, idx) => {
+        if (r.status === 'fulfilled') {
+          next[wl[idx].symbol] = r.value.map(b => b.close)
+        }
+      })
+      return next
+    })
+  }, [])
+
   const loadItems = useCallback(
     async (id: string) => {
       setItemsLoading(true)
       try {
         const wl = await getWatchlistItems(tokenRef.current, id)
         setItems(wl)
-        await fetchQuotes(wl)
+        // Quotes and sparklines in parallel
+        await Promise.all([fetchQuotes(wl), fetchSparklines(wl)])
       } finally {
         setItemsLoading(false)
       }
     },
-    [fetchQuotes],
+    [fetchQuotes, fetchSparklines],
   )
 
   useEffect(() => {
@@ -114,9 +139,7 @@ export default function DashboardView() {
     Promise.all([getMe(t), listWatchlists(t)])
       .then(async ([me, wls]) => {
         setUser(me)
-
         if (wls.length === 0) {
-          // New user — create a default watchlist and seed it
           const created = await createWatchlist(t, 'My Watchlist')
           await seedWatchlistDefaults(t, created.id)
           const updated = await listWatchlists(t)
@@ -143,10 +166,33 @@ export default function DashboardView() {
     return () => clearInterval(id)
   }, [items, fetchQuotes])
 
+  // Load chart whenever symbol or period changes
+  useEffect(() => {
+    if (!selectedSymbol) return
+    setChartLoading(true)
+    setChartData([])
+    getHistory(tokenRef.current, selectedSymbol, chartPeriod)
+      .then(setChartData)
+      .catch(() => setChartData([]))
+      .finally(() => setChartLoading(false))
+  }, [selectedSymbol, chartPeriod])
+
   async function switchWatchlist(id: string) {
     setActiveId(id)
+    setSelectedSymbol(null)
+    setChartData([])
     setQuotes({})
+    setSparklines({})
     await loadItems(id)
+  }
+
+  function handleRowClick(symbol: string) {
+    if (selectedSymbol === symbol) {
+      setSelectedSymbol(null)
+    } else {
+      setSelectedSymbol(symbol)
+      setChartPeriod('1M')
+    }
   }
 
   async function handleCreateWatchlist() {
@@ -170,9 +216,7 @@ export default function DashboardView() {
     try {
       const updated = await renameWatchlist(tokenRef.current, id, name)
       setWatchlists(prev => prev.map(w => (w.id === id ? updated : w)))
-    } catch {
-      // ignore
-    } finally {
+    } catch { /* ignore */ } finally {
       setRenamingId(null)
     }
   }
@@ -202,8 +246,15 @@ export default function DashboardView() {
       const item = await addItemToWatchlist(tokenRef.current, activeId, addSymbol.trim())
       setItems(prev => [item, ...prev])
       setAddSymbol('')
-      const q = await getQuote(tokenRef.current, item.symbol).catch(() => null)
-      if (q) setQuotes(prev => ({ ...prev, [item.symbol]: q }))
+      // Fetch quote + sparkline for the new symbol
+      const [q, hist] = await Promise.allSettled([
+        getQuote(tokenRef.current, item.symbol),
+        getHistory(tokenRef.current, item.symbol, '1M'),
+      ])
+      if (q.status === 'fulfilled') setQuotes(prev => ({ ...prev, [item.symbol]: q.value }))
+      if (hist.status === 'fulfilled') {
+        setSparklines(prev => ({ ...prev, [item.symbol]: hist.value.map(b => b.close) }))
+      }
     } catch (err) {
       setAddError(err instanceof Error ? err.message : 'Failed to add symbol')
     } finally {
@@ -211,12 +262,15 @@ export default function DashboardView() {
     }
   }
 
-  async function handleRemove(symbol: string) {
+  async function handleRemove(symbol: string, e: React.MouseEvent) {
+    e.stopPropagation()
     if (!activeId) return
     try {
       await removeItemFromWatchlist(tokenRef.current, activeId, symbol)
       setItems(prev => prev.filter(i => i.symbol !== symbol))
       setQuotes(prev => { const n = { ...prev }; delete n[symbol]; return n })
+      setSparklines(prev => { const n = { ...prev }; delete n[symbol]; return n })
+      if (selectedSymbol === symbol) setSelectedSymbol(null)
     } catch {
       if (activeId) await loadItems(activeId)
     }
@@ -341,10 +395,10 @@ export default function DashboardView() {
             <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
               {activeWatchlist?.name ?? 'Select a watchlist'}
             </h1>
-            <p className="text-xs text-zinc-400">Live price · refreshes every 30 s</p>
+            <p className="text-xs text-zinc-400">Click any row to open chart · refreshes every 30 s</p>
           </div>
 
-          {/* Add symbol form */}
+          {/* Add symbol */}
           {activeId && (
             <form onSubmit={handleAdd} className="mb-4 flex items-start gap-2">
               <div className="flex flex-col gap-1">
@@ -382,9 +436,7 @@ export default function DashboardView() {
             </div>
           ) : items.length === 0 ? (
             <div className="rounded-xl border border-zinc-200 bg-white px-4 py-12 text-center dark:border-zinc-800 dark:bg-zinc-900">
-              <p className="text-sm text-zinc-400">
-                This watchlist is empty. Add a symbol above.
-              </p>
+              <p className="text-sm text-zinc-400">This watchlist is empty. Add a symbol above.</p>
             </div>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
@@ -392,6 +444,7 @@ export default function DashboardView() {
                 <thead>
                   <tr className="border-b border-zinc-100 text-left dark:border-zinc-800">
                     <th className="px-4 py-3 text-xs font-medium text-zinc-500">Symbol</th>
+                    <th className="px-4 py-3 text-xs font-medium text-zinc-500">30D</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500">Price</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500">Change</th>
                     <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500">High</th>
@@ -407,16 +460,30 @@ export default function DashboardView() {
                     const q = quotes[item.symbol]
                     const up = q ? q.change >= 0 : null
                     const sig = q ? computeSignal(q) : null
+                    const spark = sparklines[item.symbol]
+                    const isSelected = selectedSymbol === item.symbol
                     return (
                       <tr
                         key={item.id}
-                        className="transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
+                        onClick={() => handleRowClick(item.symbol)}
+                        className={`cursor-pointer transition-colors ${
+                          isSelected
+                            ? 'bg-indigo-50 dark:bg-indigo-950/40'
+                            : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/40'
+                        }`}
                       >
                         <td className="px-4 py-3">
                           <span className="font-medium text-zinc-900 dark:text-zinc-50">
                             {item.symbol.replace(/\.(NS|BO)$/, '')}
                           </span>
                           <span className="ml-2 text-xs text-zinc-400">{item.exchange}</span>
+                        </td>
+                        <td className="px-4 py-2">
+                          {spark ? (
+                            <SparkLine prices={spark} />
+                          ) : (
+                            <div className="h-[28px] w-[80px] animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" />
+                          )}
                         </td>
                         <td className="px-4 py-3 text-right font-mono text-zinc-900 dark:text-zinc-50">
                           {q ? `₹${q.price.toFixed(2)}` : '—'}
@@ -444,22 +511,14 @@ export default function DashboardView() {
                           {q ? q.volume.toLocaleString('en-IN') : '—'}
                         </td>
                         <td className="px-4 py-3">
-                          {sig ? (
-                            <ScoreBar score={sig.score} />
-                          ) : (
-                            <span className="text-xs text-zinc-300">—</span>
-                          )}
+                          {sig ? <ScoreBar score={sig.score} /> : <span className="text-xs text-zinc-300">—</span>}
                         </td>
                         <td className="px-4 py-3 text-center">
-                          {sig ? (
-                            <SignalBadge signal={sig.signal} />
-                          ) : (
-                            <span className="text-xs text-zinc-300">—</span>
-                          )}
+                          {sig ? <SignalBadge signal={sig.signal} /> : <span className="text-xs text-zinc-300">—</span>}
                         </td>
                         <td className="px-4 py-3 text-right">
                           <button
-                            onClick={() => handleRemove(item.symbol)}
+                            onClick={e => handleRemove(item.symbol, e)}
                             aria-label={`Remove ${item.symbol}`}
                             className="text-zinc-300 hover:text-red-500 dark:text-zinc-600 dark:hover:text-red-400"
                           >
@@ -471,6 +530,19 @@ export default function DashboardView() {
                   })}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {/* Chart panel — appears below table when a symbol is selected */}
+          {selectedSymbol && (
+            <div className="mt-4">
+              <PriceChart
+                symbol={selectedSymbol}
+                data={chartData}
+                period={chartPeriod}
+                onPeriodChange={setChartPeriod}
+                loading={chartLoading}
+              />
             </div>
           )}
 

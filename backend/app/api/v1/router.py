@@ -7,6 +7,7 @@ from app.api.v1 import (
     backtest,
     broker,
     live,
+    market_pulse,
     ml_api,
     paper,
     research,
@@ -26,3 +27,4 @@ router.include_router(live.router)
 router.include_router(ml_api.router)
 router.include_router(admin.router)
 router.include_router(research.router)
+router.include_router(market_pulse.router)

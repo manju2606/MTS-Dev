@@ -177,6 +177,51 @@ export type AdminStats = {
   users_by_role: Record<string, number>
 }
 
+export type SentimentTag = { label: string; color: string }
+
+export type PulseCard = {
+  symbol: string
+  sector: string
+  name: string
+  price: number
+  change_pct: number
+  volume: number
+  week52_high: number
+  week52_low: number
+  sma20: number
+  sma50: number
+  rsi: number
+  momentum_score: number
+  value_score: number
+  combined_score: number
+  signal: string
+  ai_confidence: number
+  entry_price: number
+  stop_loss: number
+  target: number
+  risk_reward_ratio: number
+  holding_period: string
+  explanation: string
+  engine: string
+  sentiment_tags: SentimentTag[]
+}
+
+export type MarketOverview = {
+  scanned: number
+  bullish: number
+  bearish: number
+  neutral: number
+  bullish_pct: number
+  bearish_pct: number
+  sector_sentiment: Record<string, string>
+}
+
+export type MarketPulseResult = {
+  overview: MarketOverview
+  buy_picks: PulseCard[]
+  sell_picks: PulseCard[]
+}
+
 export type ScanResult = {
   symbol: string
   name: string
@@ -500,6 +545,20 @@ export async function updateAdminUser(
     body: JSON.stringify(body),
   })
   if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Update failed') }
+  return res.json()
+}
+
+// ── Market Pulse ───────────────────────────────────────────────────────────
+
+export async function getMarketPulse(
+  token: string,
+  sector: string = 'all',
+  buyCount: number = 10,
+  sellCount: number = 5,
+): Promise<MarketPulseResult> {
+  const params = new URLSearchParams({ sector, buy_count: String(buyCount), sell_count: String(sellCount) })
+  const res = await fetch(`${BASE}/api/v1/market-pulse/scan?${params}`, { headers: authHeaders(token) })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Scan failed') }
   return res.json()
 }
 

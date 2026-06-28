@@ -7,6 +7,11 @@ from fastapi import APIRouter
 
 from app.api.deps import CurrentUser, MarketDataDep, TradeDep
 from app.domain.models.trade import TradeSignal, TradeStatus
+from app.infra.scanner.universe import SECTORS
+
+_SYMBOL_SECTOR: dict[str, str] = {
+    sym: sector for sector, syms in SECTORS.items() for sym in syms
+}
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 
@@ -63,6 +68,7 @@ async def portfolio_summary(
             "days_held": days_held,
             "ai_confidence": t.ai_confidence,
             "opened_at": t.opened_at.isoformat() if t.opened_at else None,
+            "sector": _SYMBOL_SECTOR.get(t.symbol, "Other"),
         })
 
     # Closed trades (most recent first)
@@ -101,6 +107,12 @@ async def portfolio_summary(
             "value": round(cum, 2),
         })
 
+    # Sector allocation (by invested value in open positions)
+    sector_allocation: dict[str, float] = {}
+    for pos in positions:
+        sec = pos["sector"]
+        sector_allocation[sec] = round(sector_allocation.get(sec, 0.0) + pos["invested"], 2)
+
     # Summary
     total_invested = sum(t.entry_price * t.quantity for t in open_trades)
     unrealized_total = sum(p["unrealized_pnl"] for p in positions)
@@ -125,4 +137,5 @@ async def portfolio_summary(
         "positions": positions,
         "closed_trades": closed_list,
         "equity_curve": equity_curve,
+        "sector_allocation": sector_allocation,
     }

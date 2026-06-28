@@ -10,6 +10,11 @@ from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import CurrentUser, MarketDataDep, WatchlistDep
 from app.domain.models.watchlist import WatchlistItem
+from app.infra.scanner.universe import SECTORS
+
+_SYMBOL_SECTOR: dict[str, str] = {
+    sym: sector for sector, syms in SECTORS.items() for sym in syms
+}
 
 router = APIRouter(prefix="/scanner", tags=["scanner"])
 
@@ -363,3 +368,25 @@ async def remove_from_watchlist(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"'{normalised}' not found in your watchlist",
         )
+
+
+@router.get("/search")
+async def search_stocks(
+    q: str,
+    current_user: CurrentUser,
+) -> list[dict]:
+    """Full-text search over NSE/BSE universe (symbol + name)."""
+    query = q.strip().upper()
+    if len(query) < 2:
+        return []
+    results = []
+    for sym, sector in _SYMBOL_SECTOR.items():
+        name = sym.replace(".NS", "").replace(".BO", "")
+        if query in name or query in sym.upper():
+            results.append({
+                "symbol": sym,
+                "name": name,
+                "sector": sector,
+                "exchange": "NSE" if sym.endswith(".NS") else "BSE",
+            })
+    return results[:12]

@@ -426,6 +426,7 @@ export type PortfolioData = {
   positions: PortfolioPosition[]
   closed_trades: PortfolioClosedTrade[]
   equity_curve: EquityPoint[]
+  sector_allocation: Record<string, number>
 }
 
 export async function getPortfolio(token: string): Promise<PortfolioData> {
@@ -867,5 +868,70 @@ export async function closeTrade(token: string, tradeId: string): Promise<Trade>
     const data = await res.json().catch(() => ({}))
     throw new Error((data as { detail?: string }).detail ?? 'Failed to close trade')
   }
+  return res.json()
+}
+
+// ── Auth profile ──────────────────────────────────────────────────────────────
+
+export async function changePassword(
+  token: string,
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  const res = await fetch(`${BASE}/api/v1/auth/change-password`, {
+    method: 'POST',
+    headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to change password')
+  }
+}
+
+export async function updateProfile(token: string, fullName: string): Promise<User> {
+  const res = await fetch(`${BASE}/api/v1/auth/me`, {
+    method: 'PATCH',
+    headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ full_name: fullName }),
+  })
+  if (!res.ok) throw new Error('Failed to update profile')
+  return res.json()
+}
+
+// ── Risk config ───────────────────────────────────────────────────────────────
+
+export async function updateRiskConfig(
+  token: string,
+  patch: Partial<RiskConfig>,
+): Promise<RiskConfig> {
+  const res = await fetch(`${BASE}/api/v1/risk/config`, {
+    method: 'PATCH',
+    headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  })
+  if (!res.ok) throw new Error('Failed to update risk config')
+  return res.json()
+}
+
+// ── Stock search ──────────────────────────────────────────────────────────────
+
+export type StockSearchResult = {
+  symbol: string
+  name: string
+  sector: string
+  exchange: string
+}
+
+export async function searchStocks(
+  token: string,
+  q: string,
+): Promise<StockSearchResult[]> {
+  if (q.trim().length < 2) return []
+  const res = await fetch(
+    `${BASE}/api/v1/scanner/search?q=${encodeURIComponent(q)}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) return []
   return res.json()
 }

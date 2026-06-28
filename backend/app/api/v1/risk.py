@@ -1,10 +1,10 @@
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from app.api.deps import CurrentUser, RiskDep, TradeDep
+from app.api.deps import CurrentUser, RiskDep, TradeDep, set_user_risk_config
 from app.domain.models.trade import TradeStatus
 
 router = APIRouter(prefix="/risk", tags=["risk-engine"])
@@ -16,6 +16,15 @@ class ValidateRequest(BaseModel):
     stop_loss: float = Field(gt=0)
     target: float = Field(gt=0)
     quantity: int = Field(ge=1)
+
+
+class UpdateRiskConfigRequest(BaseModel):
+    capital: float | None = Field(default=None, gt=0)
+    max_position_pct: float | None = Field(default=None, gt=0, le=1)
+    max_daily_loss_pct: float | None = Field(default=None, gt=0, le=1)
+    max_drawdown_pct: float | None = Field(default=None, gt=0, le=1)
+    min_risk_reward: float | None = Field(default=None, gt=0)
+    max_stop_pct: float | None = Field(default=None, gt=0, le=1)
 
 
 @router.post("/validate")
@@ -39,6 +48,18 @@ async def get_risk_config(current_user: CurrentUser, risk_engine: RiskDep) -> di
     return asdict(risk_engine.config)
 
 
+@router.patch("/config")
+async def update_risk_config(
+    body: UpdateRiskConfigRequest,
+    current_user: CurrentUser,
+    risk_engine: RiskDep,
+) -> dict:
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    new_config = replace(risk_engine.config, **updates)
+    set_user_risk_config(str(current_user.id), new_config)
+    return asdict(new_config)
+
+
 @router.get("/status")
 async def get_risk_status(
     current_user: CurrentUser,
@@ -59,6 +80,6 @@ async def get_risk_status(
 
     return {
         "open_trades": len(open_trades),
-        "circuit_breaker_active": False,  # Phase 3: wire to real drawdown tracking
+        "circuit_breaker_active": False,
         "daily_pnl": round(daily_pnl, 2),
     }

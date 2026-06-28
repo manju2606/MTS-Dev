@@ -66,8 +66,27 @@ def get_trade_repo(db: Annotated[AsyncSession, Depends(get_db)]) -> TradeReposit
     return SQLTradeRepository(db)
 
 
-def get_risk_engine() -> RiskEngine:
-    return RiskEngine(RiskConfig(capital=settings.PAPER_CAPITAL))
+# Per-user risk config store (in-memory; survives the process lifetime)
+_user_risk_configs: dict[str, RiskConfig] = {}
+
+
+def set_user_risk_config(user_id: str, config: RiskConfig) -> None:
+    _user_risk_configs[user_id] = config
+
+
+def get_risk_engine(
+    credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> RiskEngine:
+    # We resolve user_id from the token directly so get_risk_engine can be a
+    # sync function (FastAPI deps that call async deps must themselves be async)
+    try:
+        payload = decode_token(credentials.credentials)
+        user_id = payload["sub"]
+    except Exception:
+        user_id = None
+    config = _user_risk_configs.get(user_id or "", RiskConfig(capital=settings.PAPER_CAPITAL))
+    return RiskEngine(config)
 
 
 def get_ai_client() -> ClaudeAIClient | LocalAIClient:

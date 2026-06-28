@@ -6,6 +6,7 @@ import { getPortfolio, saveJournalEntry, getJournalEntry } from '@/lib/api'
 import type { PortfolioData, PortfolioPosition, PortfolioClosedTrade } from '@/lib/api'
 import { NavBar } from '@/components/nav-bar'
 import { EquityChart } from '@/components/equity-chart'
+import { DonutChart } from '@/components/donut-chart'
 
 function pnlClass(v: number) {
   return v > 0
@@ -144,7 +145,10 @@ export default function PortfolioView() {
     )
   }
 
-  const { summary, positions, closed_trades, equity_curve } = data
+  const { summary, positions, closed_trades, equity_curve, sector_allocation } = data
+  const sectorSlices = Object.entries(sector_allocation ?? {})
+    .map(([label, value]) => ({ label, value }))
+    .sort((a, b) => b.value - a.value)
   const totalPnlPositive = summary.total_pnl >= 0
   const unrealPositive = summary.unrealized_pnl >= 0
   const realPositive = summary.realized_pnl >= 0
@@ -196,9 +200,15 @@ export default function PortfolioView() {
           />
         </div>
 
-        {/* Equity curve */}
-        <div className="mb-6">
-          <EquityChart data={equity_curve} />
+        {/* Equity curve + sector allocation */}
+        <div className="mb-6 grid gap-4 lg:grid-cols-3">
+          <div className="lg:col-span-2">
+            <EquityChart data={equity_curve} />
+          </div>
+          <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+            <p className="mb-4 text-xs font-medium text-zinc-400 uppercase tracking-wider">Sector Allocation</p>
+            <DonutChart data={sectorSlices} />
+          </div>
         </div>
 
         {/* Tab switcher */}

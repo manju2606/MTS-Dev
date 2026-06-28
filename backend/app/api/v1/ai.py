@@ -28,6 +28,31 @@ class BatchRequest(BaseModel):
     symbols: list[str]
 
 
+# batch must be registered BEFORE /{symbol} — FastAPI matches routes in order
+# and would otherwise treat "batch" as the symbol parameter.
+@router.post("/analyze/batch")
+async def analyze_batch(
+    body: BatchRequest,
+    current_user: CurrentUser,
+    market_data: MarketDataDep,
+    ai_client: AIDep,
+) -> list[dict]:
+    async def _one(raw_symbol: str) -> dict | None:
+        sym = _norm(raw_symbol)
+        try:
+            quote, ta = await asyncio.gather(
+                market_data.get_quote(sym),
+                fetch_indicators(sym),
+            )
+            rec = await ai_client.analyze(symbol=sym, quote=quote, ta=ta)
+            return _serialize(rec)
+        except Exception:
+            return None
+
+    results = await asyncio.gather(*[_one(s) for s in body.symbols])
+    return [r for r in results if r is not None]
+
+
 @router.post("/analyze/{symbol}")
 async def analyze_symbol(
     symbol: str,
@@ -50,26 +75,3 @@ async def analyze_symbol(
 
     rec = await ai_client.analyze(symbol=sym, quote=quote, ta=ta)
     return _serialize(rec)
-
-
-@router.post("/analyze/batch")
-async def analyze_batch(
-    body: BatchRequest,
-    current_user: CurrentUser,
-    market_data: MarketDataDep,
-    ai_client: AIDep,
-) -> list[dict]:
-    async def _one(raw_symbol: str) -> dict | None:
-        sym = _norm(raw_symbol)
-        try:
-            quote, ta = await asyncio.gather(
-                market_data.get_quote(sym),
-                fetch_indicators(sym),
-            )
-            rec = await ai_client.analyze(symbol=sym, quote=quote, ta=ta)
-            return _serialize(rec)
-        except Exception:
-            return None
-
-    results = await asyncio.gather(*[_one(s) for s in body.symbols])
-    return [r for r in results if r is not None]

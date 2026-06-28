@@ -15,6 +15,7 @@ export function NavBar({ active }: { active: string }) {
 
   const nav: { href: string; label: string }[] = [
     { href: '/dashboard', label: 'Watchlist' },
+    { href: '/research', label: 'Research' },
     { href: '/ai', label: 'AI Analysis' },
     { href: '/ml', label: 'ML Signals' },
     { href: '/risk', label: 'Risk' },

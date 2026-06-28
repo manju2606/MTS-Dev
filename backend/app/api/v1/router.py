@@ -1,6 +1,18 @@
 from fastapi import APIRouter
 
-from app.api.v1 import admin, ai, auth, backtest, broker, live, ml_api, paper, risk, scanner
+from app.api.v1 import (
+    admin,
+    ai,
+    auth,
+    backtest,
+    broker,
+    live,
+    ml_api,
+    paper,
+    research,
+    risk,
+    scanner,
+)
 
 router = APIRouter()
 router.include_router(auth.router)
@@ -13,3 +25,4 @@ router.include_router(broker.router)
 router.include_router(live.router)
 router.include_router(ml_api.router)
 router.include_router(admin.router)
+router.include_router(research.router)

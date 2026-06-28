@@ -177,6 +177,26 @@ export type AdminStats = {
   users_by_role: Record<string, number>
 }
 
+export type ScanResult = {
+  symbol: string
+  name: string
+  price: number
+  change_pct: number
+  volume: number
+  day_high: number
+  day_low: number
+  week52_high: number
+  week52_low: number
+  sma20: number
+  sma50: number
+  rsi: number
+  momentum_score: number
+  value_score: number
+  combined_score: number
+  signal: string
+  rationale: string[]
+}
+
 function authHeaders(token: string): Record<string, string> {
   return { Authorization: `Bearer ${token}` }
 }
@@ -480,6 +500,20 @@ export async function updateAdminUser(
     body: JSON.stringify(body),
   })
   if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Update failed') }
+  return res.json()
+}
+
+// ── Research Agent ─────────────────────────────────────────────────────────
+
+export async function marketScan(
+  token: string,
+  filter: string = 'both',
+  universe: string = 'nifty50',
+  limit: number = 20,
+): Promise<ScanResult[]> {
+  const url = `${BASE}/api/v1/research/scan?filter_type=${filter}&universe=${universe}&limit=${limit}`
+  const res = await fetch(url, { headers: authHeaders(token) })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Scan failed') }
   return res.json()
 }
 

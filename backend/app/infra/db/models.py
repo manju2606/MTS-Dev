@@ -7,7 +7,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from app.domain.models.trade import Trade, TradeMode, TradeSignal, TradeStatus
 from app.domain.models.user import User, UserRole
-from app.domain.models.watchlist import WatchlistItem
+from app.domain.models.watchlist import Watchlist, WatchlistItem
 
 
 class Base(DeclarativeBase):
@@ -51,9 +51,9 @@ class UserORM(Base):
         )
 
 
-class WatchlistItemORM(Base):
-    __tablename__ = "watchlist_items"
-    __table_args__ = (UniqueConstraint("user_id", "symbol", name="uq_watchlist_user_symbol"),)
+class WatchlistORM(Base):
+    __tablename__ = "watchlists"
+    __table_args__ = (UniqueConstraint("user_id", "name", name="uq_watchlist_user_name"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
@@ -64,6 +64,40 @@ class WatchlistItemORM(Base):
         nullable=False,
         index=True,
     )
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    def to_domain(self) -> Watchlist:
+        return Watchlist(
+            id=self.id, user_id=self.user_id, name=self.name, created_at=self.created_at
+        )
+
+    @classmethod
+    def from_domain(cls, wl: Watchlist) -> "WatchlistORM":
+        return cls(id=wl.id, user_id=wl.user_id, name=wl.name, created_at=wl.created_at)
+
+
+class WatchlistItemORM(Base):
+    __tablename__ = "watchlist_items"
+    __table_args__ = (
+        UniqueConstraint("watchlist_id", "symbol", name="uq_watchlist_item_symbol"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    watchlist_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("watchlists.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
     symbol: Mapped[str] = mapped_column(String(50), nullable=False)
     exchange: Mapped[str] = mapped_column(String(10), nullable=False)
     added_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -72,6 +106,7 @@ class WatchlistItemORM(Base):
         return WatchlistItem(
             id=self.id,
             user_id=self.user_id,
+            watchlist_id=self.watchlist_id,
             symbol=self.symbol,
             exchange=self.exchange,
             added_at=self.added_at,
@@ -82,6 +117,7 @@ class WatchlistItemORM(Base):
         return cls(
             id=item.id,
             user_id=item.user_id,
+            watchlist_id=item.watchlist_id,
             symbol=item.symbol,
             exchange=item.exchange,
             added_at=item.added_at,

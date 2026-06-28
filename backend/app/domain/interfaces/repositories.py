@@ -3,7 +3,7 @@ from uuid import UUID
 
 from app.domain.models.trade import Trade, TradeStatus
 from app.domain.models.user import User
-from app.domain.models.watchlist import WatchlistItem
+from app.domain.models.watchlist import Watchlist, WatchlistItem
 
 
 class UserRepository(ABC):
@@ -37,6 +37,36 @@ class TradeRepository(ABC):
 
 
 class WatchlistRepository(ABC):
+    # ── Watchlist management ──────────────────────────────────────────────
+    @abstractmethod
+    async def create_watchlist(self, user_id: UUID, name: str) -> Watchlist: ...
+
+    @abstractmethod
+    async def list_watchlists(self, user_id: UUID) -> list[Watchlist]: ...
+
+    @abstractmethod
+    async def get_watchlist(self, watchlist_id: UUID, user_id: UUID) -> Watchlist | None: ...
+
+    @abstractmethod
+    async def rename_watchlist(self, watchlist_id: UUID, user_id: UUID, name: str) -> Watchlist: ...
+
+    @abstractmethod
+    async def delete_watchlist(self, watchlist_id: UUID, user_id: UUID) -> bool: ...
+
+    # ── Item management (watchlist-scoped) ────────────────────────────────
+    @abstractmethod
+    async def list_items(self, watchlist_id: UUID, user_id: UUID) -> list[WatchlistItem]: ...
+
+    @abstractmethod
+    async def add_item(self, item: WatchlistItem) -> WatchlistItem: ...
+
+    @abstractmethod
+    async def remove_item(self, watchlist_id: UUID, user_id: UUID, symbol: str) -> bool: ...
+
+    @abstractmethod
+    async def move_item(self, item_id: UUID, to_watchlist_id: UUID, user_id: UUID) -> bool: ...
+
+    # ── Legacy / backward-compat (user-scoped, no watchlist filter) ───────
     @abstractmethod
     async def list_by_user(self, user_id: UUID) -> list[WatchlistItem]: ...
 

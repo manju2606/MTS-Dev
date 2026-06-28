@@ -7,9 +7,17 @@ export type User = {
   role: string
 }
 
+export type Watchlist = {
+  id: string
+  user_id: string
+  name: string
+  created_at: string
+}
+
 export type WatchlistItem = {
   id: string
   user_id: string
+  watchlist_id: string | null
   symbol: string
   exchange: string
   added_at: string
@@ -266,6 +274,105 @@ export async function getMe(token: string): Promise<User> {
   if (!res.ok) throw new Error('Unauthorized')
   return res.json()
 }
+
+// ── Multi-watchlist ────────────────────────────────────────────────────────
+
+export async function listWatchlists(token: string): Promise<Watchlist[]> {
+  const res = await fetch(`${BASE}/api/v1/scanner/watchlists`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error('Failed to fetch watchlists')
+  return res.json()
+}
+
+export async function createWatchlist(token: string, name: string): Promise<Watchlist> {
+  const res = await fetch(`${BASE}/api/v1/scanner/watchlists`, {
+    method: 'POST',
+    headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to create watchlist')
+  }
+  return res.json()
+}
+
+export async function renameWatchlist(token: string, id: string, name: string): Promise<Watchlist> {
+  const res = await fetch(`${BASE}/api/v1/scanner/watchlists/${id}`, {
+    method: 'PATCH',
+    headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to rename watchlist')
+  }
+  return res.json()
+}
+
+export async function deleteWatchlist(token: string, id: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/v1/scanner/watchlists/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders(token),
+  })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to delete watchlist')
+  }
+}
+
+export async function getWatchlistItems(token: string, watchlistId: string): Promise<WatchlistItem[]> {
+  const res = await fetch(`${BASE}/api/v1/scanner/watchlists/${watchlistId}/items`, {
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error('Failed to fetch items')
+  return res.json()
+}
+
+export async function addItemToWatchlist(
+  token: string,
+  watchlistId: string,
+  symbol: string,
+): Promise<WatchlistItem> {
+  const res = await fetch(`${BASE}/api/v1/scanner/watchlists/${watchlistId}/items`, {
+    method: 'POST',
+    headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ symbol }),
+  })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to add symbol')
+  }
+  return res.json()
+}
+
+export async function removeItemFromWatchlist(
+  token: string,
+  watchlistId: string,
+  symbol: string,
+): Promise<void> {
+  const res = await fetch(
+    `${BASE}/api/v1/scanner/watchlists/${watchlistId}/items/${encodeURIComponent(symbol)}`,
+    { method: 'DELETE', headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to remove symbol')
+  }
+}
+
+export async function seedWatchlistDefaults(
+  token: string,
+  watchlistId: string,
+): Promise<{ added: number }> {
+  const res = await fetch(`${BASE}/api/v1/scanner/watchlists/${watchlistId}/seed-defaults`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error('Failed to seed defaults')
+  return res.json()
+}
+
+// ── Legacy ──────────────────────────────────────────────────────────────────
 
 export async function seedDefaultWatchlist(token: string): Promise<{ added: number }> {
   const res = await fetch(`${BASE}/api/v1/scanner/watchlist/seed-defaults`, {

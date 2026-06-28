@@ -1,10 +1,11 @@
 import asyncio
 from dataclasses import asdict
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
 
-from app.api.deps import AIDep, CurrentUser, MarketDataDep
+from app.api.deps import AIDep, AISignalDep, CurrentUser, MarketDataDep
+from app.domain.models.ai_signal import AISignal
 from app.infra.ai.technical import fetch_indicators
 
 router = APIRouter(prefix="/ai", tags=["ai-engine"])
@@ -24,18 +25,37 @@ def _serialize(rec: object) -> dict:
     return d
 
 
+async def _save_signal(signal_repo: AISignalDep, user_id, rec: object) -> None:
+    from app.domain.models.recommendation import AIRecommendation
+    r: AIRecommendation = rec  # type: ignore[assignment]
+    sig = AISignal(
+        user_id=user_id,
+        symbol=r.symbol,
+        signal=r.signal,
+        confidence=r.confidence,
+        entry_price=r.entry_price,
+        stop_loss=r.stop_loss,
+        target=r.target,
+        risk_reward_ratio=r.risk_reward_ratio,
+        holding_period=r.holding_period,
+        explanation=r.explanation,
+        engine=r.engine,
+    )
+    await signal_repo.save(sig)
+
+
 class BatchRequest(BaseModel):
     symbols: list[str]
 
 
 # batch must be registered BEFORE /{symbol} — FastAPI matches routes in order
-# and would otherwise treat "batch" as the symbol parameter.
 @router.post("/analyze/batch")
 async def analyze_batch(
     body: BatchRequest,
     current_user: CurrentUser,
     market_data: MarketDataDep,
     ai_client: AIDep,
+    signal_repo: AISignalDep,
 ) -> list[dict]:
     async def _one(raw_symbol: str) -> dict | None:
         sym = _norm(raw_symbol)
@@ -45,6 +65,7 @@ async def analyze_batch(
                 fetch_indicators(sym),
             )
             rec = await ai_client.analyze(symbol=sym, quote=quote, ta=ta)
+            await _save_signal(signal_repo, current_user.id, rec)
             return _serialize(rec)
         except Exception:
             return None
@@ -59,6 +80,7 @@ async def analyze_symbol(
     current_user: CurrentUser,
     market_data: MarketDataDep,
     ai_client: AIDep,
+    signal_repo: AISignalDep,
 ) -> dict:
     sym = _norm(symbol)
     try:
@@ -74,4 +96,34 @@ async def analyze_symbol(
         ) from exc
 
     rec = await ai_client.analyze(symbol=sym, quote=quote, ta=ta)
+    await _save_signal(signal_repo, current_user.id, rec)
     return _serialize(rec)
+
+
+@router.get("/history")
+async def signal_history(
+    current_user: CurrentUser,
+    signal_repo: AISignalDep,
+    symbol: str | None = Query(default=None),
+    limit: int = Query(default=50, le=200),
+) -> list[dict]:
+    signals = await signal_repo.list_by_user(
+        current_user.id, symbol=symbol, limit=limit
+    )
+    return [
+        {
+            "id": str(s.id),
+            "symbol": s.symbol,
+            "signal": s.signal,
+            "confidence": s.confidence,
+            "entry_price": s.entry_price,
+            "stop_loss": s.stop_loss,
+            "target": s.target,
+            "risk_reward_ratio": s.risk_reward_ratio,
+            "holding_period": s.holding_period,
+            "explanation": s.explanation,
+            "engine": s.engine,
+            "created_at": s.created_at.isoformat(),
+        }
+        for s in signals
+    ]

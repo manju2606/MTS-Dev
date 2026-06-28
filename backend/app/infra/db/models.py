@@ -5,6 +5,7 @@ from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Te
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from app.domain.models.ai_signal import AISignal
 from app.domain.models.trade import Trade, TradeMode, TradeSignal, TradeStatus
 from app.domain.models.user import User, UserRole
 from app.domain.models.watchlist import Watchlist, WatchlistItem
@@ -193,4 +194,64 @@ class TradeORM(Base):
             ai_confidence=trade.ai_confidence,
             ai_explanation=trade.ai_explanation,
             created_at=trade.created_at,
+        )
+
+
+class AISignalORM(Base):
+    __tablename__ = "ai_signals"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    symbol: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    signal: Mapped[str] = mapped_column(String(10), nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    entry_price: Mapped[float] = mapped_column(Float, nullable=False)
+    stop_loss: Mapped[float] = mapped_column(Float, nullable=False)
+    target: Mapped[float] = mapped_column(Float, nullable=False)
+    risk_reward_ratio: Mapped[float] = mapped_column(Float, nullable=False)
+    holding_period: Mapped[str] = mapped_column(String(50), nullable=False)
+    explanation: Mapped[str] = mapped_column(Text, nullable=False)
+    engine: Mapped[str] = mapped_column(String(20), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    def to_domain(self) -> AISignal:
+        return AISignal(
+            id=self.id,
+            user_id=self.user_id,
+            symbol=self.symbol,
+            signal=self.signal,
+            confidence=self.confidence,
+            entry_price=self.entry_price,
+            stop_loss=self.stop_loss,
+            target=self.target,
+            risk_reward_ratio=self.risk_reward_ratio,
+            holding_period=self.holding_period,
+            explanation=self.explanation,
+            engine=self.engine,
+            created_at=self.created_at,
+        )
+
+    @classmethod
+    def from_domain(cls, s: AISignal) -> "AISignalORM":
+        return cls(
+            id=s.id,
+            user_id=s.user_id,
+            symbol=s.symbol,
+            signal=s.signal,
+            confidence=s.confidence,
+            entry_price=s.entry_price,
+            stop_loss=s.stop_loss,
+            target=s.target,
+            risk_reward_ratio=s.risk_reward_ratio,
+            holding_period=s.holding_period,
+            explanation=s.explanation,
+            engine=s.engine,
+            created_at=s.created_at,
         )

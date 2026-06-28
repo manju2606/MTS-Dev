@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { analyzeBatch, getWatchlistItems, listWatchlists } from '@/lib/api'
-import type { AIRecommendation, Watchlist } from '@/lib/api'
+import { analyzeBatch, getAIHistory, getWatchlistItems, listWatchlists } from '@/lib/api'
+import type { AIRecommendation, AISignalRecord, Watchlist } from '@/lib/api'
 import { NavBar } from '@/components/nav-bar'
 import Link from 'next/link'
 
@@ -110,6 +110,9 @@ export default function AIView() {
   const [recs, setRecs] = useState<AIRecommendation[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [tab, setTab] = useState<'signals' | 'history'>('signals')
+  const [history, setHistory] = useState<AISignalRecord[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
 
   useEffect(() => {
     const t = localStorage.getItem('mts_token')
@@ -120,6 +123,14 @@ export default function AIView() {
       if (wls.length > 0) setSelectedId(wls[0].id)
     }).catch(() => {})
   }, [router])
+
+  useEffect(() => {
+    if (tab !== 'history' || !tokenRef.current) return
+    setHistoryLoading(true)
+    getAIHistory(tokenRef.current, undefined, 100)
+      .then(setHistory)
+      .finally(() => setHistoryLoading(false))
+  }, [tab])
 
   const analyzeAll = useCallback(async () => {
     if (!selectedId) { setError('Select a watchlist first.'); return }
@@ -149,7 +160,7 @@ export default function AIView() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {watchlists.length > 0 && (
+            {tab === 'signals' && watchlists.length > 0 && (
               <select
                 value={selectedId}
                 onChange={e => setSelectedId(e.target.value)}
@@ -160,23 +171,42 @@ export default function AIView() {
                 ))}
               </select>
             )}
-            <button
-              onClick={analyzeAll}
-              disabled={loading || !selectedId}
-              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {loading ? 'Analysing…' : 'Analyse All'}
-            </button>
+            {tab === 'signals' && (
+              <button
+                onClick={analyzeAll}
+                disabled={loading || !selectedId}
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {loading ? 'Analysing…' : 'Analyse All'}
+              </button>
+            )}
           </div>
         </div>
 
-        {error && (
+        {/* Tabs */}
+        <div className="mb-6 flex gap-1 border-b border-zinc-200 dark:border-zinc-800">
+          {(['signals', 'history'] as const).map(t => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`px-4 py-2 text-sm font-medium transition-colors capitalize ${
+                tab === t
+                  ? 'border-b-2 border-indigo-600 text-indigo-600 dark:text-indigo-400'
+                  : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400'
+              }`}
+            >
+              {t === 'signals' ? 'Signals' : 'Signal History'}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'signals' && error && (
           <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
             {error}
           </div>
         )}
 
-        {loading && (
+        {tab === 'signals' && loading && (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="h-64 animate-pulse rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900" />
@@ -184,7 +214,7 @@ export default function AIView() {
           </div>
         )}
 
-        {!loading && recs.length === 0 && !error && (
+        {tab === 'signals' && !loading && recs.length === 0 && !error && (
           <div className="rounded-xl border border-zinc-200 bg-white px-4 py-16 text-center dark:border-zinc-800 dark:bg-zinc-900">
             <p className="text-sm text-zinc-500">
               Select a watchlist and click <strong>Analyse All</strong>.
@@ -192,10 +222,55 @@ export default function AIView() {
           </div>
         )}
 
-        {!loading && recs.length > 0 && (
+        {tab === 'signals' && !loading && recs.length > 0 && (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {recs.map(r => <RecCard key={r.id} rec={r} />)}
           </div>
+        )}
+
+        {/* Signal history tab */}
+        {tab === 'history' && (
+          historyLoading ? (
+            <div className="space-y-2">
+              {[1,2,3,4,5].map(i => <div key={i} className="h-12 animate-pulse rounded-xl bg-zinc-200 dark:bg-zinc-800" />)}
+            </div>
+          ) : history.length === 0 ? (
+            <div className="rounded-xl border border-zinc-200 bg-white px-4 py-16 text-center dark:border-zinc-800 dark:bg-zinc-900">
+              <p className="text-sm text-zinc-500">No signals generated yet. Run <strong>Analyse All</strong> to see history here.</p>
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-zinc-100 dark:border-zinc-800">
+                    {['Date', 'Symbol', 'Signal', 'Conf', 'Entry', 'Target', 'Stop', 'R:R', 'Hold', 'Engine'].map(h => (
+                      <th key={h} className="px-3 py-3 text-left text-xs font-medium text-zinc-500">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.map(s => {
+                    const sig = s.signal as 'BUY' | 'SELL' | 'HOLD'
+                    const sigCls = sig === 'BUY' ? 'text-emerald-600 dark:text-emerald-400' : sig === 'SELL' ? 'text-red-500 dark:text-red-400' : 'text-amber-500'
+                    return (
+                      <tr key={s.id} className="border-b border-zinc-50 last:border-0 hover:bg-zinc-50 dark:border-zinc-800/50 dark:hover:bg-zinc-800/30">
+                        <td className="px-3 py-2.5 text-xs text-zinc-400">{new Date(s.created_at).toLocaleDateString('en-IN')}</td>
+                        <td className="px-3 py-2.5 font-medium text-zinc-900 dark:text-zinc-50">{s.symbol.replace(/\.(NS|BO)$/, '')}</td>
+                        <td className={`px-3 py-2.5 font-bold ${sigCls}`}>{s.signal}</td>
+                        <td className="px-3 py-2.5 text-zinc-600 dark:text-zinc-300">{(s.confidence * 100).toFixed(0)}%</td>
+                        <td className="px-3 py-2.5 font-mono text-xs">₹{s.entry_price.toFixed(2)}</td>
+                        <td className="px-3 py-2.5 font-mono text-xs text-emerald-600 dark:text-emerald-400">₹{s.target.toFixed(2)}</td>
+                        <td className="px-3 py-2.5 font-mono text-xs text-red-500 dark:text-red-400">₹{s.stop_loss.toFixed(2)}</td>
+                        <td className="px-3 py-2.5 text-zinc-600 dark:text-zinc-300">{s.risk_reward_ratio.toFixed(2)}</td>
+                        <td className="px-3 py-2.5 text-xs text-zinc-400">{s.holding_period}</td>
+                        <td className="px-3 py-2.5 text-xs text-zinc-400">{s.engine}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )
         )}
       </main>
     </div>

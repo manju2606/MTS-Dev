@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from uuid import UUID
 
+from app.domain.models.ai_signal import AISignal
 from app.domain.models.trade import Trade, TradeStatus
 from app.domain.models.user import User
 from app.domain.models.watchlist import Watchlist, WatchlistItem
@@ -34,6 +35,16 @@ class TradeRepository(ABC):
 
     @abstractmethod
     async def update(self, trade: Trade) -> Trade: ...
+
+
+class AISignalRepository(ABC):
+    @abstractmethod
+    async def save(self, signal: AISignal) -> AISignal: ...
+
+    @abstractmethod
+    async def list_by_user(
+        self, user_id: UUID, symbol: str | None = None, limit: int = 50
+    ) -> list[AISignal]: ...
 
 
 class WatchlistRepository(ABC):

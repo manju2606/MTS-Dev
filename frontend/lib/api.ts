@@ -923,6 +923,37 @@ export type StockSearchResult = {
   exchange: string
 }
 
+// ── AI signal history ─────────────────────────────────────────────────────────
+
+export type AISignalRecord = {
+  id: string
+  symbol: string
+  signal: string
+  confidence: number
+  entry_price: number
+  stop_loss: number
+  target: number
+  risk_reward_ratio: number
+  holding_period: string
+  explanation: string
+  engine: string
+  created_at: string
+}
+
+export async function getAIHistory(
+  token: string,
+  symbol?: string,
+  limit = 50,
+): Promise<AISignalRecord[]> {
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (symbol) params.set('symbol', symbol)
+  const res = await fetch(`${BASE}/api/v1/ai/history?${params}`, {
+    headers: authHeaders(token),
+  })
+  if (!res.ok) return []
+  return res.json()
+}
+
 export async function searchStocks(
   token: string,
   q: string,

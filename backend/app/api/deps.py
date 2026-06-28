@@ -8,12 +8,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.security import decode_token
 from app.domain.interfaces.market_data import MarketDataClient
-from app.domain.interfaces.repositories import TradeRepository, WatchlistRepository
+from app.domain.interfaces.repositories import (
+    AISignalRepository,
+    TradeRepository,
+    WatchlistRepository,
+)
 from app.domain.models.risk import RiskConfig
 from app.domain.models.user import User, UserRole
 from app.domain.services.risk_engine import RiskEngine
 from app.infra.ai.claude_client import ClaudeAIClient
 from app.infra.ai.local_engine import LocalAIClient
+from app.infra.db.repositories.ai_signal_repo import SQLAISignalRepository
 from app.infra.db.repositories.trade_repo import SQLTradeRepository
 from app.infra.db.repositories.watchlist_repo import SQLWatchlistRepository
 from app.infra.db.session import get_db
@@ -66,6 +71,10 @@ def get_trade_repo(db: Annotated[AsyncSession, Depends(get_db)]) -> TradeReposit
     return SQLTradeRepository(db)
 
 
+def get_ai_signal_repo(db: Annotated[AsyncSession, Depends(get_db)]) -> AISignalRepository:
+    return SQLAISignalRepository(db)
+
+
 # Per-user risk config store (in-memory; survives the process lifetime)
 _user_risk_configs: dict[str, RiskConfig] = {}
 
@@ -96,6 +105,7 @@ def get_ai_client() -> ClaudeAIClient | LocalAIClient:
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+AISignalDep = Annotated[AISignalRepository, Depends(get_ai_signal_repo)]
 DBSession = Annotated[AsyncSession, Depends(get_db)]
 MarketDataDep = Annotated[MarketDataClient, Depends(get_market_data_client)]
 WatchlistDep = Annotated[WatchlistRepository, Depends(get_watchlist_repo)]

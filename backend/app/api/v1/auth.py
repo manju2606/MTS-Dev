@@ -129,7 +129,20 @@ async def forgot_password(body: ForgotPasswordRequest, db: DBSession) -> dict:
     if not user:
         return {"message": "If that email is registered, a reset token has been issued."}
     reset_token = create_password_reset_token(user.id)
-    # TODO: deliver via email. Returned in response until email service is wired up.
+    try:
+        from app.infra.email.client import send_email
+        await send_email(
+            to=user.email,
+            subject="Manju Trade AI Pro — Password Reset",
+            html=(
+                f"<p>Hi {user.full_name},</p>"
+                f"<p>Your password reset token:</p>"
+                f"<pre style='background:#f4f4f4;padding:12px'>{reset_token}</pre>"
+                f"<p>Expires in 1 hour. Ignore this email if you didn't request it.</p>"
+            ),
+        )
+    except Exception:
+        pass
     return {"message": "Reset token issued.", "reset_token": reset_token}
 
 

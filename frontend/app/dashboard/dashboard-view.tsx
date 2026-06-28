@@ -23,6 +23,7 @@ import type { AlertRule, ChartPeriod, HistoryBar, Quote, User, Watchlist, Watchl
 import { NavBar } from '@/components/nav-bar'
 import { SparkLine } from '@/components/spark-line'
 import { PriceChart } from '@/components/price-chart'
+import { OnboardingBanner } from '@/components/onboarding-banner'
 
 type Signal = 'BUY' | 'HOLD' | 'SELL'
 
@@ -79,6 +80,7 @@ export default function DashboardView() {
 
   const [loading, setLoading] = useState(true)
   const [itemsLoading, setItemsLoading] = useState(false)
+  const [showOnboarding, setShowOnboarding] = useState(false)
 
   // Alerts
   const [alerts, setAlerts] = useState<AlertRule[]>([])
@@ -148,12 +150,15 @@ export default function DashboardView() {
     if (!t) { router.replace('/login'); return }
     tokenRef.current = t
 
+    if (!localStorage.getItem('mts_onboarded')) {
+      setShowOnboarding(true)
+    }
+
     Promise.all([getMe(t), listWatchlists(t)])
       .then(async ([me, wls]) => {
         setUser(me)
         if (wls.length === 0) {
           const created = await createWatchlist(t, 'My Watchlist')
-          await seedWatchlistDefaults(t, created.id)
           const updated = await listWatchlists(t)
           setWatchlists(updated)
           setActiveId(created.id)
@@ -330,6 +335,23 @@ export default function DashboardView() {
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
       <NavBar active="Watchlist" />
+
+      {showOnboarding && (
+        <div className="mx-auto max-w-7xl px-4 pt-4">
+          <OnboardingBanner
+            onSeed={async () => {
+              if (activeId) {
+                await seedWatchlistDefaults(tokenRef.current, activeId).catch(() => {})
+                await loadItems(activeId)
+              }
+            }}
+            onDismiss={() => {
+              setShowOnboarding(false)
+              localStorage.setItem('mts_onboarded', '1')
+            }}
+          />
+        </div>
+      )}
 
       <div className="mx-auto flex max-w-7xl gap-0 px-4 py-6">
         {/* ── Sidebar ── */}

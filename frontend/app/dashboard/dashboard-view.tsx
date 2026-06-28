@@ -223,6 +223,11 @@ export default function DashboardView() {
       .finally(() => setChartLoading(false))
   }, [selectedSymbol, chartPeriod])
 
+  // Keep localStorage in sync so NavBar search can add to the active watchlist
+  useEffect(() => {
+    if (activeId) localStorage.setItem('mts_active_watchlist_id', activeId)
+  }, [activeId])
+
   async function switchWatchlist(id: string) {
     setActiveId(id)
     setSelectedSymbol(null)

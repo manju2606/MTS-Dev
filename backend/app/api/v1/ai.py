@@ -1,10 +1,12 @@
 import asyncio
+import contextlib
 from dataclasses import asdict
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel
 
 from app.api.deps import AIDep, AISignalDep, CurrentUser, MarketDataDep
+from app.core.limiter import limiter
 from app.domain.models.ai_signal import AISignal
 from app.infra.ai.technical import fetch_indicators
 
@@ -50,7 +52,9 @@ class BatchRequest(BaseModel):
 
 # batch must be registered BEFORE /{symbol} — FastAPI matches routes in order
 @router.post("/analyze/batch")
+@limiter.limit("10/minute")
 async def analyze_batch(
+    request: Request,
     body: BatchRequest,
     current_user: CurrentUser,
     market_data: MarketDataDep,
@@ -65,17 +69,20 @@ async def analyze_batch(
                 fetch_indicators(sym),
             )
             rec = await ai_client.analyze(symbol=sym, quote=quote, ta=ta)
-            await _save_signal(signal_repo, current_user.id, rec)
-            return _serialize(rec)
         except Exception:
             return None
+        with contextlib.suppress(Exception):
+            await _save_signal(signal_repo, current_user.id, rec)
+        return _serialize(rec)
 
     results = await asyncio.gather(*[_one(s) for s in body.symbols])
     return [r for r in results if r is not None]
 
 
 @router.post("/analyze/{symbol}")
+@limiter.limit("10/minute")
 async def analyze_symbol(
+    request: Request,
     symbol: str,
     current_user: CurrentUser,
     market_data: MarketDataDep,

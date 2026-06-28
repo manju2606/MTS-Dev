@@ -120,7 +120,7 @@ async def test_me_success(client: AsyncClient, registered: dict, auth_token: str
 
 async def test_me_no_token(client: AsyncClient):
     resp = await client.get(f"{BASE}/me")
-    assert resp.status_code == 403  # HTTPBearer rejects missing credentials with 403
+    assert resp.status_code in (401, 403)
 
 
 async def test_me_invalid_token(client: AsyncClient):

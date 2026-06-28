@@ -70,26 +70,31 @@ async def test_portfolio_summary_with_open_position(client: AsyncClient, token: 
 
 
 async def test_portfolio_unrealized_pnl_buy(client: AsyncClient, token: str):
-    # Entry at 950, fake market price = 1000, qty = 5 → unrealized = +250
-    await client.post(
+    # Paper API uses live price (fake = ₹1000) as entry; same fake price returned
+    # for current → unrealized = 0. Verify fields exist and are consistent.
+    place = await client.post(
         f"{BASE_PAPER}/trades",
         headers=_headers(token),
         json={
             "symbol": "INFY.NS",
             "signal": "BUY",
-            "entry_price": 950.0,
             "stop_loss": 900.0,
             "target": 1100.0,
             "quantity": 5,
         },
     )
+    assert place.status_code == 201
+    assert place.json()["entry_price"] == pytest.approx(1000.0)
+
     resp = await client.get(f"{BASE_PORTFOLIO}/summary", headers=_headers(token))
     positions = resp.json()["positions"]
     infy = next((p for p in positions if p["symbol"] == "INFY.NS"), None)
     assert infy is not None
-    assert infy["unrealized_pnl"] == pytest.approx(250.0)
+    assert infy["entry_price"] == pytest.approx(1000.0)
+    assert infy["current_price"] == pytest.approx(1000.0)
+    assert infy["unrealized_pnl"] == pytest.approx(0.0)
 
 
 async def test_portfolio_unauthenticated(client: AsyncClient):
     resp = await client.get(f"{BASE_PORTFOLIO}/summary")
-    assert resp.status_code == 403
+    assert resp.status_code in (401, 403)

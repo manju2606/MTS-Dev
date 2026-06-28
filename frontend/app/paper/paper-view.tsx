@@ -1,12 +1,16 @@
 'use client'
 
-import Link from 'next/link'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { closeTrade, getMe, getQuote, listTrades, placeTrade } from '@/lib/api'
-import type { PlaceTradeBody, Trade, User } from '@/lib/api'
+import { NavBar } from '@/components/nav-bar'
+import {
+  closeTrade, getJournalEntry, getQuote,
+  listTrades, placeTrade, saveJournalEntry,
+} from '@/lib/api'
+import type { JournalEntry, PlaceTradeBody, Trade } from '@/lib/api'
 
 type Tab = 'open' | 'closed'
+type JournalDraft = { notes: string; rating: number; tags: string }
 
 function livePnl(trade: Trade, currentPrice: number): number {
   return trade.signal === 'BUY'
@@ -45,12 +49,17 @@ export default function PaperView() {
   const router = useRouter()
   const tokenRef = useRef<string>('')
 
-  const [user, setUser] = useState<User | null>(null)
   const [trades, setTrades] = useState<Trade[]>([])
   const [prices, setPrices] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('open')
   const [closing, setClosing] = useState<string | null>(null)
+
+  // Journal state
+  const [journalOpen, setJournalOpen] = useState<string | null>(null)
+  const [journalLoaded, setJournalLoaded] = useState<Set<string>>(new Set())
+  const [journalDrafts, setJournalDrafts] = useState<Record<string, JournalDraft>>({})
+  const [journalSaving, setJournalSaving] = useState<string | null>(null)
 
   // Form state
   const [signal, setSignal] = useState<'BUY' | 'SELL'>('BUY')
@@ -64,14 +73,10 @@ export default function PaperView() {
   const fetchPrices = useCallback(async (openTrades: Trade[]) => {
     if (openTrades.length === 0) return
     const symbols = [...new Set(openTrades.map(t => t.symbol))]
-    const results = await Promise.allSettled(
-      symbols.map(s => getQuote(tokenRef.current, s)),
-    )
+    const results = await Promise.allSettled(symbols.map(s => getQuote(tokenRef.current, s)))
     setPrices(prev => {
       const next = { ...prev }
-      results.forEach((r, i) => {
-        if (r.status === 'fulfilled') next[symbols[i]] = r.value.price
-      })
+      results.forEach((r, i) => { if (r.status === 'fulfilled') next[symbols[i]] = r.value.price })
       return next
     })
   }, [])
@@ -86,21 +91,15 @@ export default function PaperView() {
     const t = localStorage.getItem('mts_token')
     if (!t) { router.replace('/login'); return }
     tokenRef.current = t
-
-    Promise.all([getMe(t), listTrades(t)])
-      .then(async ([me, all]) => {
-        setUser(me)
+    listTrades(t)
+      .then(async (all) => {
         setTrades(all)
         await fetchPrices(all.filter(tr => tr.status === 'open'))
       })
-      .catch(() => {
-        localStorage.removeItem('mts_token')
-        router.replace('/login')
-      })
+      .catch(() => { localStorage.removeItem('mts_token'); router.replace('/login') })
       .finally(() => setLoading(false))
   }, [router, fetchPrices])
 
-  // Poll live prices for open trades every 30 s
   useEffect(() => {
     const open = trades.filter(t => t.status === 'open')
     if (open.length === 0) return
@@ -146,9 +145,39 @@ export default function PaperView() {
     }
   }
 
-  function handleSignOut() {
-    localStorage.removeItem('mts_token')
-    router.replace('/login')
+  async function openJournal(tradeId: string) {
+    if (journalOpen === tradeId) { setJournalOpen(null); return }
+    setJournalOpen(tradeId)
+    if (journalLoaded.has(tradeId)) return
+    const entry = await getJournalEntry(tokenRef.current, tradeId).catch((): JournalEntry | null => null)
+    setJournalLoaded(prev => new Set([...prev, tradeId]))
+    setJournalDrafts(prev => ({
+      ...prev,
+      [tradeId]: {
+        notes: entry?.notes ?? '',
+        rating: entry?.rating ?? 3,
+        tags: (entry?.tags ?? []).join(', '),
+      },
+    }))
+  }
+
+  async function saveJournal(tradeId: string) {
+    const draft = journalDrafts[tradeId]
+    if (!draft) return
+    setJournalSaving(tradeId)
+    const tags = draft.tags.split(',').map(t => t.trim()).filter(Boolean)
+    try {
+      await saveJournalEntry(tokenRef.current, tradeId, draft.notes, draft.rating, tags)
+    } catch { /* MongoDB may be unavailable in dev */ } finally {
+      setJournalSaving(null)
+    }
+  }
+
+  function patchDraft(tradeId: string, patch: Partial<JournalDraft>) {
+    setJournalDrafts(prev => ({
+      ...prev,
+      [tradeId]: { notes: '', rating: 3, tags: '', ...prev[tradeId], ...patch },
+    }))
   }
 
   const openTrades = trades.filter(t => t.status === 'open')
@@ -165,124 +194,60 @@ export default function PaperView() {
 
   return (
     <div className="min-h-full bg-zinc-50 dark:bg-zinc-950">
-      <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-6">
-            <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-              Manju Trade AI Pro
-            </span>
-            <nav className="flex items-center gap-4 text-xs">
-              <Link href="/dashboard" className="text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100">
-                Watchlist
-              </Link>
-              <span className="font-medium text-zinc-900 dark:text-zinc-50">Paper Trading</span>
-            </nav>
-          </div>
-          <div className="flex items-center gap-4">
-            <span className="text-xs text-zinc-500 dark:text-zinc-400">{user?.full_name}</span>
-            <button
-              onClick={handleSignOut}
-              className="text-xs text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100"
-            >
-              Sign out
-            </button>
-          </div>
-        </div>
-      </header>
+      <NavBar active="Paper Trading" />
 
       <main className="mx-auto max-w-5xl px-4 py-8 space-y-8">
 
         {/* Place trade form */}
         <section>
-          <h1 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-            Place Trade
-          </h1>
+          <h1 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50">Place Trade</h1>
           <div className="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
             <form onSubmit={handlePlace} className="flex flex-wrap items-end gap-3">
-              {/* Signal toggle */}
               <div className="flex flex-col gap-1">
                 <span className="text-xs font-medium text-zinc-500">Signal</span>
                 <div className="flex rounded-lg border border-zinc-300 dark:border-zinc-600 overflow-hidden">
-                  <button
-                    type="button"
-                    onClick={() => setSignal('BUY')}
-                    className={`px-4 py-2 text-sm font-semibold transition-colors ${
-                      signal === 'BUY'
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-white text-zinc-600 hover:bg-zinc-50 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700'
-                    }`}
-                  >
-                    BUY
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSignal('SELL')}
-                    className={`px-4 py-2 text-sm font-semibold transition-colors ${
-                      signal === 'SELL'
-                        ? 'bg-red-600 text-white'
-                        : 'bg-white text-zinc-600 hover:bg-zinc-50 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700'
-                    }`}
-                  >
-                    SELL
-                  </button>
+                  {(['BUY', 'SELL'] as const).map(s => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setSignal(s)}
+                      className={`px-4 py-2 text-sm font-semibold transition-colors ${
+                        signal === s
+                          ? s === 'BUY' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'
+                          : 'bg-white text-zinc-600 hover:bg-zinc-50 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700'
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              {/* Symbol */}
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-medium text-zinc-500">Symbol</label>
-                <input
-                  value={symbol}
-                  onChange={e => setSymbol(e.target.value)}
-                  placeholder="RELIANCE"
-                  disabled={formLoading}
-                  className={`w-32 ${INPUT}`}
-                />
+                <input value={symbol} onChange={e => setSymbol(e.target.value)} placeholder="RELIANCE"
+                  disabled={formLoading} className={`w-32 ${INPUT}`} />
               </div>
 
-              {/* Stop Loss */}
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-medium text-zinc-500">Stop Loss (₹)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={stopLoss}
-                  onChange={e => setStopLoss(e.target.value)}
-                  placeholder="950.00"
-                  disabled={formLoading}
-                  className={`w-28 ${INPUT}`}
-                />
+                <input type="number" step="0.01" min="0" value={stopLoss}
+                  onChange={e => setStopLoss(e.target.value)} placeholder="950.00"
+                  disabled={formLoading} className={`w-28 ${INPUT}`} />
               </div>
 
-              {/* Target */}
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-medium text-zinc-500">Target (₹)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={target}
-                  onChange={e => setTarget(e.target.value)}
-                  placeholder="1100.00"
-                  disabled={formLoading}
-                  className={`w-28 ${INPUT}`}
-                />
+                <input type="number" step="0.01" min="0" value={target}
+                  onChange={e => setTarget(e.target.value)} placeholder="1100.00"
+                  disabled={formLoading} className={`w-28 ${INPUT}`} />
               </div>
 
-              {/* Quantity */}
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-medium text-zinc-500">Quantity</label>
-                <input
-                  type="number"
-                  step="1"
-                  min="1"
-                  value={quantity}
-                  onChange={e => setQuantity(e.target.value)}
-                  placeholder="10"
-                  disabled={formLoading}
-                  className={`w-24 ${INPUT}`}
-                />
+                <input type="number" step="1" min="1" value={quantity}
+                  onChange={e => setQuantity(e.target.value)} placeholder="10"
+                  disabled={formLoading} className={`w-24 ${INPUT}`} />
               </div>
 
               <button
@@ -293,16 +258,12 @@ export default function PaperView() {
                 {formLoading ? 'Placing…' : 'Place Trade'}
               </button>
             </form>
-
-            {formError && (
-              <p className="mt-3 text-sm text-red-600 dark:text-red-400">{formError}</p>
-            )}
+            {formError && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{formError}</p>}
           </div>
         </section>
 
         {/* Trade list */}
         <section>
-          {/* Tabs */}
           <div className="mb-4 flex items-center gap-1">
             {(['open', 'closed'] as Tab[]).map(t => (
               <button
@@ -354,9 +315,7 @@ export default function PaperView() {
                         </td>
                         <td className={TD}><SignalBadge signal={trade.signal} /></td>
                         <td className={TD_R}>₹{trade.entry_price.toFixed(2)}</td>
-                        <td className={TD_R}>
-                          {current !== undefined ? `₹${current.toFixed(2)}` : '—'}
-                        </td>
+                        <td className={TD_R}>{current !== undefined ? `₹${current.toFixed(2)}` : '—'}</td>
                         <td className={TD_R}>₹{trade.stop_loss.toFixed(2)}</td>
                         <td className={TD_R}>₹{trade.target.toFixed(2)}</td>
                         <td className={TD_R}>{trade.quantity}</td>
@@ -380,6 +339,7 @@ export default function PaperView() {
               </table>
             </div>
           ) : (
+            // Closed trades with inline journal panel
             <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
               <table className="w-full">
                 <thead>
@@ -392,34 +352,118 @@ export default function PaperView() {
                     <th className={TH_R}>P&amp;L</th>
                     <th className={TH_R}>R:R</th>
                     <th className={TH_R}>Closed</th>
+                    <th className={TH} />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                  {shown.map(trade => (
-                    <tr key={trade.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
-                      <td className={TD}>
-                        <span className="font-medium text-zinc-900 dark:text-zinc-50">{trade.symbol}</span>
-                        <span className="ml-1.5 text-xs text-zinc-400">{trade.exchange}</span>
-                      </td>
-                      <td className={TD}><SignalBadge signal={trade.signal} /></td>
-                      <td className={TD_R}>₹{trade.entry_price.toFixed(2)}</td>
-                      <td className={TD_R}>
-                        {trade.exit_price !== null ? `₹${trade.exit_price.toFixed(2)}` : '—'}
-                      </td>
-                      <td className={TD_R}>{trade.quantity}</td>
-                      <td className="px-3 py-3 text-right">
-                        {trade.pnl !== null ? <PnlCell value={trade.pnl} /> : <span className="text-zinc-400">—</span>}
-                      </td>
-                      <td className={TD_R}>{trade.risk_reward_ratio.toFixed(2)}</td>
-                      <td className={TD_R}>
-                        {trade.closed_at
-                          ? new Date(trade.closed_at).toLocaleDateString('en-IN', {
-                              day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-                            })
-                          : '—'}
-                      </td>
-                    </tr>
-                  ))}
+                  {shown.map(trade => {
+                    const draft = journalDrafts[trade.id] ?? { notes: '', rating: 3, tags: '' }
+                    const isJournalOpen = journalOpen === trade.id
+                    return (
+                      <Fragment key={trade.id}>
+                        <tr className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
+                          <td className={TD}>
+                            <span className="font-medium text-zinc-900 dark:text-zinc-50">{trade.symbol}</span>
+                            <span className="ml-1.5 text-xs text-zinc-400">{trade.exchange}</span>
+                          </td>
+                          <td className={TD}><SignalBadge signal={trade.signal} /></td>
+                          <td className={TD_R}>₹{trade.entry_price.toFixed(2)}</td>
+                          <td className={TD_R}>
+                            {trade.exit_price !== null ? `₹${trade.exit_price.toFixed(2)}` : '—'}
+                          </td>
+                          <td className={TD_R}>{trade.quantity}</td>
+                          <td className="px-3 py-3 text-right">
+                            {trade.pnl !== null ? <PnlCell value={trade.pnl} /> : <span className="text-zinc-400">—</span>}
+                          </td>
+                          <td className={TD_R}>{trade.risk_reward_ratio.toFixed(2)}</td>
+                          <td className={TD_R}>
+                            {trade.closed_at
+                              ? new Date(trade.closed_at).toLocaleDateString('en-IN', {
+                                  day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+                                })
+                              : '—'}
+                          </td>
+                          <td className="px-3 py-3 text-right">
+                            <button
+                              onClick={() => openJournal(trade.id)}
+                              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                                isJournalOpen
+                                  ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300'
+                                  : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600'
+                              }`}
+                            >
+                              Journal
+                            </button>
+                          </td>
+                        </tr>
+
+                        {isJournalOpen && (
+                          <tr>
+                            <td colSpan={9} className="p-0">
+                              <div className="border-t border-indigo-100 bg-indigo-50/40 px-4 py-4 dark:border-indigo-900/30 dark:bg-indigo-950/10">
+                                <div className="flex flex-wrap items-start gap-6">
+                                  {/* Notes textarea */}
+                                  <div className="flex-1 min-w-[200px]">
+                                    <label className="mb-1.5 block text-xs font-medium text-zinc-500">Notes</label>
+                                    <textarea
+                                      value={draft.notes}
+                                      onChange={e => patchDraft(trade.id, { notes: e.target.value })}
+                                      rows={3}
+                                      placeholder="What did you learn from this trade?"
+                                      className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs text-zinc-900 placeholder-zinc-400 focus:border-indigo-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
+                                    />
+                                  </div>
+
+                                  {/* Rating, Tags, Save */}
+                                  <div className="flex flex-col gap-3">
+                                    <div>
+                                      <p className="mb-1.5 text-xs font-medium text-zinc-500">Rating</p>
+                                      <div className="flex gap-0.5">
+                                        {[1, 2, 3, 4, 5].map(n => (
+                                          <button
+                                            key={n}
+                                            type="button"
+                                            onClick={() => patchDraft(trade.id, { rating: n })}
+                                            className={`text-xl leading-none transition-colors ${
+                                              draft.rating >= n
+                                                ? 'text-amber-400'
+                                                : 'text-zinc-300 dark:text-zinc-600'
+                                            }`}
+                                          >
+                                            ★
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </div>
+
+                                    <div>
+                                      <label className="mb-1.5 block text-xs font-medium text-zinc-500">
+                                        Tags <span className="font-normal text-zinc-400">(comma-separated)</span>
+                                      </label>
+                                      <input
+                                        value={draft.tags}
+                                        onChange={e => patchDraft(trade.id, { tags: e.target.value })}
+                                        placeholder="FOMO, breakout, held too long"
+                                        className="w-52 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs text-zinc-900 placeholder-zinc-400 focus:border-indigo-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
+                                      />
+                                    </div>
+
+                                    <button
+                                      onClick={() => saveJournal(trade.id)}
+                                      disabled={journalSaving === trade.id}
+                                      className="rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-60"
+                                    >
+                                      {journalSaving === trade.id ? 'Saving…' : 'Save Journal'}
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

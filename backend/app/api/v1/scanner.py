@@ -4,11 +4,12 @@ from dataclasses import asdict
 from uuid import UUID
 
 import yfinance as yf
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import CurrentUser, MarketDataDep, WatchlistDep
+from app.core.limiter import limiter
 from app.domain.models.watchlist import WatchlistItem
 from app.infra.scanner.universe import SECTORS
 
@@ -124,7 +125,10 @@ async def get_history(
 
 
 @router.get("/quotes/{symbol}")
-async def get_quote(symbol: str, current_user: CurrentUser, market_data: MarketDataDep) -> dict:
+@limiter.limit("30/minute")
+async def get_quote(
+    request: Request, symbol: str, current_user: CurrentUser, market_data: MarketDataDep
+) -> dict:
     try:
         quote = await market_data.get_quote(symbol)
         return asdict(quote)

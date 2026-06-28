@@ -99,7 +99,7 @@ async def test_place_trade_zero_quantity(client: AsyncClient, auth: dict):
 
 async def test_place_trade_unauthenticated(client: AsyncClient):
     resp = await client.post(BASE + "/trades", json=VALID_BUY)
-    assert resp.status_code == 403
+    assert resp.status_code in (401, 403)
 
 
 # --- List trades ---

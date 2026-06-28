@@ -23,6 +23,7 @@ dependencies = [
     "scikit-learn>=1.4.0",
     "numpy>=1.26.0",
     "kiteconnect>=5.0.1",
+    "slowapi>=0.1.9",
 ]
 
 [project.optional-dependencies]

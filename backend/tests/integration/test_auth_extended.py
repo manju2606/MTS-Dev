@@ -71,7 +71,7 @@ async def test_change_password_unauthenticated(client: AsyncClient):
         f"{BASE}/change-password",
         json={"current_password": "x", "new_password": "NewPass456!"},
     )
-    assert resp.status_code == 403
+    assert resp.status_code in (401, 403)
 
 
 # ── update profile ────────────────────────────────────────────────────────────

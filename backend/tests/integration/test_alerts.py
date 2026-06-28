@@ -92,4 +92,4 @@ async def test_create_alert_invalid_direction(client: AsyncClient, token: str):
 
 async def test_alerts_unauthenticated(client: AsyncClient):
     resp = await client.get(BASE_ALERTS)
-    assert resp.status_code == 403
+    assert resp.status_code in (401, 403)

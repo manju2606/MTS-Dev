@@ -4,9 +4,12 @@ from uuid import UUID
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from app.api.v1.router import router as api_v1_router
 from app.core.config import settings
+from app.core.limiter import limiter
 from app.core.logging import configure_logging
 from app.core.security import decode_token
 from app.infra.market_data.yfinance_client import YFinanceClient
@@ -25,6 +28,9 @@ app = FastAPI(
     docs_url="/api/docs" if settings.DEBUG else None,
     redoc_url="/api/redoc" if settings.DEBUG else None,
 )
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
 app.add_middleware(
     CORSMiddleware,
@@ -45,10 +51,9 @@ async def health() -> dict:
 @app.websocket("/ws/prices")
 async def price_stream(websocket: WebSocket, token: str, symbols: str):
     """Stream live prices every 5 s for a comma-separated symbol list."""
-    # Authenticate
     try:
         payload = decode_token(token)
-        UUID(payload["sub"])   # validates token has a valid user UUID
+        UUID(payload["sub"])
     except Exception:
         await websocket.close(code=4001)
         return

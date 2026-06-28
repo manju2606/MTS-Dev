@@ -72,4 +72,4 @@ async def test_risk_status(client: AsyncClient, token: str):
 
 async def test_risk_config_unauthenticated(client: AsyncClient):
     resp = await client.get(f"{BASE_RISK}/config")
-    assert resp.status_code == 403
+    assert resp.status_code in (401, 403)

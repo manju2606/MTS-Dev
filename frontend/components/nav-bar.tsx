@@ -15,6 +15,7 @@ export function NavBar({ active }: { active: string }) {
 
   const nav: { href: string; label: string }[] = [
     { href: '/dashboard', label: 'Watchlist' },
+    { href: '/portfolio', label: 'Portfolio' },
     { href: '/market-pulse', label: 'Market Pulse' },
     { href: '/research', label: 'Research' },
     { href: '/ai', label: 'AI Analysis' },

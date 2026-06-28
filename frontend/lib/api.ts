@@ -372,6 +372,152 @@ export async function seedWatchlistDefaults(
   return res.json()
 }
 
+// ── Portfolio ──────────────────────────────────────────────────────────────
+
+export type PortfolioSummary = {
+  total_invested: number
+  unrealized_pnl: number
+  realized_pnl: number
+  total_pnl: number
+  open_positions: number
+  closed_trades: number
+  total_trades: number
+  winners: number
+  losers: number
+  win_rate: number
+}
+
+export type PortfolioPosition = {
+  id: string
+  symbol: string
+  exchange: string
+  signal: 'BUY' | 'SELL'
+  quantity: number
+  entry_price: number
+  current_price: number
+  stop_loss: number
+  target: number
+  invested: number
+  unrealized_pnl: number
+  unrealized_pnl_pct: number
+  days_held: number
+  ai_confidence: number | null
+  opened_at: string | null
+}
+
+export type PortfolioClosedTrade = {
+  id: string
+  symbol: string
+  exchange: string
+  signal: 'BUY' | 'SELL'
+  quantity: number
+  entry_price: number
+  exit_price: number | null
+  pnl: number
+  pnl_pct: number
+  days_held: number
+  closed_at: string | null
+}
+
+export type EquityPoint = { time: number; value: number }
+
+export type PortfolioData = {
+  summary: PortfolioSummary
+  positions: PortfolioPosition[]
+  closed_trades: PortfolioClosedTrade[]
+  equity_curve: EquityPoint[]
+}
+
+export async function getPortfolio(token: string): Promise<PortfolioData> {
+  const res = await fetch(`${BASE}/api/v1/portfolio/summary`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error('Failed to fetch portfolio')
+  return res.json()
+}
+
+// ── Alerts ─────────────────────────────────────────────────────────────────
+
+export type AlertRule = {
+  id: string
+  symbol: string
+  price_target: number
+  direction: 'above' | 'below'
+  triggered: boolean
+  triggered_at: string | null
+  triggered_price: number | null
+  created_at: string
+}
+
+export async function listAlerts(token: string): Promise<AlertRule[]> {
+  const res = await fetch(`${BASE}/api/v1/alerts`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error('Failed to fetch alerts')
+  return res.json()
+}
+
+export async function createAlert(
+  token: string,
+  symbol: string,
+  price_target: number,
+  direction: 'above' | 'below',
+): Promise<AlertRule> {
+  const res = await fetch(`${BASE}/api/v1/alerts`, {
+    method: 'POST',
+    headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ symbol, price_target, direction }),
+  })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to create alert')
+  }
+  return res.json()
+}
+
+export async function deleteAlert(token: string, id: string): Promise<void> {
+  await fetch(`${BASE}/api/v1/alerts/${id}`, { method: 'DELETE', headers: authHeaders(token) })
+}
+
+export async function checkAlerts(token: string): Promise<AlertRule[]> {
+  const res = await fetch(`${BASE}/api/v1/alerts/check`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  })
+  if (!res.ok) return []
+  return res.json()
+}
+
+// ── Trade Journal ──────────────────────────────────────────────────────────
+
+export type JournalEntry = {
+  trade_id: string
+  notes: string
+  rating: number
+  tags: string[]
+  created_at: string
+  updated_at: string
+}
+
+export async function getJournalEntry(token: string, tradeId: string): Promise<JournalEntry | null> {
+  const res = await fetch(`${BASE}/api/v1/journal/${tradeId}`, { headers: authHeaders(token) })
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error('Failed to fetch journal entry')
+  return res.json()
+}
+
+export async function saveJournalEntry(
+  token: string,
+  tradeId: string,
+  notes: string,
+  rating: number,
+  tags: string[],
+): Promise<JournalEntry> {
+  const res = await fetch(`${BASE}/api/v1/journal/${tradeId}`, {
+    method: 'POST',
+    headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ notes, rating, tags }),
+  })
+  if (!res.ok) throw new Error('Failed to save journal entry')
+  return res.json()
+}
+
 // ── Legacy ──────────────────────────────────────────────────────────────────
 
 export async function seedDefaultWatchlist(token: string): Promise<{ added: number }> {

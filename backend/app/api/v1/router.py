@@ -3,13 +3,16 @@ from fastapi import APIRouter
 from app.api.v1 import (
     admin,
     ai,
+    alerts,
     auth,
     backtest,
     broker,
+    journal,
     live,
     market_pulse,
     ml_api,
     paper,
+    portfolio,
     research,
     risk,
     scanner,
@@ -28,3 +31,6 @@ router.include_router(ml_api.router)
 router.include_router(admin.router)
 router.include_router(research.router)
 router.include_router(market_pulse.router)
+router.include_router(portfolio.router)
+router.include_router(alerts.router)
+router.include_router(journal.router)

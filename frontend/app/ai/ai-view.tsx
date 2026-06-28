@@ -1,36 +1,13 @@
 'use client'
 
-import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { analyzeBatch, getWatchlist } from '@/lib/api'
-import type { AIRecommendation } from '@/lib/api'
+import { analyzeBatch, getWatchlistItems, listWatchlists } from '@/lib/api'
+import type { AIRecommendation, Watchlist } from '@/lib/api'
+import { NavBar } from '@/components/nav-bar'
+import Link from 'next/link'
 
 type Signal = 'BUY' | 'SELL' | 'HOLD'
-
-const NAV = 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100'
-
-function NavBar() {
-  const router = useRouter()
-  function signOut() { localStorage.removeItem('mts_token'); router.replace('/login') }
-  return (
-    <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-        <div className="flex items-center gap-6">
-          <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Manju Trade AI Pro</span>
-          <nav className="flex items-center gap-4 text-xs">
-            <Link href="/dashboard" className={NAV}>Watchlist</Link>
-            <span className="font-medium text-zinc-900 dark:text-zinc-50">AI Analysis</span>
-            <Link href="/risk" className={NAV}>Risk</Link>
-            <Link href="/backtest" className={NAV}>Backtest</Link>
-            <Link href="/paper" className={NAV}>Paper Trading</Link>
-          </nav>
-        </div>
-        <button onClick={signOut} className={`text-xs ${NAV}`}>Sign out</button>
-      </div>
-    </header>
-  )
-}
 
 function SignalBadge({ signal }: { signal: Signal }) {
   const cls =
@@ -61,9 +38,12 @@ function ConfBar({ pct }: { pct: number }) {
 
 function RecCard({ rec }: { rec: AIRecommendation }) {
   const sym = rec.symbol.replace(/\.(NS|BO)$/, '')
-  const rrColor = rec.risk_reward_ratio >= 2 ? 'text-emerald-600 dark:text-emerald-400'
-    : rec.risk_reward_ratio >= 1.5 ? 'text-amber-600 dark:text-amber-400'
-    : 'text-red-500 dark:text-red-400'
+  const rrColor =
+    rec.risk_reward_ratio >= 2
+      ? 'text-emerald-600 dark:text-emerald-400'
+      : rec.risk_reward_ratio >= 1.5
+        ? 'text-amber-600 dark:text-amber-400'
+        : 'text-red-500 dark:text-red-400'
 
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
@@ -125,53 +105,69 @@ function RecCard({ rec }: { rec: AIRecommendation }) {
 export default function AIView() {
   const router = useRouter()
   const tokenRef = useRef('')
+  const [watchlists, setWatchlists] = useState<Watchlist[]>([])
+  const [selectedId, setSelectedId] = useState<string>('')
   const [recs, setRecs] = useState<AIRecommendation[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [authChecked, setAuthChecked] = useState(false)
 
   useEffect(() => {
     const t = localStorage.getItem('mts_token')
     if (!t) { router.replace('/login'); return }
     tokenRef.current = t
-    setAuthChecked(true)
+    listWatchlists(t).then(wls => {
+      setWatchlists(wls)
+      if (wls.length > 0) setSelectedId(wls[0].id)
+    }).catch(() => {})
   }, [router])
 
   const analyzeAll = useCallback(async () => {
+    if (!selectedId) { setError('Select a watchlist first.'); return }
     setLoading(true)
     setError(null)
     try {
-      const wl = await getWatchlist(tokenRef.current)
-      if (wl.length === 0) { setError('Your watchlist is empty. Add symbols on the dashboard first.'); return }
-      const results = await analyzeBatch(tokenRef.current, wl.map(i => i.symbol))
+      const items = await getWatchlistItems(tokenRef.current, selectedId)
+      if (items.length === 0) { setError('This watchlist is empty. Add symbols on the dashboard.'); return }
+      const results = await analyzeBatch(tokenRef.current, items.map(i => i.symbol))
       setRecs(results)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Analysis failed')
     } finally {
       setLoading(false)
     }
-  }, [])
-
-  if (!authChecked) return null
+  }, [selectedId])
 
   return (
     <div className="min-h-full bg-zinc-50 dark:bg-zinc-950">
-      <NavBar />
+      <NavBar active="AI Analysis" />
       <main className="mx-auto max-w-6xl px-4 py-8">
-        <div className="mb-6 flex items-center justify-between">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">AI Analysis</h1>
             <p className="text-xs text-zinc-400">
-              Technical analysis on your watchlist — Claude if API key set, rule-based otherwise
+              Technical analysis — Claude if API key set, rule-based otherwise
             </p>
           </div>
-          <button
-            onClick={analyzeAll}
-            disabled={loading}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {loading ? 'Analysing…' : 'Analyse All'}
-          </button>
+          <div className="flex items-center gap-2">
+            {watchlists.length > 0 && (
+              <select
+                value={selectedId}
+                onChange={e => setSelectedId(e.target.value)}
+                className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+              >
+                {watchlists.map(w => (
+                  <option key={w.id} value={w.id}>{w.name}</option>
+                ))}
+              </select>
+            )}
+            <button
+              onClick={analyzeAll}
+              disabled={loading || !selectedId}
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {loading ? 'Analysing…' : 'Analyse All'}
+            </button>
+          </div>
         </div>
 
         {error && (
@@ -191,7 +187,7 @@ export default function AIView() {
         {!loading && recs.length === 0 && !error && (
           <div className="rounded-xl border border-zinc-200 bg-white px-4 py-16 text-center dark:border-zinc-800 dark:bg-zinc-900">
             <p className="text-sm text-zinc-500">
-              Click <strong>Analyse All</strong> to get Claude&apos;s recommendations for your watchlist.
+              Select a watchlist and click <strong>Analyse All</strong>.
             </p>
           </div>
         )}

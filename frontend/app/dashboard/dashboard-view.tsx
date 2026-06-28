@@ -4,18 +4,22 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   addItemToWatchlist,
+  checkAlerts,
+  createAlert,
   createWatchlist,
+  deleteAlert,
   deleteWatchlist,
   getHistory,
   getMe,
   getQuote,
   getWatchlistItems,
+  listAlerts,
   listWatchlists,
   removeItemFromWatchlist,
   renameWatchlist,
   seedWatchlistDefaults,
 } from '@/lib/api'
-import type { ChartPeriod, HistoryBar, Quote, User, Watchlist, WatchlistItem } from '@/lib/api'
+import type { AlertRule, ChartPeriod, HistoryBar, Quote, User, Watchlist, WatchlistItem } from '@/lib/api'
 import { NavBar } from '@/components/nav-bar'
 import { SparkLine } from '@/components/spark-line'
 import { PriceChart } from '@/components/price-chart'
@@ -75,6 +79,14 @@ export default function DashboardView() {
 
   const [loading, setLoading] = useState(true)
   const [itemsLoading, setItemsLoading] = useState(false)
+
+  // Alerts
+  const [alerts, setAlerts] = useState<AlertRule[]>([])
+  const [triggeredAlerts, setTriggeredAlerts] = useState<AlertRule[]>([])
+  const [alertSymbol, setAlertSymbol] = useState<string | null>(null)
+  const [alertTarget, setAlertTarget] = useState('')
+  const [alertDir, setAlertDir] = useState<'above' | 'below'>('above')
+  const wsRef = useRef<WebSocket | null>(null)
 
   // Watchlist sidebar state
   const [creating, setCreating] = useState(false)
@@ -159,12 +171,41 @@ export default function DashboardView() {
       .finally(() => setLoading(false))
   }, [router, loadItems])
 
-  // Refresh quotes every 30 s
+  // WebSocket live prices — reconnects on symbol list change
   useEffect(() => {
-    if (items.length === 0) return
-    const id = setInterval(() => fetchQuotes(items), 30_000)
+    if (items.length === 0 || !tokenRef.current) return
+    const symbols = items.map(i => i.symbol).join(',')
+    const wsUrl = `ws://localhost:8000/ws/prices?token=${encodeURIComponent(tokenRef.current)}&symbols=${encodeURIComponent(symbols)}`
+
+    const connect = () => {
+      const ws = new WebSocket(wsUrl)
+      wsRef.current = ws
+      ws.onmessage = e => {
+        try {
+          const data = JSON.parse(e.data) as Record<string, Quote>
+          setQuotes(prev => ({ ...prev, ...data }))
+        } catch { /* ignore */ }
+      }
+      ws.onclose = () => {
+        // Fallback poll every 30 s if WS disconnects
+        const id = setTimeout(() => { if (!wsRef.current || wsRef.current.readyState > 1) connect() }, 30_000)
+        return () => clearTimeout(id)
+      }
+    }
+    connect()
+    return () => { wsRef.current?.close(); wsRef.current = null }
+  }, [items])
+
+  // Check price alerts every 60 s
+  useEffect(() => {
+    if (!tokenRef.current) return
+    const check = async () => {
+      const triggered = await checkAlerts(tokenRef.current).catch(() => [])
+      if (triggered.length > 0) setTriggeredAlerts(prev => [...prev, ...triggered])
+    }
+    const id = setInterval(check, 60_000)
     return () => clearInterval(id)
-  }, [items, fetchQuotes])
+  }, [])
 
   // Load chart whenever symbol or period changes
   useEffect(() => {
@@ -452,6 +493,7 @@ export default function DashboardView() {
                     <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500">Volume</th>
                     <th className="px-4 py-3 text-center text-xs font-medium text-zinc-500">Score</th>
                     <th className="px-4 py-3 text-center text-xs font-medium text-zinc-500">Signal</th>
+                    <th className="px-4 py-3 text-xs font-medium text-zinc-500">Alert</th>
                     <th className="px-4 py-3" />
                   </tr>
                 </thead>
@@ -516,6 +558,15 @@ export default function DashboardView() {
                         <td className="px-4 py-3 text-center">
                           {sig ? <SignalBadge signal={sig.signal} /> : <span className="text-xs text-zinc-300">—</span>}
                         </td>
+                        <td className="px-4 py-3">
+                          <button
+                            title={`Set price alert for ${item.symbol}`}
+                            onClick={e => { e.stopPropagation(); setAlertSymbol(item.symbol); setAlertTarget(q ? String(q.price.toFixed(2)) : '') }}
+                            className="text-zinc-300 hover:text-amber-500 dark:text-zinc-600 dark:hover:text-amber-400"
+                          >
+                            🔔
+                          </button>
+                        </td>
                         <td className="px-4 py-3 text-right">
                           <button
                             onClick={e => handleRemove(item.symbol, e)}
@@ -550,6 +601,76 @@ export default function DashboardView() {
             <p className="mt-3 text-right text-xs text-zinc-400">{user.full_name}</p>
           )}
         </main>
+      </div>
+
+      {/* Alert creation modal */}
+      {alertSymbol && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setAlertSymbol(null)}>
+          <div className="w-80 rounded-2xl bg-white p-6 shadow-xl dark:bg-zinc-900" onClick={e => e.stopPropagation()}>
+            <h3 className="mb-4 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+              Price Alert — {alertSymbol.replace(/\.(NS|BO)$/, '')}
+            </h3>
+            <div className="mb-3 flex gap-2">
+              {(['above', 'below'] as const).map(d => (
+                <button
+                  key={d}
+                  onClick={() => setAlertDir(d)}
+                  className={`flex-1 rounded-lg py-2 text-xs font-medium ${alertDir === d ? 'bg-indigo-600 text-white' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'}`}
+                >
+                  Price goes {d}
+                </button>
+              ))}
+            </div>
+            <input
+              type="number"
+              value={alertTarget}
+              onChange={e => setAlertTarget(e.target.value)}
+              placeholder="Target price ₹"
+              className="mb-4 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={() => setAlertSymbol(null)}
+                className="flex-1 rounded-lg py-2 text-xs text-zinc-500 hover:text-zinc-700"
+              >Cancel</button>
+              <button
+                onClick={async () => {
+                  const t = parseFloat(alertTarget)
+                  if (!isNaN(t) && alertSymbol) {
+                    const a = await createAlert(tokenRef.current, alertSymbol, t, alertDir).catch(() => null)
+                    if (a) setAlerts(prev => [...prev, a])
+                    setAlertSymbol(null)
+                  }
+                }}
+                className="flex-1 rounded-lg bg-indigo-600 py-2 text-xs font-semibold text-white hover:bg-indigo-500"
+              >Set Alert</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Triggered alert toasts */}
+      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
+        {triggeredAlerts.map(a => (
+          <div
+            key={a.id}
+            className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 shadow-lg dark:border-amber-800 dark:bg-amber-950"
+          >
+            <span className="text-amber-600 dark:text-amber-400">🔔</span>
+            <div className="text-xs">
+              <p className="font-semibold text-zinc-900 dark:text-zinc-50">
+                {a.symbol.replace(/\.(NS|BO)$/, '')} alert triggered
+              </p>
+              <p className="text-zinc-500">
+                Price {a.direction} ₹{a.price_target} — current ₹{a.triggered_price?.toFixed(2)}
+              </p>
+            </div>
+            <button
+              onClick={() => setTriggeredAlerts(prev => prev.filter(x => x.id !== a.id))}
+              className="ml-2 text-zinc-400 hover:text-zinc-700"
+            >×</button>
+          </div>
+        ))}
       </div>
     </div>
   )

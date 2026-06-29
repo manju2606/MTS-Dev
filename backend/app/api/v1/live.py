@@ -3,15 +3,18 @@
 from dataclasses import asdict
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from app.api.deps import CurrentUser, RiskDep
+from app.api.deps import CurrentUser, RiskDep, require_role
 from app.domain.models.order import LiveOrder
+from app.domain.models.user import UserRole
 from app.infra.brokers import session_store
 from app.infra.brokers.simulated import SimulatedBroker
 
 router = APIRouter(prefix="/live", tags=["live-trading"])
+
+_trader_or_admin = Depends(require_role(UserRole.ADMIN, UserRole.TRADER))
 
 
 def _get_broker(user_id: str):
@@ -39,7 +42,7 @@ class PlaceOrderRequest(BaseModel):
     target: float | None = None
 
 
-@router.post("/orders", status_code=status.HTTP_201_CREATED)
+@router.post("/orders", status_code=status.HTTP_201_CREATED, dependencies=[_trader_or_admin])
 async def place_live_order(
     body: PlaceOrderRequest,
     current_user: CurrentUser,
@@ -92,7 +95,7 @@ async def list_orders(current_user: CurrentUser) -> list[dict]:
     return []
 
 
-@router.delete("/orders/{broker_order_id}")
+@router.delete("/orders/{broker_order_id}", dependencies=[_trader_or_admin])
 async def cancel_order(broker_order_id: str, current_user: CurrentUser) -> dict:
     broker = _get_broker(str(current_user.id))
     cancelled = await broker.cancel_order(broker_order_id)

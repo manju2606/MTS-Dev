@@ -15,7 +15,6 @@ function LiveViewInner() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
-  const [authChecked, setAuthChecked] = useState(false)
 
   const [form, setForm] = useState({
     symbol: params.get('symbol')?.replace(/\.(NS|BO)$/, '') ?? '',
@@ -37,9 +36,10 @@ function LiveViewInner() {
     const t = localStorage.getItem('mts_token')
     if (!t) { router.replace('/login'); return }
     tokenRef.current = t
-    setAuthChecked(true)
-    refresh(t).catch(() => null)
-  }, [router, refresh])
+    Promise.all([listLiveOrders(t), getLivePositions(t)])
+      .then(([ords, pos]) => { setOrders(ords); setPositions(pos) })
+      .catch(() => null)
+  }, [router])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -68,7 +68,6 @@ function LiveViewInner() {
     } catch (e) { setError(e instanceof Error ? e.message : 'Cancel failed') }
   }
 
-  if (!authChecked) return null
 
   const signalColor = (s: string) => s === 'BUY'
     ? 'text-emerald-600 dark:text-emerald-400'

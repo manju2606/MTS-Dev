@@ -7,6 +7,7 @@ from app.api.v1 import (
     auth,
     backtest,
     broker,
+    discovery,
     journal,
     live,
     market_pulse,
@@ -36,3 +37,4 @@ router.include_router(portfolio.router)
 router.include_router(alerts.router)
 router.include_router(journal.router)
 router.include_router(usage.router)
+router.include_router(discovery.router)

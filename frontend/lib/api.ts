@@ -1058,6 +1058,92 @@ export type EnsembleSignal = {
   }
 }
 
+// ── Discovery Engine ─────────────────────────────────────────────────────────
+
+export type StockScore = {
+  id: string
+  symbol: string
+  name: string
+  score: number
+  signal: 'STRONG_BUY' | 'BUY' | 'WATCH' | 'NEUTRAL' | 'SELL' | 'STRONG_SELL'
+  confidence: number
+  entry_price: number
+  stop_loss: number
+  targets: number[]
+  holding_period: string
+  risk_reward_ratio: number
+  technical_score: number
+  news_score: number
+  ml_score: number
+  social_score: number
+  patterns: string[]
+  explanation: string
+  scanned_at: string
+}
+
+export type DiscoveryStatus = {
+  last_scan_at: string | null
+  next_scan_at: string | null
+  stocks_scanned: number
+  is_running: boolean
+  scheduler_active: boolean
+  universe_size: number
+  social_providers: Record<string, boolean>
+}
+
+export type DiscoveryNewsItem = {
+  id: string
+  title: string
+  source: string
+  url: string
+  published_at: string
+  sentiment_score: number
+  mentioned_symbols: string[]
+  summary: string
+}
+
+export async function getTopPicks(
+  token: string,
+  limit = 20,
+  signal?: string,
+  minScore = 0,
+): Promise<StockScore[]> {
+  const params = new URLSearchParams({ limit: String(limit), min_score: String(minScore) })
+  if (signal) params.set('signal', signal)
+  const res = await fetch(`${BASE}/api/v1/discovery/top-picks?${params}`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+export async function getDiscoveryStatus(token: string): Promise<DiscoveryStatus> {
+  const res = await fetch(`${BASE}/api/v1/discovery/status`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+export async function getDiscoveryNews(
+  token: string,
+  symbol?: string,
+  limit = 50,
+): Promise<DiscoveryNewsItem[]> {
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (symbol) params.set('symbol', symbol)
+  const res = await fetch(`${BASE}/api/v1/discovery/news?${params}`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+export async function triggerDiscoveryScan(
+  token: string,
+): Promise<{ message: string; started: boolean }> {
+  const res = await fetch(`${BASE}/api/v1/discovery/scan`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
 export async function getEnsembleSignal(token: string, symbol: string): Promise<EnsembleSignal> {
   const res = await fetch(`${BASE}/api/v1/ai/ensemble/${encodeURIComponent(symbol)}`, {
     method: 'POST',

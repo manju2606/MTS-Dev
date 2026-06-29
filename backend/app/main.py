@@ -18,7 +18,13 @@ from app.infra.market_data.yfinance_client import YFinanceClient
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     configure_logging()
+    if settings.ENVIRONMENT != "testing":
+        from app.core.scheduler import start_scheduler
+        start_scheduler()
     yield
+    if settings.ENVIRONMENT != "testing":
+        from app.core.scheduler import stop_scheduler
+        stop_scheduler()
 
 
 app = FastAPI(

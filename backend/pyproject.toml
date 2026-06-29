@@ -24,6 +24,8 @@ dependencies = [
     "numpy>=1.26.0",
     "kiteconnect>=5.0.1",
     "slowapi>=0.1.9",
+    "feedparser>=6.0.0",
+    "apscheduler>=3.10.0",
 ]
 
 [project.optional-dependencies]

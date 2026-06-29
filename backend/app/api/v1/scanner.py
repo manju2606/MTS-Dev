@@ -4,12 +4,13 @@ from dataclasses import asdict
 from uuid import UUID
 
 import yfinance as yf
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 
-from app.api.deps import CurrentUser, MarketDataDep, WatchlistDep
+from app.api.deps import CurrentUser, MarketDataDep, WatchlistDep, require_role
 from app.core.limiter import limiter
+from app.domain.models.user import UserRole
 from app.domain.models.watchlist import WatchlistItem
 from app.infra.scanner.universe import SECTORS
 
@@ -18,6 +19,8 @@ _SYMBOL_SECTOR: dict[str, str] = {
 }
 
 router = APIRouter(prefix="/scanner", tags=["scanner"])
+
+_trader_or_admin = Depends(require_role(UserRole.ADMIN, UserRole.TRADER))
 
 _DEFAULT_SYMBOLS = [
     "RELIANCE.NS",
@@ -148,7 +151,7 @@ async def list_watchlists(current_user: CurrentUser, repo: WatchlistDep) -> list
     return [asdict(wl) for wl in wls]
 
 
-@router.post("/watchlists", status_code=status.HTTP_201_CREATED)
+@router.post("/watchlists", status_code=status.HTTP_201_CREATED, dependencies=[_trader_or_admin])
 async def create_watchlist(
     body: WatchlistCreateRequest, current_user: CurrentUser, repo: WatchlistDep
 ) -> dict:
@@ -167,7 +170,7 @@ async def create_watchlist(
         ) from exc
 
 
-@router.patch("/watchlists/{watchlist_id}")
+@router.patch("/watchlists/{watchlist_id}", dependencies=[_trader_or_admin])
 async def rename_watchlist(
     watchlist_id: UUID,
     body: WatchlistRenameRequest,
@@ -191,7 +194,11 @@ async def rename_watchlist(
         ) from exc
 
 
-@router.delete("/watchlists/{watchlist_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/watchlists/{watchlist_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[_trader_or_admin],
+)
 async def delete_watchlist(
     watchlist_id: UUID, current_user: CurrentUser, repo: WatchlistDep
 ) -> None:
@@ -211,7 +218,11 @@ async def list_watchlist_items(
     return [asdict(item) for item in items]
 
 
-@router.post("/watchlists/{watchlist_id}/items", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/watchlists/{watchlist_id}/items",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[_trader_or_admin],
+)
 async def add_item_to_watchlist(
     watchlist_id: UUID,
     body: WatchlistAddItemRequest,
@@ -251,6 +262,7 @@ async def add_item_to_watchlist(
 @router.delete(
     "/watchlists/{watchlist_id}/items/{symbol}",
     status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[_trader_or_admin],
 )
 async def remove_item_from_watchlist(
     watchlist_id: UUID,
@@ -265,7 +277,7 @@ async def remove_item_from_watchlist(
         )
 
 
-@router.post("/watchlists/{watchlist_id}/seed-defaults")
+@router.post("/watchlists/{watchlist_id}/seed-defaults", dependencies=[_trader_or_admin])
 async def seed_watchlist_defaults(
     watchlist_id: UUID,
     current_user: CurrentUser,
@@ -310,7 +322,7 @@ async def get_watchlist(current_user: CurrentUser, repo: WatchlistDep) -> list[d
     return [asdict(item) for item in items]
 
 
-@router.post("/watchlist", status_code=status.HTTP_201_CREATED)
+@router.post("/watchlist", status_code=status.HTTP_201_CREATED, dependencies=[_trader_or_admin])
 async def add_to_watchlist(
     body: WatchlistAddRequest,
     current_user: CurrentUser,
@@ -346,7 +358,7 @@ async def add_to_watchlist(
         ) from exc
 
 
-@router.post("/watchlist/seed-defaults")
+@router.post("/watchlist/seed-defaults", dependencies=[_trader_or_admin])
 async def seed_default_watchlist(
     current_user: CurrentUser,
     repo: WatchlistDep,
@@ -361,7 +373,11 @@ async def seed_default_watchlist(
     return await seed_watchlist_defaults(wl.id, current_user, repo, market_data)
 
 
-@router.delete("/watchlist/{symbol}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/watchlist/{symbol}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[_trader_or_admin],
+)
 async def remove_from_watchlist(
     symbol: str, current_user: CurrentUser, repo: WatchlistDep
 ) -> None:

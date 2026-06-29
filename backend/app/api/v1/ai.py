@@ -2,15 +2,18 @@ import asyncio
 import contextlib
 from dataclasses import asdict
 
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 
-from app.api.deps import AIDep, AISignalDep, CurrentUser, MarketDataDep
+from app.api.deps import AIDep, AISignalDep, CurrentUser, MarketDataDep, require_role
 from app.core.limiter import limiter
 from app.domain.models.ai_signal import AISignal
+from app.domain.models.user import UserRole
 from app.infra.ai.technical import fetch_indicators
 
 router = APIRouter(prefix="/ai", tags=["ai-engine"])
+
+_trader_or_admin = Depends(require_role(UserRole.ADMIN, UserRole.TRADER))
 
 
 def _norm(symbol: str) -> str:
@@ -51,7 +54,7 @@ class BatchRequest(BaseModel):
 
 
 # batch must be registered BEFORE /{symbol} — FastAPI matches routes in order
-@router.post("/analyze/batch")
+@router.post("/analyze/batch", dependencies=[_trader_or_admin])
 @limiter.limit("10/minute")
 async def analyze_batch(
     request: Request,
@@ -79,7 +82,7 @@ async def analyze_batch(
     return [r for r in results if r is not None]
 
 
-@router.post("/analyze/{symbol}")
+@router.post("/analyze/{symbol}", dependencies=[_trader_or_admin])
 @limiter.limit("10/minute")
 async def analyze_symbol(
     request: Request,

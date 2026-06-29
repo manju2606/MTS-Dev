@@ -5,12 +5,15 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from app.api.deps import CurrentUser, MarketDataDep
+from app.api.deps import CurrentUser, MarketDataDep, require_role
+from app.domain.models.user import UserRole
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
+
+_trader_or_admin = Depends(require_role(UserRole.ADMIN, UserRole.TRADER))
 
 
 @dataclass
@@ -58,7 +61,7 @@ async def list_alerts(current_user: CurrentUser) -> list[dict]:
     return [_alert_dict(a) for a in _user_alerts(str(current_user.id))]
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED, dependencies=[_trader_or_admin])
 async def create_alert(
     body: CreateAlertRequest,
     current_user: CurrentUser,
@@ -81,7 +84,11 @@ async def create_alert(
     return _alert_dict(alert)
 
 
-@router.delete("/{alert_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{alert_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[_trader_or_admin],
+)
 async def delete_alert(alert_id: str, current_user: CurrentUser) -> None:
     alerts = _user_alerts(str(current_user.id))
     before = len(alerts)

@@ -4,10 +4,10 @@ import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { NavBar } from '@/components/nav-bar'
 import {
-  closeTrade, getJournalEntry, getQuote,
+  closeTrade, getJournalEntry, getMe, getQuote,
   listTrades, placeTrade, saveJournalEntry,
 } from '@/lib/api'
-import type { JournalEntry, PlaceTradeBody, Trade } from '@/lib/api'
+import type { JournalEntry, PlaceTradeBody, Trade, User } from '@/lib/api'
 
 type Tab = 'open' | 'closed'
 type JournalDraft = { notes: string; rating: number; tags: string }
@@ -50,6 +50,7 @@ export default function PaperView() {
   const searchParams = useSearchParams()
   const tokenRef = useRef<string>('')
 
+  const [user, setUser] = useState<User | null>(null)
   const [trades, setTrades] = useState<Trade[]>([])
   const [prices, setPrices] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
@@ -96,6 +97,7 @@ export default function PaperView() {
     const t = localStorage.getItem('mts_token')
     if (!t) { router.replace('/login'); return }
     tokenRef.current = t
+    getMe(t).then(setUser).catch(() => {})
     listTrades(t)
       .then(async (all) => {
         setTrades(all)
@@ -203,7 +205,12 @@ export default function PaperView() {
 
       <main className="mx-auto max-w-5xl px-4 py-8 space-y-8">
 
-        {/* Place trade form */}
+        {/* Place trade form — hidden for viewers */}
+        {user?.role === 'viewer' ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+            Your account has <strong>viewer</strong> access — placing and closing trades requires a Trader or Admin role. Contact your administrator to upgrade your role.
+          </div>
+        ) : (
         <section>
           <h1 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50">Place Trade</h1>
           <div className="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
@@ -266,6 +273,7 @@ export default function PaperView() {
             {formError && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{formError}</p>}
           </div>
         </section>
+        )}
 
         {/* Trade list */}
         <section>
@@ -329,13 +337,15 @@ export default function PaperView() {
                         </td>
                         <td className={TD_R}>{trade.risk_reward_ratio.toFixed(2)}</td>
                         <td className="px-3 py-3 text-right">
-                          <button
-                            onClick={() => handleClose(trade.id)}
-                            disabled={closing === trade.id}
-                            className="rounded-md bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600"
-                          >
-                            {closing === trade.id ? '…' : 'Close'}
-                          </button>
+                          {user?.role !== 'viewer' && (
+                            <button
+                              onClick={() => handleClose(trade.id)}
+                              disabled={closing === trade.id}
+                              className="rounded-md bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600"
+                            >
+                              {closing === trade.id ? '…' : 'Close'}
+                            </button>
+                          )}
                         </td>
                       </tr>
                     )

@@ -1,32 +1,103 @@
-"""Thin email client — uses Resend if RESEND_API_KEY is configured, logs otherwise."""
+"""Email sender — tries SMTP first, then Resend API, then logs to stdout.
+
+Priority:
+  1. SMTP (Gmail or any SMTP server) — set SMTP_USER + SMTP_PASSWORD
+  2. Resend API — set RESEND_API_KEY
+  3. Dev fallback — logs the subject to stdout (no credentials needed)
+
+For Gmail: enable 2FA then generate an App Password at
+https://myaccount.google.com/apppasswords — use that as SMTP_PASSWORD.
+"""
+
+import asyncio
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
 import structlog
 
-logger = structlog.get_logger()
+log = structlog.get_logger()
+
+
+def _send_smtp_sync(
+    *,
+    host: str,
+    port: int,
+    user: str,
+    password: str,
+    from_addr: str,
+    to: str,
+    subject: str,
+    html: str,
+) -> None:
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = from_addr
+    msg["To"] = to
+    msg.attach(MIMEText(html, "html", "utf-8"))
+    with smtplib.SMTP(host, port, timeout=30) as smtp:
+        smtp.ehlo()
+        smtp.starttls()
+        smtp.ehlo()
+        smtp.login(user, password)
+        smtp.sendmail(from_addr, to, msg.as_string())
 
 
 async def send_email(*, to: str, subject: str, html: str) -> None:
-    try:
-        from app.core.config import settings
-        api_key = getattr(settings, "RESEND_API_KEY", None)
-    except Exception:
-        api_key = None
+    from app.core.config import settings
 
-    if api_key:
-        import httpx
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                "https://api.resend.com/emails",
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json={
-                    "from": "Manju Trade AI Pro <noreply@mts.app>",
-                    "to": [to],
-                    "subject": subject,
-                    "html": html,
-                },
-                timeout=10,
+    # ── 1. SMTP ──────────────────────────────────────────────────────────────
+    if settings.SMTP_USER and settings.SMTP_PASSWORD:
+        from_addr = settings.SMTP_FROM or settings.SMTP_USER
+        try:
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                None,
+                lambda: _send_smtp_sync(
+                    host=settings.SMTP_HOST,
+                    port=settings.SMTP_PORT,
+                    user=settings.SMTP_USER,  # type: ignore[arg-type]
+                    password=settings.SMTP_PASSWORD,  # type: ignore[arg-type]
+                    from_addr=from_addr,
+                    to=to,
+                    subject=subject,
+                    html=html,
+                ),
             )
-            if resp.status_code >= 400:
-                logger.warning("email_send_failed", status=resp.status_code, to=to)
-    else:
-        logger.info("email_dev_log", to=to, subject=subject)
+            log.info("email.sent.smtp", to=to, subject=subject)
+            return
+        except Exception as exc:
+            log.warning("email.smtp.failed", error=str(exc), fallback="resend")
+
+    # ── 2. Resend API ─────────────────────────────────────────────────────────
+    if settings.RESEND_API_KEY:
+        import httpx
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.post(
+                    "https://api.resend.com/emails",
+                    headers={
+                        "Authorization": f"Bearer {settings.RESEND_API_KEY}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "from": f"Manju Trade AI Pro <{settings.RESEND_FROM}>",
+                        "to": [to],
+                        "subject": subject,
+                        "html": html,
+                    },
+                )
+                if resp.status_code < 400:
+                    log.info("email.sent.resend", to=to, subject=subject)
+                    return
+                log.warning("email.resend.failed", status=resp.status_code, body=resp.text)
+        except Exception as exc:
+            log.warning("email.resend.error", error=str(exc))
+
+    # ── 3. Dev fallback ───────────────────────────────────────────────────────
+    log.info(
+        "email.dev_log",
+        to=to,
+        subject=subject,
+        hint="Set SMTP_USER+SMTP_PASSWORD or RESEND_API_KEY to actually send",
+    )

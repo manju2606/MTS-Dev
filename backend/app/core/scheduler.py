@@ -35,6 +35,17 @@ def last_scan_info() -> tuple[datetime | None, int]:
     return _last_scan_at, _last_scan_count
 
 
+async def run_morning_report() -> None:
+    """08:00 IST weekdays: scan the full universe then email today's picks."""
+    log.info("scheduler.morning_report.start")
+    await run_full_scan()
+    try:
+        from app.infra.email.report import send_daily_report
+        await send_daily_report()
+    except Exception as exc:
+        log.error("scheduler.morning_report.email_error", error=str(exc))
+
+
 async def run_news_refresh() -> None:
     """Fetch latest news and persist to MongoDB. Fast (~10 s)."""
     try:
@@ -133,6 +144,22 @@ def start_scheduler() -> None:
         name="News Refresh",
         max_instances=1,
         misfire_grace_time=120,
+    )
+
+    # Daily 08:00 IST — full scan + email report (Mon–Fri)
+    _scheduler.add_job(
+        run_morning_report,
+        CronTrigger(
+            day_of_week="mon-fri",
+            hour=8,
+            minute=0,
+            second=0,
+            timezone="Asia/Kolkata",
+        ),
+        id="morning_report",
+        name="Morning Report (scan + email)",
+        max_instances=1,
+        misfire_grace_time=300,
     )
 
     _scheduler.start()

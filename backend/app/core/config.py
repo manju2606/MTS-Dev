@@ -23,8 +23,19 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str | None = None
     PAPER_CAPITAL: float = 100_000.0  # default paper trading capital in INR
 
-    # Email — Resend (optional; falls back to logging if not set)
+    # Email — SMTP (e.g. Gmail with App Password)
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USER: str | None = None      # your Gmail address
+    SMTP_PASSWORD: str | None = None  # Gmail App Password (not your regular password)
+    SMTP_FROM: str | None = None      # defaults to SMTP_USER if unset
+
+    # Email — Resend API (alternative to SMTP; used if SMTP_USER is not set)
     RESEND_API_KEY: str | None = None
+    RESEND_FROM: str = "noreply@manjutradeaipro.com"
+
+    # Daily report recipient — defaults to SMTP_USER if unset
+    REPORT_TO_EMAIL: str | None = None
 
     # Phase 3 — Zerodha Kite Connect
     KITE_API_KEY: str | None = None

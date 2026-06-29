@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { analyzeBatch, getAIHistory, getWatchlistItems, listWatchlists } from '@/lib/api'
-import type { AIRecommendation, AISignalRecord, Watchlist } from '@/lib/api'
+import { analyzeBatch, getAIHistory, getEnsembleSignal, getWatchlistItems, listWatchlists } from '@/lib/api'
+import type { AIRecommendation, AISignalRecord, EnsembleSignal, Watchlist } from '@/lib/api'
 import { NavBar } from '@/components/nav-bar'
 import Link from 'next/link'
 
@@ -102,6 +102,179 @@ function RecCard({ rec }: { rec: AIRecommendation }) {
   )
 }
 
+// ── Ensemble panel ───────────────────────────────────────────────────────────
+
+function EnsemblePanel({ tokenRef }: { tokenRef: React.RefObject<string> }) {
+  const [sym, setSym] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [result, setResult] = useState<EnsembleSignal | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  async function run(e: React.FormEvent) {
+    e.preventDefault()
+    if (!sym.trim()) return
+    setLoading(true); setError(null); setResult(null)
+    try {
+      setResult(await getEnsembleSignal(tokenRef.current, sym.trim()))
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Ensemble failed'
+      setError(msg.includes('429') ? 'Daily AI call limit reached.' : msg)
+    } finally { setLoading(false) }
+  }
+
+  const c = result?.consensus
+  const sigColor = c?.signal === 'BUY'
+    ? 'text-emerald-600 dark:text-emerald-400'
+    : c?.signal === 'SELL' ? 'text-red-500 dark:text-red-400' : 'text-amber-500'
+
+  return (
+    <div className="space-y-5">
+      <form onSubmit={run} className="flex gap-3">
+        <input
+          value={sym}
+          onChange={e => setSym(e.target.value)}
+          placeholder="Symbol (e.g. RELIANCE, TCS)"
+          className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+        />
+        <button
+          type="submit"
+          disabled={loading || !sym.trim()}
+          className="shrink-0 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-60"
+        >
+          {loading ? 'Running…' : 'Run Ensemble'}
+        </button>
+      </form>
+
+      {error && (
+        <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600 dark:bg-red-950 dark:text-red-300">{error}</p>
+      )}
+
+      {result && c && (
+        <div className="space-y-4">
+          {/* Consensus card */}
+          <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-5 dark:border-indigo-800 dark:bg-indigo-950/40">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-medium text-indigo-400">CONSENSUS</p>
+                <p className="text-base font-bold text-zinc-900 dark:text-zinc-50">
+                  {result.symbol.replace(/\.(NS|BO)$/, '')}
+                </p>
+              </div>
+              <span className={`text-xl font-extrabold ${sigColor}`}>{c.signal}</span>
+            </div>
+            <div className="mb-3">
+              <div className="flex items-center justify-between text-xs text-zinc-500">
+                <span>Confidence</span>
+                <span>{(c.confidence * 100).toFixed(0)}%</span>
+              </div>
+              <div className="mt-1 h-2 overflow-hidden rounded-full bg-indigo-100 dark:bg-indigo-900">
+                <div
+                  className="h-full rounded-full bg-indigo-500"
+                  style={{ width: `${c.confidence * 100}%` }}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-4 gap-2 text-center text-xs">
+              {[
+                { label: 'Entry', value: `₹${c.entry_price.toFixed(2)}`, cls: 'text-zinc-700 dark:text-zinc-200' },
+                { label: 'Stop', value: `₹${c.stop_loss.toFixed(2)}`, cls: 'text-red-500 dark:text-red-400' },
+                { label: 'Target', value: `₹${c.target.toFixed(2)}`, cls: 'text-emerald-600 dark:text-emerald-400' },
+                { label: 'R:R', value: c.risk_reward_ratio.toFixed(2), cls: 'text-zinc-700 dark:text-zinc-200' },
+              ].map(({ label, value, cls }) => (
+                <div key={label} className="rounded-lg bg-white px-2 py-2 dark:bg-zinc-900">
+                  <p className="text-zinc-400">{label}</p>
+                  <p className={`font-mono font-semibold ${cls}`}>{value}</p>
+                </div>
+              ))}
+            </div>
+            <p className="mt-3 text-xs italic text-indigo-600 dark:text-indigo-300">{c.explanation}</p>
+          </div>
+
+          {/* Per-engine breakdown */}
+          <div className="grid gap-4 sm:grid-cols-3">
+            {/* Local engine */}
+            {result.engines.local && (() => {
+              const e = result.engines.local!
+              return (
+                <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+                  <p className="mb-2 text-xs font-semibold text-zinc-400">Rule-based</p>
+                  <p className={`text-lg font-bold ${e.signal === 'BUY' ? 'text-emerald-600 dark:text-emerald-400' : e.signal === 'SELL' ? 'text-red-500 dark:text-red-400' : 'text-amber-500'}`}>
+                    {e.signal}
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-500">{(e.confidence * 100).toFixed(0)}% confidence</p>
+                  <p className="mt-2 text-xs italic text-zinc-400 line-clamp-3">{e.explanation}</p>
+                </div>
+              )
+            })()}
+
+            {/* ML engine */}
+            {result.engines.ml && (() => {
+              const ml = result.engines.ml!
+              const up = ml.prediction === 'UP'
+              return (
+                <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+                  <p className="mb-2 text-xs font-semibold text-zinc-400">ML Model</p>
+                  <p className={`text-lg font-bold ${up ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                    {ml.prediction}
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-500">{(ml.probability * 100).toFixed(0)}% probability</p>
+                  <p className="mt-1 text-xs text-zinc-500">CV accuracy: {(ml.accuracy_cv * 100).toFixed(0)}%</p>
+                  {Object.keys(ml.top_features ?? {}).length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {Object.entries(ml.top_features ?? {}).slice(0, 3).map(([k, v]) => (
+                        <div key={k} className="flex justify-between text-xs text-zinc-400">
+                          <span>{k}</span>
+                          <span>{(Number(v) * 100).toFixed(0)}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+
+            {/* Claude engine */}
+            {result.engines.claude && (() => {
+              const cl = result.engines.claude!
+              return (
+                <div className="rounded-xl border border-indigo-200 bg-white p-4 dark:border-indigo-900/30 dark:bg-zinc-900">
+                  <p className="mb-2 text-xs font-semibold text-indigo-400">✦ Claude</p>
+                  <p className={`text-lg font-bold ${cl.signal === 'BUY' ? 'text-emerald-600 dark:text-emerald-400' : cl.signal === 'SELL' ? 'text-red-500 dark:text-red-400' : 'text-amber-500'}`}>
+                    {cl.signal}
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-500">{(cl.confidence * 100).toFixed(0)}% confidence</p>
+                  <p className="mt-2 text-xs italic text-zinc-400 line-clamp-3">{cl.explanation}</p>
+                </div>
+              )
+            })()}
+
+            {/* Placeholder if Claude not configured */}
+            {!result.engines.claude && (
+              <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-zinc-200 p-4 dark:border-zinc-800">
+                <p className="text-xs font-semibold text-indigo-300">✦ Claude</p>
+                <p className="mt-1 text-center text-xs text-zinc-400">
+                  Set <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">ANTHROPIC_API_KEY</code> to enable
+                </p>
+              </div>
+            )}
+          </div>
+
+          {c.signal !== 'HOLD' && (
+            <Link
+              href={`/paper?symbol=${encodeURIComponent(result.symbol)}&signal=${c.signal}`}
+              className="inline-block rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+            >
+              Trade consensus →
+            </Link>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function AIView() {
   const router = useRouter()
   const tokenRef = useRef('')
@@ -110,7 +283,7 @@ export default function AIView() {
   const [recs, setRecs] = useState<AIRecommendation[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [tab, setTab] = useState<'signals' | 'history'>('signals')
+  const [tab, setTab] = useState<'signals' | 'history' | 'ensemble'>('signals')
   const [history, setHistory] = useState<AISignalRecord[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
 
@@ -156,22 +329,22 @@ export default function AIView() {
           <div>
             <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">AI Analysis</h1>
             <p className="text-xs text-zinc-400">
-              Technical analysis — Claude if API key set, rule-based otherwise
+              Rule-based + ML + Claude consensus — set <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">ANTHROPIC_API_KEY</code> to enable Claude
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            {tab === 'signals' && watchlists.length > 0 && (
-              <select
-                value={selectedId}
-                onChange={e => setSelectedId(e.target.value)}
-                className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
-              >
-                {watchlists.map(w => (
-                  <option key={w.id} value={w.id}>{w.name}</option>
-                ))}
-              </select>
-            )}
-            {tab === 'signals' && (
+          {tab === 'signals' && (
+            <div className="flex items-center gap-2">
+              {watchlists.length > 0 && (
+                <select
+                  value={selectedId}
+                  onChange={e => setSelectedId(e.target.value)}
+                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                >
+                  {watchlists.map(w => (
+                    <option key={w.id} value={w.id}>{w.name}</option>
+                  ))}
+                </select>
+              )}
               <button
                 onClick={analyzeAll}
                 disabled={loading || !selectedId}
@@ -179,23 +352,23 @@ export default function AIView() {
               >
                 {loading ? 'Analysing…' : 'Analyse All'}
               </button>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         {/* Tabs */}
         <div className="mb-6 flex gap-1 border-b border-zinc-200 dark:border-zinc-800">
-          {(['signals', 'history'] as const).map(t => (
+          {(['signals', 'ensemble', 'history'] as const).map(t => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`px-4 py-2 text-sm font-medium transition-colors capitalize ${
+              className={`px-4 py-2 text-sm font-medium transition-colors ${
                 tab === t
                   ? 'border-b-2 border-indigo-600 text-indigo-600 dark:text-indigo-400'
                   : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400'
               }`}
             >
-              {t === 'signals' ? 'Signals' : 'Signal History'}
+              {t === 'signals' ? 'Batch Signals' : t === 'ensemble' ? '✦ Ensemble' : 'Signal History'}
             </button>
           ))}
         </div>
@@ -225,6 +398,17 @@ export default function AIView() {
         {tab === 'signals' && !loading && recs.length > 0 && (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {recs.map(r => <RecCard key={r.id} rec={r} />)}
+          </div>
+        )}
+
+        {/* Ensemble tab */}
+        {tab === 'ensemble' && (
+          <div className="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
+            <p className="mb-1 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Multi-Engine Ensemble</p>
+            <p className="mb-5 text-xs text-zinc-400">
+              Runs Local rules + ML model + Claude (if configured) concurrently and aggregates a weighted consensus.
+            </p>
+            <EnsemblePanel tokenRef={tokenRef} />
           </div>
         )}
 

@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from app.api.deps import (
     AIDep,
     AISignalDep,
+    ClaudeDep,
     CurrentUser,
     MarketDataDep,
     check_ai_usage,
@@ -128,10 +129,11 @@ async def ensemble_signal(
     symbol: str,
     current_user: CurrentUser,
     market_data: MarketDataDep,
-    ai_client: AIDep,
+    claude_client: ClaudeDep,
     signal_repo: AISignalDep,
 ) -> dict:
-    """Combine Local AI + ML + Claude (if configured) into a single consensus signal."""
+    """Combine Local AI + ML + Claude (if API key set) into a single consensus signal."""
+    from app.infra.ai.local_engine import LocalAIClient
     from app.infra.ml.predictor import predict
 
     sym = _norm(symbol)
@@ -143,36 +145,47 @@ async def ensemble_signal(
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
-    # Run local AI and ML concurrently; Claude is optional (slow + costly)
-    local_task = asyncio.create_task(ai_client.analyze(symbol=sym, quote=quote, ta=ta))
-    ml_task = asyncio.create_task(predict(sym))
-    local_rec, ml_pred = await asyncio.gather(local_task, ml_task, return_exceptions=True)
+    # Always run Local and ML; Claude only when configured.
+    tasks = [
+        asyncio.create_task(LocalAIClient().analyze(symbol=sym, quote=quote, ta=ta)),
+        asyncio.create_task(predict(sym)),
+    ]
+    if claude_client:
+        tasks.append(asyncio.create_task(claude_client.analyze(symbol=sym, quote=quote, ta=ta)))
+
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    local_result = results[0]
+    ml_result = results[1]
+    claude_result = results[2] if claude_client else None
 
     engines: dict[str, object] = {}
+    votes: list[tuple[float, float]] = []  # (directional score, confidence)
 
-    if isinstance(local_rec, Exception):
-        local_rec = None
+    if not isinstance(local_result, Exception):
+        score = 1.0 if local_result.signal == "BUY" else (-1.0 if local_result.signal == "SELL" else 0.0)
+        votes.append((score, local_result.confidence))
+        engines["local"] = _serialize(local_result)
     else:
-        engines["local"] = _serialize(local_rec)
+        local_result = None
 
-    if isinstance(ml_pred, Exception):
-        ml_pred = None
-    else:
+    if not isinstance(ml_result, Exception):
+        score = 1.0 if ml_result.prediction == "UP" else -1.0
+        votes.append((score, ml_result.probability))
         engines["ml"] = {
-            "prediction": ml_pred.prediction,
-            "probability": ml_pred.probability,
-            "accuracy_cv": ml_pred.accuracy_cv,
-            "top_features": ml_pred.feature_importances,
+            "prediction": ml_result.prediction,
+            "probability": ml_result.probability,
+            "accuracy_cv": ml_result.accuracy_cv,
+            "top_features": ml_result.feature_importances,
         }
+    else:
+        ml_result = None
 
-    # Build consensus from available engines
-    votes: list[tuple[float, float]] = []  # (signal_score, confidence)
-    if local_rec is not None:
-        score = 1.0 if local_rec.signal == "BUY" else (-1.0 if local_rec.signal == "SELL" else 0.0)
-        votes.append((score, local_rec.confidence))
-    if ml_pred is not None:
-        score = 1.0 if ml_pred.prediction == "UP" else -1.0
-        votes.append((score, ml_pred.probability))
+    if claude_result is not None and not isinstance(claude_result, Exception):
+        score = 1.0 if claude_result.signal == "BUY" else (-1.0 if claude_result.signal == "SELL" else 0.0)
+        votes.append((score, claude_result.confidence))
+        engines["claude"] = _serialize(claude_result)
+    else:
+        claude_result = None
 
     if not votes:
         raise HTTPException(
@@ -184,18 +197,28 @@ async def ensemble_signal(
     avg_conf = sum(c for _, c in votes) / len(votes)
     consensus_signal = "BUY" if avg_score > 0.15 else ("SELL" if avg_score < -0.15 else "HOLD")
 
-    # Derive consensus price levels from local engine (most detailed), fall back to quote
-    entry = local_rec.entry_price if local_rec else quote.price
-    stop = local_rec.stop_loss if local_rec else round(quote.price * 0.95, 2)
-    target = local_rec.target if local_rec else round(quote.price * 1.10, 2)
-    rrr = round((target - entry) / (entry - stop), 2) if entry > stop else 0.0
-    holding = local_rec.holding_period if local_rec else "3–5 days"
+    # Price levels: prefer Claude (has narrative context), then local, then raw quote
+    price_source = claude_result or local_result
+    entry = price_source.entry_price if price_source else quote.price
+    stop = price_source.stop_loss if price_source else round(quote.price * 0.95, 2)
+    target = price_source.target if price_source else round(quote.price * 1.10, 2)
+    risk = abs(entry - stop)
+    rrr = round(abs(target - entry) / risk, 2) if risk > 0 else 0.0
+    holding = price_source.holding_period if price_source else "3–5 days"
 
     engine_names = list(engines.keys())
+    buy_count = sum(1 for s, _ in votes if s > 0)
+    sell_count = sum(1 for s, _ in votes if s < 0)
+    hold_count = len(votes) - buy_count - sell_count
+    vote_summary = f"BUY×{buy_count}" if buy_count else ""
+    if sell_count:
+        vote_summary += (" " if vote_summary else "") + f"SELL×{sell_count}"
+    if hold_count:
+        vote_summary += (" " if vote_summary else "") + f"HOLD×{hold_count}"
     explanation = (
-        f"Consensus: {len(votes)}/{len(engine_names)} engine(s) → {consensus_signal}. "
-        f"Engines: {', '.join(engine_names)}. "
-        f"Avg confidence: {avg_conf:.2f}."
+        f"{len(engine_names)} engine(s): {vote_summary} → {consensus_signal} "
+        f"(avg confidence {avg_conf:.0%}). "
+        f"Engines: {', '.join(engine_names)}."
     )
 
     consensus = {

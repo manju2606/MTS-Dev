@@ -145,6 +145,12 @@ def get_ai_client() -> ClaudeAIClient | LocalAIClient:
     return LocalAIClient()
 
 
+def get_claude_client() -> ClaudeAIClient | None:
+    if settings.ANTHROPIC_API_KEY:
+        return ClaudeAIClient(settings.ANTHROPIC_API_KEY)
+    return None
+
+
 CurrentUser = Annotated[User, Depends(get_current_user)]
 AISignalDep = Annotated[AISignalRepository, Depends(get_ai_signal_repo)]
 DBSession = Annotated[AsyncSession, Depends(get_db)]
@@ -153,3 +159,4 @@ WatchlistDep = Annotated[WatchlistRepository, Depends(get_watchlist_repo)]
 TradeDep = Annotated[TradeRepository, Depends(get_trade_repo)]
 RiskDep = Annotated[RiskEngine, Depends(get_risk_engine)]
 AIDep = Annotated[ClaudeAIClient | LocalAIClient, Depends(get_ai_client)]
+ClaudeDep = Annotated[ClaudeAIClient | None, Depends(get_claude_client)]

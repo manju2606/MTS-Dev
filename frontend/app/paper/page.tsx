@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import type { Metadata } from 'next'
 import PaperView from './paper-view'
 
@@ -6,5 +7,9 @@ export const metadata: Metadata = {
 }
 
 export default function PaperPage() {
-  return <PaperView />
+  return (
+    <Suspense>
+      <PaperView />
+    </Suspense>
+  )
 }

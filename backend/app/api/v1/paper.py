@@ -2,12 +2,15 @@ from dataclasses import asdict
 from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi import status as http_status
 from pydantic import BaseModel, Field
 
-from app.api.deps import CurrentUser, MarketDataDep, RiskDep, TradeDep
+from app.api.deps import CurrentUser, MarketDataDep, RiskDep, TradeDep, require_role
 from app.domain.models.trade import Trade, TradeMode, TradeSignal, TradeStatus
+from app.domain.models.user import UserRole
+
+_trader_or_admin = Depends(require_role(UserRole.ADMIN, UserRole.TRADER))
 
 router = APIRouter(prefix="/paper", tags=["paper-trading"])
 
@@ -27,7 +30,7 @@ class PlaceTradeRequest(BaseModel):
     quantity: int = Field(ge=1)
 
 
-@router.post("/trades", status_code=http_status.HTTP_201_CREATED)
+@router.post("/trades", status_code=http_status.HTTP_201_CREATED, dependencies=[_trader_or_admin])
 async def place_trade(
     body: PlaceTradeRequest,
     current_user: CurrentUser,
@@ -123,7 +126,7 @@ async def get_trade(
     return _trade_dict(trade)
 
 
-@router.post("/trades/{trade_id}/close")
+@router.post("/trades/{trade_id}/close", dependencies=[_trader_or_admin])
 async def close_trade(
     trade_id: UUID,
     current_user: CurrentUser,

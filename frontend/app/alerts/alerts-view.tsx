@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { deleteAlert, listAlerts } from '@/lib/api'
+import { createAlert, deleteAlert, listAlerts } from '@/lib/api'
 import type { AlertRule } from '@/lib/api'
 import { NavBar } from '@/components/nav-bar'
 
@@ -25,11 +25,20 @@ function StatusBadge({ rule }: { rule: AlertRule }) {
   )
 }
 
+const INPUT = 'rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-indigo-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500'
+
 export default function AlertsView() {
   const router = useRouter()
   const tokenRef = useRef('')
   const [alerts, setAlerts] = useState<AlertRule[]>([])
   const [loading, setLoading] = useState(true)
+
+  // Create form state
+  const [newSymbol, setNewSymbol] = useState('')
+  const [newTarget, setNewTarget] = useState('')
+  const [newDir, setNewDir] = useState<'above' | 'below'>('above')
+  const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
 
   useEffect(() => {
     const t = localStorage.getItem('mts_token')
@@ -43,6 +52,26 @@ export default function AlertsView() {
     setAlerts(prev => prev.filter(a => a.id !== id))
   }
 
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault()
+    setCreateError(null)
+    const price = parseFloat(newTarget)
+    if (!newSymbol.trim() || isNaN(price) || price <= 0) {
+      setCreateError('Symbol and a valid price are required.')
+      return
+    }
+    setCreating(true)
+    try {
+      const created = await createAlert(tokenRef.current, newSymbol.trim().toUpperCase(), price, newDir)
+      setAlerts(prev => [created, ...prev])
+      setNewSymbol(''); setNewTarget('')
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : 'Failed to create alert')
+    } finally {
+      setCreating(false)
+    }
+  }
+
   const active = alerts.filter(a => !a.triggered)
   const triggered = alerts.filter(a => a.triggered)
 
@@ -51,6 +80,68 @@ export default function AlertsView() {
       <NavBar active="Alerts" />
       <main className="mx-auto max-w-3xl px-4 py-8">
         <h1 className="mb-6 text-lg font-semibold text-zinc-900 dark:text-zinc-50">Price Alerts</h1>
+
+        {/* Create alert form */}
+        <div className="mb-8 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+          <h2 className="mb-4 text-sm font-semibold text-zinc-900 dark:text-zinc-50">New Alert</h2>
+          <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-3">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-zinc-500">Symbol</label>
+              <input
+                value={newSymbol}
+                onChange={e => setNewSymbol(e.target.value)}
+                placeholder="RELIANCE"
+                disabled={creating}
+                className={`w-32 ${INPUT}`}
+              />
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-zinc-500">Direction</label>
+              <div className="flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-600">
+                {(['above', 'below'] as const).map(d => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => setNewDir(d)}
+                    className={`px-3 py-2 text-xs font-medium transition-colors capitalize ${
+                      newDir === d
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-white text-zinc-600 hover:bg-zinc-50 dark:bg-zinc-800 dark:text-zinc-300'
+                    }`}
+                  >
+                    {d === 'above' ? '↑ Above' : '↓ Below'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-zinc-500">Target Price (₹)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={newTarget}
+                onChange={e => setNewTarget(e.target.value)}
+                placeholder="2500.00"
+                disabled={creating}
+                className={`w-32 ${INPUT}`}
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={creating}
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-60"
+            >
+              {creating ? 'Creating…' : 'Set Alert'}
+            </button>
+          </form>
+          {createError && (
+            <p className="mt-2 text-xs text-red-500 dark:text-red-400">{createError}</p>
+          )}
+        </div>
 
         {loading && (
           <div className="space-y-3">

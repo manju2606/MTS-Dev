@@ -1,7 +1,7 @@
 'use client'
 
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { NavBar } from '@/components/nav-bar'
 import {
   closeTrade, getJournalEntry, getQuote,
@@ -47,6 +47,7 @@ const TD_R = 'px-3 py-3 text-right text-sm font-mono text-zinc-700 dark:text-zin
 
 export default function PaperView() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const tokenRef = useRef<string>('')
 
   const [trades, setTrades] = useState<Trade[]>([])
@@ -61,11 +62,15 @@ export default function PaperView() {
   const [journalDrafts, setJournalDrafts] = useState<Record<string, JournalDraft>>({})
   const [journalSaving, setJournalSaving] = useState<string | null>(null)
 
-  // Form state
-  const [signal, setSignal] = useState<'BUY' | 'SELL'>('BUY')
-  const [symbol, setSymbol] = useState('')
-  const [stopLoss, setStopLoss] = useState('')
-  const [target, setTarget] = useState('')
+  // Form state — initialise from URL params when arriving from Market Pulse / AI pages
+  const [signal, setSignal] = useState<'BUY' | 'SELL'>(
+    () => searchParams.get('signal') === 'SELL' ? 'SELL' : 'BUY'
+  )
+  const [symbol, setSymbol] = useState(
+    () => searchParams.get('symbol')?.replace(/\.(NS|BO)$/i, '') ?? ''
+  )
+  const [stopLoss, setStopLoss] = useState(() => searchParams.get('stop_loss') ?? '')
+  const [target, setTarget] = useState(() => searchParams.get('target') ?? '')
   const [quantity, setQuantity] = useState('')
   const [formLoading, setFormLoading] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)

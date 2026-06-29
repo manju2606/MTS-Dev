@@ -122,7 +122,7 @@ function PulseCardView({ card, type, onWatch }: { card: PulseCard; type: 'buy' |
           + Watchlist
         </button>
         <Link
-          href={`/paper?symbol=${encodeURIComponent(card.symbol)}&signal=${card.signal}`}
+          href={`/paper?symbol=${encodeURIComponent(card.symbol)}&signal=${card.signal}&stop_loss=${card.stop_loss.toFixed(2)}&target=${card.target.toFixed(2)}`}
           className={`flex-1 rounded-lg py-1.5 text-center text-xs font-semibold text-white ${isBuy ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-red-600 hover:bg-red-500'}`}
         >
           Trade →

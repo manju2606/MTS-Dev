@@ -690,11 +690,12 @@ export async function runBacktest(
   token: string,
   symbol: string,
   period: string,
+  strategy: string,
 ): Promise<BacktestResult> {
   const res = await fetch(`${BASE}/api/v1/backtest/run`, {
     method: 'POST',
     headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ symbol, period }),
+    body: JSON.stringify({ symbol, period, strategy }),
   })
   if (!res.ok) {
     const b = await res.json().catch(() => ({}))

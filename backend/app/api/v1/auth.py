@@ -1,3 +1,5 @@
+import hashlib
+import secrets
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
@@ -67,6 +69,8 @@ async def me(current_user: CurrentUser) -> dict:
         "email": current_user.email,
         "full_name": current_user.full_name,
         "role": current_user.role,
+        "subscription_tier": current_user.subscription_tier,
+        "email_verified": current_user.email_verified,
     }
 
 
@@ -144,6 +148,62 @@ async def forgot_password(body: ForgotPasswordRequest, db: DBSession) -> dict:
     except Exception:
         pass
     return {"message": "Reset token issued.", "reset_token": reset_token}
+
+
+class CreateApiKeyRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+
+@router.post("/api-keys", status_code=status.HTTP_201_CREATED)
+async def create_api_key(
+    body: CreateApiKeyRequest, current_user: CurrentUser, db: DBSession
+) -> dict:
+    from app.domain.models.api_key import ApiKey
+    from app.infra.db.repositories.api_key_repo import SQLApiKeyRepository
+
+    raw = "mts_" + secrets.token_hex(32)           # 68-char key shown once
+    key_hash = hashlib.sha256(raw.encode()).hexdigest()
+    key_prefix = raw[4:12]                          # 8 chars after the mts_ prefix
+    key = ApiKey(
+        user_id=current_user.id,
+        name=body.name,
+        key_hash=key_hash,
+        key_prefix=key_prefix,
+    )
+    created = await SQLApiKeyRepository(db).create(key)
+    return {
+        "id": str(created.id),
+        "name": created.name,
+        "key_prefix": created.key_prefix,
+        "created_at": created.created_at.isoformat(),
+        "raw_key": raw,   # shown once — not stored
+    }
+
+
+@router.get("/api-keys")
+async def list_api_keys(current_user: CurrentUser, db: DBSession) -> list[dict]:
+    from app.infra.db.repositories.api_key_repo import SQLApiKeyRepository
+
+    keys = await SQLApiKeyRepository(db).list_by_user(current_user.id)
+    return [
+        {
+            "id": str(k.id),
+            "name": k.name,
+            "key_prefix": k.key_prefix,
+            "created_at": k.created_at.isoformat(),
+            "last_used_at": k.last_used_at.isoformat() if k.last_used_at else None,
+        }
+        for k in keys
+    ]
+
+
+@router.delete("/api-keys/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_api_key(key_id: UUID, current_user: CurrentUser, db: DBSession) -> None:
+    from app.infra.db.repositories.api_key_repo import SQLApiKeyRepository
+
+    revoked = await SQLApiKeyRepository(db).revoke(key_id, current_user.id)
+    if not revoked:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API key not found")
 
 
 @router.post("/reset-password")

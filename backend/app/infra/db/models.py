@@ -6,8 +6,9 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from app.domain.models.ai_signal import AISignal
+from app.domain.models.api_key import ApiKey
 from app.domain.models.trade import Trade, TradeMode, TradeSignal, TradeStatus
-from app.domain.models.user import User, UserRole
+from app.domain.models.user import SubscriptionTier, User, UserRole
 from app.domain.models.watchlist import Watchlist, WatchlistItem
 
 
@@ -26,6 +27,8 @@ class UserORM(Base):
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(50), nullable=False, default=UserRole.TRADER)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    subscription_tier: Mapped[str] = mapped_column(String(20), nullable=False, default="free")
+    email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     def to_domain(self) -> User:
@@ -36,6 +39,8 @@ class UserORM(Base):
             full_name=self.full_name,
             role=UserRole(self.role),
             is_active=self.is_active,
+            subscription_tier=SubscriptionTier(self.subscription_tier),
+            email_verified=self.email_verified,
             created_at=self.created_at,
         )
 
@@ -48,6 +53,8 @@ class UserORM(Base):
             full_name=user.full_name,
             role=user.role.value,
             is_active=user.is_active,
+            subscription_tier=user.subscription_tier.value,
+            email_verified=user.email_verified,
             created_at=user.created_at,
         )
 
@@ -254,4 +261,49 @@ class AISignalORM(Base):
             explanation=s.explanation,
             engine=s.engine,
             created_at=s.created_at,
+        )
+
+
+class ApiKeyORM(Base):
+    __tablename__ = "api_keys"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    key_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    key_prefix: Mapped[str] = mapped_column(String(12), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    def to_domain(self) -> ApiKey:
+        return ApiKey(
+            id=self.id,
+            user_id=self.user_id,
+            name=self.name,
+            key_hash=self.key_hash,
+            key_prefix=self.key_prefix,
+            created_at=self.created_at,
+            last_used_at=self.last_used_at,
+            revoked=self.revoked,
+        )
+
+    @classmethod
+    def from_domain(cls, key: ApiKey) -> "ApiKeyORM":
+        return cls(
+            id=key.id,
+            user_id=key.user_id,
+            name=key.name,
+            key_hash=key.key_hash,
+            key_prefix=key.key_prefix,
+            created_at=key.created_at,
+            last_used_at=key.last_used_at,
+            revoked=key.revoked,
         )

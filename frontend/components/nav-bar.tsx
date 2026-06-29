@@ -23,6 +23,7 @@ const NAV: { href: string; label: string }[] = [
   { href: '/broker', label: 'Broker' },
   { href: '/alerts', label: 'Alerts' },
   { href: '/admin', label: 'Admin' },
+  { href: '/api-keys', label: 'API Keys' },
 ]
 
 // ── Dark mode ────────────────────────────────────────────────────────────────

@@ -5,6 +5,8 @@ export type User = {
   email: string
   full_name: string
   role: string
+  subscription_tier: 'free' | 'basic' | 'pro'
+  email_verified: boolean
 }
 
 export type Watchlist = {
@@ -965,5 +967,102 @@ export async function searchStocks(
     { headers: authHeaders(token) },
   )
   if (!res.ok) return []
+  return res.json()
+}
+
+// ── API Keys ─────────────────────────────────────────────────────────────────
+
+export type ApiKey = {
+  id: string
+  name: string
+  key_prefix: string
+  created_at: string
+  last_used_at: string | null
+}
+
+export type CreatedApiKey = ApiKey & { raw_key: string }
+
+export async function createApiKey(token: string, name: string): Promise<CreatedApiKey> {
+  const res = await fetch(`${BASE}/api/v1/auth/api-keys`, {
+    method: 'POST',
+    headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+export async function listApiKeys(token: string): Promise<ApiKey[]> {
+  const res = await fetch(`${BASE}/api/v1/auth/api-keys`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+export async function revokeApiKey(token: string, keyId: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/v1/auth/api-keys/${keyId}`, {
+    method: 'DELETE',
+    headers: authHeaders(token),
+  })
+  if (!res.ok && res.status !== 204) throw new Error(await res.text())
+}
+
+// ── Usage metering ───────────────────────────────────────────────────────────
+
+export type UsageInfo = {
+  tier: string
+  calls_today: number
+  limit: number
+  remaining: number
+}
+
+export async function getUsage(token: string): Promise<UsageInfo> {
+  const res = await fetch(`${BASE}/api/v1/usage/me`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+// ── Ensemble signal ──────────────────────────────────────────────────────────
+
+export type EnsembleSignal = {
+  symbol: string
+  consensus: {
+    signal: 'BUY' | 'SELL' | 'HOLD'
+    confidence: number
+    entry_price: number
+    stop_loss: number
+    target: number
+    risk_reward_ratio: number
+    holding_period: string
+    explanation: string
+  }
+  engines: {
+    local?: {
+      signal: string
+      confidence: number
+      entry_price: number
+      stop_loss: number
+      target: number
+      explanation: string
+    }
+    ml?: {
+      prediction: string
+      probability: number
+      accuracy_cv: number
+      top_features: Record<string, number>
+    }
+    claude?: {
+      signal: string
+      confidence: number
+      explanation: string
+    }
+  }
+}
+
+export async function getEnsembleSignal(token: string, symbol: string): Promise<EnsembleSignal> {
+  const res = await fetch(`${BASE}/api/v1/ai/ensemble/${encodeURIComponent(symbol)}`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error(await res.text())
   return res.json()
 }

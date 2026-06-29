@@ -7,11 +7,15 @@ Predicts next-day direction: UP (1) or DOWN (0).
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass
 from functools import partial
 
 import numpy as np
 import pandas as pd
+
+_MODEL_CACHE: dict[str, tuple[MLPrediction, float]] = {}
+_CACHE_TTL = 3_600  # 1 hour — retrain at most once per hour per symbol
 
 
 @dataclass
@@ -146,5 +150,17 @@ def _train_and_predict_sync(symbol: str) -> MLPrediction:
 
 
 async def predict(symbol: str) -> MLPrediction:
+    cached = _MODEL_CACHE.get(symbol)
+    if cached and (time.time() - cached[1]) < _CACHE_TTL:
+        return cached[0]
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, partial(_train_and_predict_sync, symbol))
+    result = await loop.run_in_executor(None, partial(_train_and_predict_sync, symbol))
+    _MODEL_CACHE[symbol] = (result, time.time())
+    return result
+
+
+def invalidate_cache(symbol: str | None = None) -> None:
+    if symbol:
+        _MODEL_CACHE.pop(symbol, None)
+    else:
+        _MODEL_CACHE.clear()

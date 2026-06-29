@@ -6,10 +6,11 @@ import {
   changePassword,
   getMe,
   getRiskConfig,
+  getUsage,
   updateProfile,
   updateRiskConfig,
 } from '@/lib/api'
-import type { RiskConfig, User } from '@/lib/api'
+import type { RiskConfig, UsageInfo, User } from '@/lib/api'
 import { NavBar } from '@/components/nav-bar'
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
@@ -38,6 +39,7 @@ export default function SettingsView() {
   const tokenRef = useRef('')
   const [user, setUser] = useState<User | null>(null)
   const [riskConfig, setRiskConfig] = useState<RiskConfig | null>(null)
+  const [usage, setUsage] = useState<UsageInfo | null>(null)
 
   // Profile form state
   const [fullName, setFullName] = useState('')
@@ -65,7 +67,7 @@ export default function SettingsView() {
     const t = localStorage.getItem('mts_token')
     if (!t) { router.replace('/login'); return }
     tokenRef.current = t
-    Promise.all([getMe(t), getRiskConfig(t)]).then(([u, rc]) => {
+    Promise.all([getMe(t), getRiskConfig(t), getUsage(t)]).then(([u, rc, usg]) => {
       setUser(u)
       setFullName(u.full_name)
       setRiskConfig(rc)
@@ -75,6 +77,7 @@ export default function SettingsView() {
       setMaxDrawdown(String((rc.max_drawdown_pct * 100).toFixed(1)))
       setMinRR(String(rc.min_risk_reward))
       setMaxStop(String((rc.max_stop_pct * 100).toFixed(1)))
+      setUsage(usg)
     }).catch(() => {})
   }, [router])
 
@@ -166,6 +169,40 @@ export default function SettingsView() {
           </button>
           <Feedback msg={profileMsg} />
         </Card>
+
+        {/* Subscription & usage */}
+        {usage && (
+          <Card title="Subscription & AI Usage">
+            <div className="flex flex-wrap gap-6">
+              <div>
+                <p className="text-xs text-zinc-400">Plan</p>
+                <p className="mt-0.5 text-sm font-medium capitalize text-zinc-800 dark:text-zinc-200">
+                  {usage.tier}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-zinc-400">AI Calls Today</p>
+                <p className="mt-0.5 text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                  {usage.calls_today} / {usage.limit === 9999 ? '∞' : usage.limit}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-zinc-400">Remaining</p>
+                <p className="mt-0.5 text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                  {usage.limit === 9999 ? '∞' : usage.remaining}
+                </p>
+              </div>
+            </div>
+            {usage.calls_today > 0 && usage.limit < 9999 && (
+              <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+                <div
+                  className="h-full rounded-full bg-indigo-500"
+                  style={{ width: `${Math.min(100, (usage.calls_today / usage.limit) * 100)}%` }}
+                />
+              </div>
+            )}
+          </Card>
+        )}
 
         {/* Password */}
         <Card title="Change Password">

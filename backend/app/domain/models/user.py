@@ -10,6 +10,12 @@ class UserRole(StrEnum):
     VIEWER = "viewer"
 
 
+class SubscriptionTier(StrEnum):
+    FREE = "free"
+    BASIC = "basic"
+    PRO = "pro"
+
+
 @dataclass
 class User:
     email: str
@@ -17,5 +23,7 @@ class User:
     full_name: str
     role: UserRole = UserRole.TRADER
     is_active: bool = True
+    subscription_tier: SubscriptionTier = SubscriptionTier.FREE
+    email_verified: bool = False
     id: UUID = field(default_factory=uuid4)
     created_at: datetime = field(default_factory=datetime.utcnow)

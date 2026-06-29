@@ -55,3 +55,4 @@ ml/artifacts/
 *.pt
 *.onnx
 mlruns/
+scripts/email_preview.html

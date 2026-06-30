@@ -35,6 +35,80 @@ class DiscoveryRepository:
     def _news(self) -> motor.motor_asyncio.AsyncIOMotorCollection:  # type: ignore[type-arg]
         return _get_db()["discovery_news"]
 
+    @property
+    def _reports(self) -> motor.motor_asyncio.AsyncIOMotorCollection:  # type: ignore[type-arg]
+        return _get_db()["report_history"]
+
+    # ── Report history ────────────────────────────────────────────────────────
+
+    async def save_report(self, picks: list[StockScore], scanned_count: int) -> None:
+        """Persist a report snapshot to the report_history collection."""
+        signal_summary: dict[str, int] = {}
+        for p in picks:
+            signal_summary[p.signal] = signal_summary.get(p.signal, 0) + 1
+
+        doc = {
+            "generated_at": datetime.utcnow(),
+            "scanned_count": scanned_count,
+            "picks_count": len(picks),
+            "signal_summary": signal_summary,
+            "picks": [
+                {
+                    "symbol": p.symbol,
+                    "name": p.name,
+                    "signal": p.signal,
+                    "score": p.score,
+                    "entry_price": p.entry_price,
+                    "stop_loss": p.stop_loss,
+                    "target": p.targets[0] if p.targets else None,
+                    "risk_reward_ratio": p.risk_reward_ratio,
+                    "holding_period": p.holding_period,
+                    "patterns": p.patterns[:3],
+                    "confidence": p.confidence,
+                }
+                for p in picks
+            ],
+        }
+        try:
+            await self._reports.insert_one(doc)
+            log.info("report_history.saved", picks=len(picks))
+        except Exception as exc:
+            log.error("report_history.save_error", error=str(exc))
+
+    async def list_reports(self, limit: int = 50, skip: int = 0) -> list[dict]:
+        """Return report history entries newest-first, without the full picks list."""
+        try:
+            cursor = (
+                self._reports
+                .find({}, {"picks": 0})
+                .sort("generated_at", -1)
+                .skip(skip)
+                .limit(limit)
+            )
+            docs = []
+            async for doc in cursor:
+                doc["id"] = str(doc.pop("_id"))
+                doc["generated_at"] = doc["generated_at"].isoformat()
+                docs.append(doc)
+            return docs
+        except Exception as exc:
+            log.error("report_history.list_error", error=str(exc))
+            return []
+
+    async def get_report(self, report_id: str) -> dict | None:
+        """Return a single report including full picks list."""
+        from bson import ObjectId
+        try:
+            doc = await self._reports.find_one({"_id": ObjectId(report_id)})
+            if not doc:
+                return None
+            doc["id"] = str(doc.pop("_id"))
+            doc["generated_at"] = doc["generated_at"].isoformat()
+            return doc
+        except Exception as exc:
+            log.error("report_history.get_error", error=str(exc))
+            return None
+
     # ── Write ────────────────────────────────────────────────────────────────
 
     async def save_scores(self, scores: list[StockScore]) -> None:

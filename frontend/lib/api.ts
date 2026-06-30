@@ -1180,6 +1180,48 @@ export async function triggerDiscoveryScan(
   return res.json()
 }
 
+// ── Report History ─────────────────────────────────────────────────────────
+
+export type ReportSummary = {
+  id: string
+  generated_at: string
+  scanned_count: number
+  picks_count: number
+  signal_summary: Record<string, number>
+}
+
+export type ReportPick = {
+  symbol: string
+  name: string
+  signal: string
+  score: number
+  entry_price: number
+  stop_loss: number
+  target: number | null
+  risk_reward_ratio: number
+  holding_period: string
+  patterns: string[]
+  confidence: number
+}
+
+export type ReportDetail = ReportSummary & { picks: ReportPick[] }
+
+export async function listReportHistory(token: string, limit = 50, skip = 0): Promise<ReportSummary[]> {
+  const res = await fetch(`${BASE}/api/v1/discovery/reports?limit=${limit}&skip=${skip}`, {
+    headers: authHeaders(token),
+  })
+  if (!res.ok) return []
+  return res.json()
+}
+
+export async function getReportDetail(token: string, reportId: string): Promise<ReportDetail | null> {
+  const res = await fetch(`${BASE}/api/v1/discovery/reports/${reportId}`, {
+    headers: authHeaders(token),
+  })
+  if (!res.ok) return null
+  return res.json()
+}
+
 export async function getEnsembleSignal(token: string, symbol: string): Promise<EnsembleSignal> {
   const res = await fetch(`${BASE}/api/v1/ai/ensemble/${encodeURIComponent(symbol)}`, {
     method: 'POST',

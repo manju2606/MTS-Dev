@@ -158,6 +158,27 @@ async def trigger_scan(
     return {"message": "Discovery scan started", "started": True}
 
 
+@router.get("/reports")
+async def list_reports(
+    current_user: CurrentUser,
+    limit: int = Query(default=50, le=200),
+    skip: int = Query(default=0, ge=0),
+) -> list[dict]:
+    """Return report history summaries newest-first (picks list excluded)."""
+    repo = DiscoveryRepository()
+    return await repo.list_reports(limit=limit, skip=skip)
+
+
+@router.get("/reports/{report_id}")
+async def get_report(report_id: str, current_user: CurrentUser) -> dict:
+    """Return a single report including the full picks list."""
+    repo = DiscoveryRepository()
+    doc = await repo.get_report(report_id)
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
+    return doc
+
+
 def _universe_size() -> int:
     try:
         from app.infra.discovery.universe import NSE_UNIVERSE

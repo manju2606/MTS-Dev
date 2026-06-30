@@ -230,6 +230,7 @@ async def send_daily_report() -> None:
         html = build_report_html(picks, scanned)
 
         await send_email(to=to, subject=subject, html=html)
+        await repo.save_report(picks, scanned)
         log.info("daily_report.sent", to=to, picks=len(picks))
     except Exception as exc:
         log.error("daily_report.error", error=str(exc))

@@ -205,13 +205,14 @@ async def get_report_performance(report_id: str, current_user: CurrentUser) -> d
     def _status(pick: dict, current: float) -> str:
         entry = pick["entry_price"]
         stop  = pick["stop_loss"]
-        target = pick.get("target")
+        targets_list = pick.get("targets") or ([pick["target"]] if pick.get("target") else [])
+        t1 = targets_list[0] if targets_list else None
         signal = pick.get("signal", "")
         is_long = signal in ("BUY", "STRONG_BUY", "WATCH")
-        if target:
-            if is_long and current >= target:
+        if t1:
+            if is_long and current >= t1:
                 return "TARGET_HIT"
-            if not is_long and current <= target:
+            if not is_long and current <= t1:
                 return "TARGET_HIT"
         if is_long and current <= stop:
             return "STOP_HIT"
@@ -228,8 +229,14 @@ async def get_report_performance(report_id: str, current_user: CurrentUser) -> d
         current = prices.get(pick["symbol"])
         entry = pick["entry_price"]
         pnl_pct = round((current - entry) / entry * 100, 2) if current else None
+        targets_list = pick.get("targets") or ([pick["target"]] if pick.get("target") else [])
+        target_pcts = [
+            round((t - entry) / entry * 100, 2) for t in targets_list
+        ] if targets_list else []
         enriched.append({
             **pick,
+            "targets": targets_list,
+            "target_pcts": target_pcts,
             "current_price": current,
             "pnl_pct": pnl_pct,
             "status": _status(pick, current) if current else "NO_DATA",

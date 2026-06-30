@@ -60,6 +60,7 @@ class DiscoveryRepository:
                     "score": p.score,
                     "entry_price": p.entry_price,
                     "stop_loss": p.stop_loss,
+                    "targets": p.targets,
                     "target": p.targets[0] if p.targets else None,
                     "risk_reward_ratio": p.risk_reward_ratio,
                     "holding_period": p.holding_period,

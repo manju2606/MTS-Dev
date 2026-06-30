@@ -34,38 +34,61 @@ def _score_bar(score: float) -> str:
     )
 
 
+def _pct(entry: float, target: float) -> str:
+    if entry == 0:
+        return ""
+    pct = (target - entry) / entry * 100
+    sign = "+" if pct >= 0 else ""
+    return f'<span style="font-size:10px;color:#6b7280;display:block;">{sign}{pct:.1f}%</span>'
+
+
 def _stock_row(idx: int, s: object) -> str:  # s: StockScore
     sig_fg, sig_bg = _SIGNAL_COLOR.get(getattr(s, "signal", ""), ("#374151", "#f3f4f6"))
     rr = getattr(s, "risk_reward_ratio", 0.0)
     targets = getattr(s, "targets", [])
-    t1 = f"₹{targets[0]:.2f}" if targets else "—"
+    entry = getattr(s, "entry_price", 0)
+    stop = getattr(s, "stop_loss", 0)
+    t1_val = targets[0] if len(targets) > 0 else None
+    t2_val = targets[1] if len(targets) > 1 else None
+    t3_val = targets[2] if len(targets) > 2 else None
+
+    def _tgt_cell(val: float | None, color: str) -> str:
+        if val is None:
+            return '<td style="padding:8px 6px;font-size:12px;color:#6b7280;">—</td>'
+        return (
+            f'<td style="padding:8px 6px;font-family:monospace;font-size:12px;color:{color};">'
+            f'&#8377;{val:.2f}{_pct(entry, val)}</td>'
+        )
+
+    stop_pct = _pct(entry, stop) if entry else ""
     patterns_raw = getattr(s, "patterns", [])
     patterns_html = "".join(
-        f'<span style="display:inline-block;background:#ede9fe;color:#5b21b6;border-radius:3px;padding:1px 6px;font-size:10px;margin:1px;">{p}</span>'
+        f'<span style="display:inline-block;background:#ede9fe;color:#5b21b6;border-radius:3px;padding:1px 5px;font-size:10px;margin:1px;">{p}</span>'
         for p in patterns_raw[:3]
     )
     row_bg = "#f9fafb" if idx % 2 == 0 else "#ffffff"
     sym = getattr(s, "symbol", "").replace(".NS", "").replace(".BO", "")
-    return f"""
-    <tr style="background:{row_bg};">
-      <td style="padding:10px 8px;color:#6b7280;font-size:12px;text-align:center;">{idx}</td>
-      <td style="padding:10px 8px;">
-        <div style="font-weight:700;font-size:14px;color:#111827;">{sym}</div>
-        <div style="font-size:11px;color:#6b7280;">{getattr(s, 'name', '')}</div>
-        <div style="margin-top:4px;">{patterns_html}</div>
-      </td>
-      <td style="padding:10px 8px;text-align:center;">
-        <span style="display:inline-block;background:{sig_bg};color:{sig_fg};border-radius:12px;padding:2px 10px;font-size:11px;font-weight:700;white-space:nowrap;">
-          {getattr(s, 'signal', '')}
-        </span>
-      </td>
-      <td style="padding:10px 8px;">{_score_bar(getattr(s, 'score', 0.0))}</td>
-      <td style="padding:10px 8px;font-family:monospace;font-size:13px;color:#111827;">₹{getattr(s, 'entry_price', 0):.2f}</td>
-      <td style="padding:10px 8px;font-family:monospace;font-size:13px;color:#dc2626;">₹{getattr(s, 'stop_loss', 0):.2f}</td>
-      <td style="padding:10px 8px;font-family:monospace;font-size:13px;color:#059669;">{t1}</td>
-      <td style="padding:10px 8px;font-weight:700;font-size:13px;color:{_rr_color(rr)}">{rr:.2f}</td>
-      <td style="padding:10px 8px;font-size:12px;color:#6b7280;">{getattr(s, 'holding_period', '')}</td>
-    </tr>"""
+    return (
+        f'<tr style="background:{row_bg};">'
+        f'<td style="padding:8px 6px;color:#6b7280;font-size:12px;text-align:center;">{idx}</td>'
+        f'<td style="padding:8px 6px;">'
+        f'  <div style="font-weight:700;font-size:13px;color:#111827;">{sym}</div>'
+        f'  <div style="font-size:11px;color:#6b7280;">{getattr(s, "name", "")}</div>'
+        f'  <div style="margin-top:3px;">{patterns_html}</div>'
+        f'</td>'
+        f'<td style="padding:8px 6px;text-align:center;">'
+        f'  <span style="display:inline-block;background:{sig_bg};color:{sig_fg};border-radius:12px;padding:2px 8px;font-size:10px;font-weight:700;white-space:nowrap;">{getattr(s, "signal", "")}</span>'
+        f'</td>'
+        f'<td style="padding:8px 6px;">{_score_bar(getattr(s, "score", 0.0))}</td>'
+        f'<td style="padding:8px 6px;font-family:monospace;font-size:12px;color:#111827;">&#8377;{entry:.2f}</td>'
+        f'<td style="padding:8px 6px;font-family:monospace;font-size:12px;color:#dc2626;">&#8377;{stop:.2f}{stop_pct}</td>'
+        + _tgt_cell(t1_val, "#059669")
+        + _tgt_cell(t2_val, "#047857")
+        + _tgt_cell(t3_val, "#065f46")
+        + f'<td style="padding:8px 6px;font-weight:700;font-size:12px;color:{_rr_color(rr)}">{rr:.2f}</td>'
+        f'<td style="padding:8px 6px;font-size:11px;color:#6b7280;">{getattr(s, "holding_period", "")}</td>'
+        f'</tr>'
+    )
 
 
 def _signal_counts(picks: list) -> dict[str, int]:
@@ -105,18 +128,20 @@ def build_report_html(picks: list, scanned_count: int) -> str:
               <th style="padding:10px 8px;font-size:11px;color:#6b7280;text-align:left;font-weight:600;">Symbol</th>
               <th style="padding:10px 8px;font-size:11px;color:#6b7280;text-align:center;font-weight:600;">Signal</th>
               <th style="padding:10px 8px;font-size:11px;color:#6b7280;text-align:left;font-weight:600;">Score</th>
-              <th style="padding:10px 8px;font-size:11px;color:#6b7280;text-align:left;font-weight:600;">Entry ₹</th>
-              <th style="padding:10px 8px;font-size:11px;color:#6b7280;text-align:left;font-weight:600;">Stop ₹</th>
-              <th style="padding:10px 8px;font-size:11px;color:#6b7280;text-align:left;font-weight:600;">T1 ₹</th>
-              <th style="padding:10px 8px;font-size:11px;color:#6b7280;text-align:left;font-weight:600;">R:R</th>
-              <th style="padding:10px 8px;font-size:11px;color:#6b7280;text-align:left;font-weight:600;">Hold</th>
+              <th style="padding:8px 6px;font-size:11px;color:#6b7280;text-align:left;font-weight:600;">Entry ₹</th>
+              <th style="padding:8px 6px;font-size:11px;color:#6b7280;text-align:left;font-weight:600;">Stop ₹</th>
+              <th style="padding:8px 6px;font-size:11px;color:#059669;text-align:left;font-weight:600;">T1 ₹</th>
+              <th style="padding:8px 6px;font-size:11px;color:#047857;text-align:left;font-weight:600;">T2 ₹</th>
+              <th style="padding:8px 6px;font-size:11px;color:#065f46;text-align:left;font-weight:600;">T3 ₹</th>
+              <th style="padding:8px 6px;font-size:11px;color:#6b7280;text-align:left;font-weight:600;">R:R</th>
+              <th style="padding:8px 6px;font-size:11px;color:#6b7280;text-align:left;font-weight:600;">Hold</th>
             </tr>
           </thead>
           <tbody>{rows}</tbody>
         </table>
         </div>
         <p style="font-size:11px;color:#9ca3af;margin-top:12px;">
-          * R:R = Risk-Reward ratio to T1. Score = composite AI score (0–100).
+          * T1/T2/T3 = Progressive targets. % shown below each price = gain from entry. R:R = Risk-Reward to T1. Score = composite AI score (0–100).
         </p>"""
 
     summary_pills = []

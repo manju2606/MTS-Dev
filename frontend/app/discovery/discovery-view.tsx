@@ -286,8 +286,8 @@ export default function DiscoveryView() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-zinc-100 dark:border-zinc-800">
-                      {['#', 'Symbol', 'Score', 'Signal', 'Entry', 'Stop', 'T1', 'R:R', 'Hold'].map(h => (
-                        <th key={h} className="px-3 py-3 text-left text-xs font-medium text-zinc-500">{h}</th>
+                      {['#', 'Symbol', 'Score', 'Signal', 'Entry', 'Stop', 'T1', 'T2', 'T3', 'R:R', 'Hold'].map(h => (
+                        <th key={h} className={`px-3 py-3 text-left text-xs font-medium ${h === 'T1' ? 'text-emerald-600 dark:text-emerald-400' : h === 'T2' ? 'text-emerald-700 dark:text-emerald-500' : h === 'T3' ? 'text-emerald-800 dark:text-emerald-600' : 'text-zinc-500'}`}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -309,10 +309,24 @@ export default function DiscoveryView() {
                             <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${SIGNAL_STYLES[s.signal] ?? ''}`}>{s.signal}</span>
                           </td>
                           <td className="px-3 py-2.5 font-mono text-xs">₹{s.entry_price.toFixed(2)}</td>
-                          <td className="px-3 py-2.5 font-mono text-xs text-red-500 dark:text-red-400">₹{s.stop_loss.toFixed(2)}</td>
-                          <td className="px-3 py-2.5 font-mono text-xs text-emerald-600 dark:text-emerald-400">
-                            {s.targets[0] ? `₹${s.targets[0].toFixed(2)}` : '—'}
+                          <td className="px-3 py-2.5 font-mono text-xs text-red-500 dark:text-red-400">
+                            ₹{s.stop_loss.toFixed(2)}
+                            <span className="block text-[10px] text-zinc-400">
+                              {s.entry_price > 0 ? `${(((s.stop_loss - s.entry_price) / s.entry_price) * 100).toFixed(1)}%` : ''}
+                            </span>
                           </td>
+                          {[0, 1, 2].map(i => (
+                            <td key={i} className="px-3 py-2.5 font-mono text-xs text-emerald-600 dark:text-emerald-400">
+                              {s.targets[i] != null ? (
+                                <>
+                                  ₹{s.targets[i].toFixed(2)}
+                                  <span className="block text-[10px] text-zinc-400">
+                                    +{(((s.targets[i] - s.entry_price) / s.entry_price) * 100).toFixed(1)}%
+                                  </span>
+                                </>
+                              ) : '—'}
+                            </td>
+                          ))}
                           <td className={`px-3 py-2.5 text-xs font-bold ${s.risk_reward_ratio >= 2 ? 'text-emerald-600 dark:text-emerald-400' : s.risk_reward_ratio >= 1.5 ? 'text-amber-500' : 'text-red-500'}`}>
                             {s.risk_reward_ratio.toFixed(2)}
                           </td>

@@ -1197,6 +1197,7 @@ export type ReportPick = {
   score: number
   entry_price: number
   stop_loss: number
+  targets: number[]
   target: number | null
   risk_reward_ratio: number
   holding_period: string
@@ -1207,6 +1208,8 @@ export type ReportPick = {
 export type ReportDetail = ReportSummary & { picks: ReportPick[] }
 
 export type PerformancePick = ReportPick & {
+  targets: number[]
+  target_pcts: number[]
   current_price: number | null
   pnl_pct: number | null
   status: 'TARGET_HIT' | 'STOP_HIT' | 'ABOVE_ENTRY' | 'BELOW_ENTRY' | 'AT_ENTRY' | 'NO_DATA'

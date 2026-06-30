@@ -58,38 +58,65 @@ function PicksTable({ picks }: { picks: ReportPick[] }) {
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-zinc-100 dark:border-zinc-800">
-            {['#', 'Symbol', 'Signal', 'Score', 'Entry', 'Stop', 'T1', 'R:R', 'Hold'].map(h => (
-              <th key={h} className="px-3 py-2 text-left text-xs font-medium text-zinc-400">{h}</th>
+            {[
+              { h: '#', cls: 'text-zinc-400' },
+              { h: 'Symbol', cls: 'text-zinc-400' },
+              { h: 'Signal', cls: 'text-zinc-400' },
+              { h: 'Score', cls: 'text-zinc-400' },
+              { h: 'Entry', cls: 'text-zinc-400' },
+              { h: 'Stop', cls: 'text-zinc-400' },
+              { h: 'T1', cls: 'text-emerald-600 dark:text-emerald-400' },
+              { h: 'T2', cls: 'text-emerald-700 dark:text-emerald-500' },
+              { h: 'T3', cls: 'text-emerald-800 dark:text-emerald-600' },
+              { h: 'R:R', cls: 'text-zinc-400' },
+              { h: 'Hold', cls: 'text-zinc-400' },
+            ].map(({ h, cls }) => (
+              <th key={h} className={`px-3 py-2 text-left text-xs font-medium ${cls}`}>{h}</th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {picks.map((p, i) => (
-            <tr key={p.symbol} className={`border-b border-zinc-50 dark:border-zinc-800/50 ${i % 2 === 0 ? 'bg-zinc-50/50 dark:bg-zinc-800/20' : ''}`}>
-              <td className="px-3 py-2 text-xs text-zinc-400">{i + 1}</td>
-              <td className="px-3 py-2">
-                <p className="font-semibold text-zinc-900 dark:text-zinc-50">
-                  {p.symbol.replace(/\.(NS|BO)$/, '')}
-                </p>
-                <p className="text-[10px] text-zinc-400">{p.name}</p>
-              </td>
-              <td className="px-3 py-2"><SignalBadge signal={p.signal} /></td>
-              <td className="px-3 py-2"><ScoreBar score={p.score} /></td>
-              <td className="px-3 py-2 font-mono text-xs text-zinc-700 dark:text-zinc-300">
-                ₹{p.entry_price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-              </td>
-              <td className="px-3 py-2 font-mono text-xs text-red-500">
-                ₹{p.stop_loss.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-              </td>
-              <td className="px-3 py-2 font-mono text-xs text-emerald-600 dark:text-emerald-400">
-                {p.target ? `₹${p.target.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}
-              </td>
-              <td className="px-3 py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-300">
-                {p.risk_reward_ratio.toFixed(2)}
-              </td>
-              <td className="px-3 py-2 text-xs text-zinc-500">{p.holding_period}</td>
-            </tr>
-          ))}
+          {picks.map((p, i) => {
+            const allTargets = (p.targets && p.targets.length > 0)
+              ? p.targets
+              : p.target != null ? [p.target] : []
+            const pct = (t: number) => `+${(((t - p.entry_price) / p.entry_price) * 100).toFixed(1)}%`
+            const stopPct = p.entry_price > 0
+              ? `${(((p.stop_loss - p.entry_price) / p.entry_price) * 100).toFixed(1)}%`
+              : ''
+            return (
+              <tr key={p.symbol} className={`border-b border-zinc-50 dark:border-zinc-800/50 ${i % 2 === 0 ? 'bg-zinc-50/50 dark:bg-zinc-800/20' : ''}`}>
+                <td className="px-3 py-2 text-xs text-zinc-400">{i + 1}</td>
+                <td className="px-3 py-2">
+                  <p className="font-semibold text-zinc-900 dark:text-zinc-50">{p.symbol.replace(/\.(NS|BO)$/, '')}</p>
+                  <p className="text-[10px] text-zinc-400">{p.name}</p>
+                </td>
+                <td className="px-3 py-2"><SignalBadge signal={p.signal} /></td>
+                <td className="px-3 py-2"><ScoreBar score={p.score} /></td>
+                <td className="px-3 py-2 font-mono text-xs text-zinc-700 dark:text-zinc-300">
+                  ₹{p.entry_price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </td>
+                <td className="px-3 py-2 font-mono text-xs text-red-500">
+                  ₹{p.stop_loss.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  <span className="block text-[10px] text-zinc-400">{stopPct}</span>
+                </td>
+                {[0, 1, 2].map(ti => (
+                  <td key={ti} className="px-3 py-2 font-mono text-xs text-emerald-600 dark:text-emerald-400">
+                    {allTargets[ti] != null ? (
+                      <>
+                        ₹{allTargets[ti].toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        <span className="block text-[10px] text-zinc-400">{pct(allTargets[ti])}</span>
+                      </>
+                    ) : '—'}
+                  </td>
+                ))}
+                <td className="px-3 py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                  {p.risk_reward_ratio.toFixed(2)}
+                </td>
+                <td className="px-3 py-2 text-xs text-zinc-500">{p.holding_period}</td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </div>
@@ -109,19 +136,35 @@ const STATUS_STYLE: Record<string, { label: string; cls: string }> = {
 
 function PerformanceTable({ picks }: { picks: PerformancePick[] }) {
   const fmt = (n: number) => `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+  const pct = (entry: number, t: number) => `+${(((t - entry) / entry) * 100).toFixed(1)}%`
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-zinc-100 dark:border-zinc-800">
-            {['#', 'Symbol', 'Signal', 'Entry', 'Stop', 'Target', 'Current', 'P&L %', 'Status'].map(h => (
-              <th key={h} className="px-3 py-2 text-left text-xs font-medium text-zinc-400">{h}</th>
+            {[
+              { h: '#', cls: 'text-zinc-400' },
+              { h: 'Symbol', cls: 'text-zinc-400' },
+              { h: 'Signal', cls: 'text-zinc-400' },
+              { h: 'Entry', cls: 'text-zinc-400' },
+              { h: 'Stop', cls: 'text-zinc-400' },
+              { h: 'T1', cls: 'text-emerald-600 dark:text-emerald-400' },
+              { h: 'T2', cls: 'text-emerald-700 dark:text-emerald-500' },
+              { h: 'T3', cls: 'text-emerald-800 dark:text-emerald-600' },
+              { h: 'Current', cls: 'text-zinc-400' },
+              { h: 'P&L %', cls: 'text-zinc-400' },
+              { h: 'Status', cls: 'text-zinc-400' },
+            ].map(({ h, cls }) => (
+              <th key={h} className={`px-3 py-2 text-left text-xs font-medium ${cls}`}>{h}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {picks.map((p, i) => {
             const st = STATUS_STYLE[p.status] ?? STATUS_STYLE.NO_DATA
+            const allTargets = (p.targets && p.targets.length > 0)
+              ? p.targets
+              : p.target != null ? [p.target] : []
             const pnlColor = p.pnl_pct == null ? '' : p.pnl_pct >= 0
               ? 'text-emerald-600 dark:text-emerald-400'
               : 'text-red-500 dark:text-red-400'
@@ -134,10 +177,22 @@ function PerformanceTable({ picks }: { picks: PerformancePick[] }) {
                 </td>
                 <td className="px-3 py-2"><SignalBadge signal={p.signal} /></td>
                 <td className="px-3 py-2 font-mono text-xs text-zinc-600 dark:text-zinc-300">{fmt(p.entry_price)}</td>
-                <td className="px-3 py-2 font-mono text-xs text-red-500">{fmt(p.stop_loss)}</td>
-                <td className="px-3 py-2 font-mono text-xs text-emerald-600 dark:text-emerald-400">
-                  {p.target ? fmt(p.target) : '—'}
+                <td className="px-3 py-2 font-mono text-xs text-red-500">
+                  {fmt(p.stop_loss)}
+                  <span className="block text-[10px] text-zinc-400">
+                    {p.entry_price > 0 ? `${(((p.stop_loss - p.entry_price) / p.entry_price) * 100).toFixed(1)}%` : ''}
+                  </span>
                 </td>
+                {[0, 1, 2].map(ti => (
+                  <td key={ti} className="px-3 py-2 font-mono text-xs text-emerald-600 dark:text-emerald-400">
+                    {allTargets[ti] != null ? (
+                      <>
+                        {fmt(allTargets[ti])}
+                        <span className="block text-[10px] text-zinc-400">{pct(p.entry_price, allTargets[ti])}</span>
+                      </>
+                    ) : '—'}
+                  </td>
+                ))}
                 <td className="px-3 py-2 font-mono text-xs font-semibold text-zinc-900 dark:text-zinc-50">
                   {p.current_price != null ? fmt(p.current_price) : <span className="text-zinc-300">—</span>}
                 </td>

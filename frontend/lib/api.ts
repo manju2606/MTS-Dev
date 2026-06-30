@@ -487,6 +487,42 @@ export async function checkAlerts(token: string): Promise<AlertRule[]> {
   return res.json()
 }
 
+export type PositionAlert = {
+  id: string
+  trade_id: string
+  symbol: string
+  signal: 'BUY' | 'SELL'
+  event: 'stop_hit' | 'target_hit'
+  entry_price: number
+  stop_loss: number
+  target: number
+  trigger_price: number
+  quantity: number
+  pnl_estimate: number
+  triggered_at: string
+  acknowledged: boolean
+}
+
+export async function listPositionAlerts(token: string): Promise<PositionAlert[]> {
+  const res = await fetch(`${BASE}/api/v1/alerts/positions`, { headers: authHeaders(token) })
+  if (!res.ok) return []
+  return res.json()
+}
+
+export async function ackPositionAlert(token: string, id: string): Promise<void> {
+  await fetch(`${BASE}/api/v1/alerts/positions/${id}/ack`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  })
+}
+
+export async function clearPositionAlert(token: string, id: string): Promise<void> {
+  await fetch(`${BASE}/api/v1/alerts/positions/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders(token),
+  })
+}
+
 // ── Trade Journal ──────────────────────────────────────────────────────────
 
 export type JournalEntry = {

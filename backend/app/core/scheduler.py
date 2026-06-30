@@ -35,6 +35,12 @@ def last_scan_info() -> tuple[datetime | None, int]:
     return _last_scan_at, _last_scan_count
 
 
+async def _run_position_check() -> None:
+    """Delegate to the position monitor (import kept lazy to avoid circular imports)."""
+    from app.infra.monitoring.position_monitor import run_position_check
+    await run_position_check()
+
+
 async def run_morning_report() -> None:
     """08:00 IST weekdays: scan the full universe then email today's picks."""
     log.info("scheduler.morning_report.start")
@@ -146,20 +152,36 @@ def start_scheduler() -> None:
         misfire_grace_time=120,
     )
 
-    # Daily 08:00 IST — full scan + email report (Mon–Fri)
+    # Hourly scan + email report 08:15–15:15 IST (Mon–Fri)
     _scheduler.add_job(
         run_morning_report,
         CronTrigger(
             day_of_week="mon-fri",
-            hour=8,
-            minute=0,
+            hour="8-15",
+            minute=15,
             second=0,
             timezone="Asia/Kolkata",
         ),
         id="morning_report",
-        name="Morning Report (scan + email)",
+        name="Hourly Report (scan + email)",
         max_instances=1,
         misfire_grace_time=300,
+    )
+
+    # Position monitor every 5 minutes during market hours
+    _scheduler.add_job(
+        _run_position_check,
+        CronTrigger(
+            day_of_week="mon-fri",
+            hour="9-15",
+            minute="*/5",
+            second="0",
+            timezone="Asia/Kolkata",
+        ),
+        id="position_monitor",
+        name="Position Stop/Target Monitor",
+        max_instances=1,
+        misfire_grace_time=60,
     )
 
     _scheduler.start()

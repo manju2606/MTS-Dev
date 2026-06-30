@@ -97,6 +97,46 @@ async def delete_alert(alert_id: str, current_user: CurrentUser) -> None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alert not found")
 
 
+def _pos_dict(a) -> dict:  # type: ignore[no-untyped-def]
+    return {
+        "id": a.id,
+        "trade_id": a.trade_id,
+        "symbol": a.symbol,
+        "signal": a.signal,
+        "event": a.event,
+        "entry_price": a.entry_price,
+        "stop_loss": a.stop_loss,
+        "target": a.target,
+        "trigger_price": a.trigger_price,
+        "quantity": a.quantity,
+        "pnl_estimate": a.pnl_estimate,
+        "triggered_at": a.triggered_at.isoformat(),
+        "acknowledged": a.acknowledged,
+    }
+
+
+@router.get("/positions")
+async def list_position_alerts(current_user: CurrentUser) -> list[dict]:
+    """Return all position monitor alerts (stop hit, target hit) for the current user."""
+    from app.infra.monitoring.position_monitor import get_position_alerts
+    return [_pos_dict(a) for a in get_position_alerts(str(current_user.id))]
+
+
+@router.post("/positions/{alert_id}/ack", dependencies=[_trader_or_admin])
+async def ack_position_alert(alert_id: str, current_user: CurrentUser) -> dict:
+    from app.infra.monitoring.position_monitor import ack_position_alert as _ack
+    if not _ack(str(current_user.id), alert_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alert not found")
+    return {"ok": True}
+
+
+@router.delete("/positions/{alert_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[_trader_or_admin])
+async def clear_position_alert(alert_id: str, current_user: CurrentUser) -> None:
+    from app.infra.monitoring.position_monitor import clear_position_alert as _clear
+    if not _clear(str(current_user.id), alert_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alert not found")
+
+
 @router.post("/check")
 async def check_alerts(
     current_user: CurrentUser,

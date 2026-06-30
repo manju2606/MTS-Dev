@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createAlert, deleteAlert, listAlerts, searchStocks, getQuote } from '@/lib/api'
-import type { AlertRule, StockSearchResult } from '@/lib/api'
+import { createAlert, deleteAlert, listAlerts, searchStocks, getQuote, listPositionAlerts, ackPositionAlert, clearPositionAlert } from '@/lib/api'
+import type { AlertRule, StockSearchResult, PositionAlert } from '@/lib/api'
 import { NavBar } from '@/components/nav-bar'
 
 const INPUT = 'rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-indigo-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500'
@@ -149,8 +149,9 @@ function DistancePill({ ltp, target, direction }: { ltp: number; target: number;
 export default function AlertsView() {
   const router     = useRouter()
   const tokenRef   = useRef('')
-  const [alerts, setAlerts]     = useState<AlertRule[] | null>(null)
-  const [creating, setCreating] = useState(false)
+  const [alerts, setAlerts]           = useState<AlertRule[] | null>(null)
+  const [posAlerts, setPosAlerts]     = useState<PositionAlert[] | null>(null)
+  const [creating, setCreating]       = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
 
   // Form state
@@ -171,6 +172,9 @@ export default function AlertsView() {
     listAlerts(t)
       .then(a => setAlerts(a))
       .catch(() => setAlerts([]))
+    listPositionAlerts(t)
+      .then(p => setPosAlerts(p))
+      .catch(() => setPosAlerts([]))
   }, [router])
 
   // Refresh live prices for active alerts every 30 s
@@ -236,6 +240,16 @@ export default function AlertsView() {
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : 'Failed to create alert')
     } finally { setCreating(false) }
+  }
+
+  async function removePosAlert(id: string) {
+    await clearPositionAlert(tokenRef.current, id).catch(() => {})
+    setPosAlerts(prev => (prev ?? []).filter(a => a.id !== id))
+  }
+
+  async function ackPosAlert(id: string) {
+    await ackPositionAlert(tokenRef.current, id).catch(() => {})
+    setPosAlerts(prev => (prev ?? []).map(a => a.id === id ? { ...a, acknowledged: true } : a))
   }
 
   async function remove(id: string) {
@@ -456,6 +470,105 @@ export default function AlertsView() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </section>
+        )}
+
+        {/* ── Position monitoring alerts ── */}
+        {posAlerts !== null && posAlerts.length > 0 && (
+          <section className="mt-8">
+            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-400">
+              Position Alerts ({posAlerts.length})
+            </h2>
+            <div className="space-y-3">
+              {posAlerts.map(a => {
+                const isStop = a.event === 'stop_hit'
+                const isBuy  = a.signal === 'BUY'
+                const sym    = a.symbol.replace(/\.(NS|BO)$/, '')
+                const pnlPos = a.pnl_estimate >= 0
+                return (
+                  <div
+                    key={a.id}
+                    className={`relative overflow-hidden rounded-xl border p-4 ${
+                      isStop
+                        ? 'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/30'
+                        : 'border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30'
+                    } ${a.acknowledged ? 'opacity-60' : ''}`}
+                  >
+                    {/* accent bar */}
+                    <div className={`absolute left-0 top-0 h-full w-1 ${isStop ? 'bg-red-500' : 'bg-emerald-500'}`} />
+
+                    <div className="ml-2 flex flex-wrap items-start justify-between gap-3">
+                      {/* Left: event info */}
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-base">{isStop ? '⚠️' : '🎯'}</span>
+                          <span className={`text-sm font-bold ${isStop ? 'text-red-700 dark:text-red-400' : 'text-emerald-700 dark:text-emerald-400'}`}>
+                            {isStop ? 'Stop Loss Hit' : 'Target Reached'}
+                          </span>
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                            isBuy
+                              ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300'
+                              : 'bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300'
+                          }`}>{a.signal}</span>
+                        </div>
+                        <p className="mt-1 font-semibold text-zinc-900 dark:text-zinc-50">
+                          {sym}
+                          <span className="ml-2 text-xs font-normal text-zinc-400">
+                            {new Date(a.triggered_at).toLocaleString('en-IN')}
+                          </span>
+                        </p>
+                      </div>
+
+                      {/* Right: price grid */}
+                      <div className="flex flex-wrap gap-4 text-right text-xs">
+                        <div>
+                          <p className="text-zinc-400">Entry</p>
+                          <p className="font-mono font-semibold text-zinc-800 dark:text-zinc-200">₹{a.entry_price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+                        </div>
+                        <div>
+                          <p className="text-zinc-400">Stop</p>
+                          <p className="font-mono font-semibold text-red-600 dark:text-red-400">₹{a.stop_loss.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+                        </div>
+                        <div>
+                          <p className="text-zinc-400">Target</p>
+                          <p className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">₹{a.target.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+                        </div>
+                        <div>
+                          <p className="text-zinc-400">Trigger</p>
+                          <p className={`font-mono font-bold ${isStop ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                            ₹{a.trigger_price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-zinc-400">Est. P&L</p>
+                          <p className={`font-mono font-bold ${pnlPos ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                            {pnlPos ? '+' : ''}₹{a.pnl_estimate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="ml-2 mt-3 flex gap-3">
+                      {!a.acknowledged && (
+                        <button
+                          onClick={() => ackPosAlert(a.id)}
+                          className="text-xs font-medium text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+                        >
+                          Acknowledge
+                        </button>
+                      )}
+                      <button
+                        onClick={() => removePosAlert(a.id)}
+                        className="text-xs font-medium text-zinc-400 hover:text-red-500"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </section>
         )}

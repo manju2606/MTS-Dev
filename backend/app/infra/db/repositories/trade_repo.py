@@ -39,6 +39,15 @@ class SQLTradeRepository(TradeRepository):
         await self._session.refresh(orm)
         return orm.to_domain()
 
+    async def list_all_open(self) -> list[Trade]:
+        """Return every OPEN trade across all users (used by position monitor)."""
+        result = await self._session.execute(
+            select(TradeORM)
+            .where(TradeORM.status == TradeStatus.OPEN.value)
+            .order_by(TradeORM.created_at.desc())
+        )
+        return [row.to_domain() for row in result.scalars()]
+
     async def update(self, trade: Trade) -> Trade:
         orm = TradeORM.from_domain(trade)
         merged = await self._session.merge(orm)

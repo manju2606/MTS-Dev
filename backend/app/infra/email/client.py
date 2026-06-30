@@ -10,9 +10,9 @@ https://myaccount.google.com/apppasswords — use that as SMTP_PASSWORD.
 """
 
 import asyncio
+import base64
 import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+from email.header import Header
 
 import structlog
 
@@ -30,17 +30,27 @@ def _send_smtp_sync(
     subject: str,
     html: str,
 ) -> None:
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = from_addr
-    msg["To"] = to
-    msg.attach(MIMEText(html, "html", "utf-8"))
+    # Build a minimal RFC 2822 message entirely as ASCII bytes.
+    # The subject is RFC2047-encoded; the HTML body is base64-encoded.
+    # This avoids all Windows cp1252 codec surprises inside Python's MIME stack.
+    subject_hdr = Header(subject, "utf-8").encode()
+    html_b64 = base64.b64encode(html.encode("utf-8")).decode("ascii")
+    raw = (
+        f"From: {from_addr}\r\n"
+        f"To: {to}\r\n"
+        f"Subject: {subject_hdr}\r\n"
+        f"MIME-Version: 1.0\r\n"
+        f"Content-Type: text/html; charset=utf-8\r\n"
+        f"Content-Transfer-Encoding: base64\r\n"
+        f"\r\n"
+        f"{html_b64}\r\n"
+    ).encode("ascii")
     with smtplib.SMTP(host, port, timeout=30) as smtp:
         smtp.ehlo()
         smtp.starttls()
         smtp.ehlo()
         smtp.login(user, password)
-        smtp.sendmail(from_addr, to, msg.as_string())
+        smtp.sendmail(from_addr, to, raw)
 
 
 async def send_email(*, to: str, subject: str, html: str) -> None:
@@ -64,7 +74,8 @@ async def send_email(*, to: str, subject: str, html: str) -> None:
                     html=html,
                 ),
             )
-            log.info("email.sent.smtp", to=to, subject=subject)
+            safe = subject.encode("ascii", errors="replace").decode("ascii")
+            log.info("email.sent.smtp", to=to, subject=safe)
             return
         except Exception as exc:
             log.warning("email.smtp.failed", error=str(exc), fallback="resend")
@@ -95,9 +106,11 @@ async def send_email(*, to: str, subject: str, html: str) -> None:
             log.warning("email.resend.error", error=str(exc))
 
     # ── 3. Dev fallback ───────────────────────────────────────────────────────
+    # ASCII-encode subject so structlog doesn't crash on Windows cp1252 terminals
+    safe_subject = subject.encode("ascii", errors="replace").decode("ascii")
     log.info(
         "email.dev_log",
         to=to,
-        subject=subject,
+        subject=safe_subject,
         hint="Set SMTP_USER+SMTP_PASSWORD or RESEND_API_KEY to actually send",
     )

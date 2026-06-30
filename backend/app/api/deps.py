@@ -12,6 +12,7 @@ from app.core.security import decode_token
 from app.domain.interfaces.market_data import MarketDataClient
 from app.domain.interfaces.repositories import (
     AISignalRepository,
+    AlertRepository,
     TradeRepository,
     WatchlistRepository,
 )
@@ -21,6 +22,7 @@ from app.domain.services.risk_engine import RiskEngine
 from app.infra.ai.claude_client import ClaudeAIClient
 from app.infra.ai.local_engine import LocalAIClient
 from app.infra.db.repositories.ai_signal_repo import SQLAISignalRepository
+from app.infra.db.repositories.alert_repo import SQLAlertRepository
 from app.infra.db.repositories.trade_repo import SQLTradeRepository
 from app.infra.db.repositories.watchlist_repo import SQLWatchlistRepository
 from app.infra.db.session import get_db
@@ -119,6 +121,10 @@ def get_trade_repo(db: Annotated[AsyncSession, Depends(get_db)]) -> TradeReposit
     return SQLTradeRepository(db)
 
 
+def get_alert_repo(db: Annotated[AsyncSession, Depends(get_db)]) -> AlertRepository:
+    return SQLAlertRepository(db)
+
+
 def get_ai_signal_repo(db: Annotated[AsyncSession, Depends(get_db)]) -> AISignalRepository:
     return SQLAISignalRepository(db)
 
@@ -157,6 +163,7 @@ DBSession = Annotated[AsyncSession, Depends(get_db)]
 MarketDataDep = Annotated[MarketDataClient, Depends(get_market_data_client)]
 WatchlistDep = Annotated[WatchlistRepository, Depends(get_watchlist_repo)]
 TradeDep = Annotated[TradeRepository, Depends(get_trade_repo)]
+AlertDep = Annotated[AlertRepository, Depends(get_alert_repo)]
 RiskDep = Annotated[RiskEngine, Depends(get_risk_engine)]
 AIDep = Annotated[ClaudeAIClient | LocalAIClient, Depends(get_ai_client)]
 ClaudeDep = Annotated[ClaudeAIClient | None, Depends(get_claude_client)]

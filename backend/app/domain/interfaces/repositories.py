@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from uuid import UUID
 
 from app.domain.models.ai_signal import AISignal
+from app.domain.models.alert import Alert
 from app.domain.models.trade import Trade, TradeStatus
 from app.domain.models.user import User
 from app.domain.models.watchlist import Watchlist, WatchlistItem
@@ -89,3 +90,23 @@ class WatchlistRepository(ABC):
 
     @abstractmethod
     async def remove(self, user_id: UUID, symbol: str) -> bool: ...
+
+
+class AlertRepository(ABC):
+    @abstractmethod
+    async def list_by_user(self, user_id: UUID) -> list[Alert]: ...
+
+    @abstractmethod
+    async def create(self, alert: Alert) -> Alert: ...
+
+    @abstractmethod
+    async def get_by_id(self, alert_id: UUID) -> Alert | None: ...
+
+    @abstractmethod
+    async def update(self, alert: Alert) -> Alert: ...
+
+    @abstractmethod
+    async def delete(self, alert_id: UUID, user_id: UUID) -> bool: ...
+
+    @abstractmethod
+    async def list_untriggered(self) -> list[Alert]: ...

@@ -6,6 +6,7 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from app.domain.models.ai_signal import AISignal
+from app.domain.models.alert import Alert
 from app.domain.models.api_key import ApiKey
 from app.domain.models.trade import Trade, TradeMode, TradeSignal, TradeStatus
 from app.domain.models.user import SubscriptionTier, User, UserRole
@@ -306,4 +307,52 @@ class ApiKeyORM(Base):
             created_at=key.created_at,
             last_used_at=key.last_used_at,
             revoked=key.revoked,
+        )
+
+
+class AlertORM(Base):
+    __tablename__ = "alerts"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    symbol: Mapped[str] = mapped_column(String(50), nullable=False)
+    price_target: Mapped[float] = mapped_column(Float, nullable=False)
+    direction: Mapped[str] = mapped_column(String(10), nullable=False)  # "above" | "below"
+    triggered: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    triggered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    triggered_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    def to_domain(self) -> Alert:
+        return Alert(
+            id=self.id,
+            user_id=self.user_id,
+            symbol=self.symbol,
+            price_target=self.price_target,
+            direction=self.direction,
+            triggered=self.triggered,
+            triggered_at=self.triggered_at,
+            triggered_price=self.triggered_price,
+            created_at=self.created_at,
+        )
+
+    @classmethod
+    def from_domain(cls, a: Alert) -> "AlertORM":
+        return cls(
+            id=a.id,
+            user_id=a.user_id,
+            symbol=a.symbol,
+            price_target=a.price_target,
+            direction=a.direction,
+            triggered=a.triggered,
+            triggered_at=a.triggered_at,
+            triggered_price=a.triggered_price,
+            created_at=a.created_at,
         )

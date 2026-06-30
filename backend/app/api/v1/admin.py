@@ -1,9 +1,9 @@
-"""Admin panel endpoints — user management and platform stats."""
+"""Admin panel endpoints — user management, email list, and platform stats."""
 
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from sqlalchemy import func, select
 
 from app.api.deps import DBSession, require_role
@@ -20,6 +20,46 @@ router = APIRouter(
 class UserPatch(BaseModel):
     role: str | None = None
     is_active: bool | None = None
+
+
+class CreateUserRequest(BaseModel):
+    email: EmailStr
+    full_name: str
+    password: str
+    role: str = "viewer"
+
+
+@router.post("/users", status_code=status.HTTP_201_CREATED)
+async def create_user(body: CreateUserRequest, db: DBSession) -> dict:
+    from app.core.security import hash_password
+
+    try:
+        UserRole(body.role)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid role: {body.role}") from exc
+
+    exists = (await db.execute(select(UserORM).where(UserORM.email == body.email))).scalar_one_or_none()
+    if exists:
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    user_orm = UserORM(
+        email=body.email,
+        full_name=body.full_name,
+        hashed_password=hash_password(body.password),
+        role=body.role,
+        is_active=True,
+    )
+    db.add(user_orm)
+    await db.commit()
+    await db.refresh(user_orm)
+    return {
+        "id": str(user_orm.id),
+        "email": user_orm.email,
+        "full_name": user_orm.full_name,
+        "role": user_orm.role,
+        "is_active": user_orm.is_active,
+        "created_at": user_orm.created_at.isoformat(),
+    }
 
 
 @router.get("/users")
@@ -75,6 +115,49 @@ async def deactivate_user(user_id: UUID, db: DBSession) -> dict:
     user_orm.is_active = False
     await db.commit()
     return {"deactivated": True, "user_id": str(user_id)}
+
+
+# ── Email recipient list ──────────────────────────────────────────────────────
+
+class AddEmailRequest(BaseModel):
+    email: EmailStr
+    label: str = ""
+
+
+@router.get("/email-list")
+async def list_email_recipients() -> list[dict]:
+    from app.infra.db.repositories.email_list_repo import EmailListRepository
+    repo = EmailListRepository()
+    return await repo.list_all()
+
+
+@router.post("/email-list", status_code=status.HTTP_201_CREATED)
+async def add_email_recipient(body: AddEmailRequest) -> dict:
+    from app.infra.db.repositories.email_list_repo import EmailListRepository
+    repo = EmailListRepository()
+    existing = await repo.get_by_email(body.email)
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already in list")
+    return await repo.add(body.email, body.label)
+
+
+@router.delete("/email-list/{email_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_email_recipient(email_id: str) -> None:
+    from app.infra.db.repositories.email_list_repo import EmailListRepository
+    repo = EmailListRepository()
+    deleted = await repo.remove(email_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Email not found")
+
+
+@router.patch("/email-list/{email_id}/toggle")
+async def toggle_email_recipient(email_id: str) -> dict:
+    from app.infra.db.repositories.email_list_repo import EmailListRepository
+    repo = EmailListRepository()
+    result = await repo.toggle_active(email_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Email not found")
+    return result
 
 
 @router.get("/stats")

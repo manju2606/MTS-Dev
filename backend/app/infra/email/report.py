@@ -231,31 +231,35 @@ def build_report_html(picks: list, scanned_count: int) -> str:
 
 
 async def send_daily_report() -> None:
-    """Fetch today's top picks from MongoDB and email the report."""
+    """Fetch today's top picks from MongoDB and email the report to all active recipients."""
     from app.core.config import settings
     from app.infra.db.repositories.discovery_repo import DiscoveryRepository
+    from app.infra.db.repositories.email_list_repo import EmailListRepository
     from app.infra.email.client import send_email
 
-    to = settings.REPORT_TO_EMAIL or settings.SMTP_USER
-    if not to:
-        log.warning(
-            "daily_report.no_recipient",
-            hint="Set REPORT_TO_EMAIL or SMTP_USER in .env",
-        )
+    # Build recipient list: managed email list + fallback to env var
+    email_repo = EmailListRepository()
+    managed = await email_repo.list_active_emails()
+    fallback = settings.REPORT_TO_EMAIL or settings.SMTP_USER
+    recipients: list[str] = managed if managed else ([fallback] if fallback else [])
+
+    if not recipients:
+        log.warning("daily_report.no_recipient", hint="Add emails via Admin > Email List")
         return
 
     try:
         repo = DiscoveryRepository()
-        # Top 20 picks with a minimum score of 55 (BUY and above)
-        # min_score=50 captures WATCH (50+), BUY (60+), STRONG_BUY (75+); excludes NEUTRAL/SELL
         picks = await repo.get_top_picks(limit=20, min_score=50)
         scanned = await repo.count_latest_scan()
 
         subject = f"📈 Daily Picks — {date.today().strftime('%d %b %Y')} | {len(picks)} actionable stocks"
         html = build_report_html(picks, scanned)
 
-        await send_email(to=to, subject=subject, html=html)
+        for to in recipients:
+            await send_email(to=to, subject=subject, html=html)
+
         await repo.save_report(picks, scanned)
-        log.info("daily_report.sent", to=to, picks=len(picks))
+        safe = subject.encode("ascii", errors="replace").decode("ascii")
+        log.info("daily_report.sent", to=recipients, picks=len(picks), subject=safe)
     except Exception as exc:
         log.error("daily_report.error", error=str(exc))

@@ -187,6 +187,14 @@ export type AdminStats = {
   users_by_role: Record<string, number>
 }
 
+export type EmailRecipient = {
+  id: string
+  email: string
+  label: string
+  active: boolean
+  added_at: string
+}
+
 export type SentimentTag = { label: string; color: string }
 
 export type PulseCard = {
@@ -865,6 +873,49 @@ export async function updateAdminUser(
     body: JSON.stringify(body),
   })
   if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Update failed') }
+  return res.json()
+}
+
+export async function createAdminUser(
+  token: string, body: { email: string; full_name: string; password: string; role: string }
+): Promise<AdminUser> {
+  const res = await fetch(`${BASE}/api/v1/admin/users`, {
+    method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Create failed') }
+  return res.json()
+}
+
+export async function listEmailRecipients(token: string): Promise<EmailRecipient[]> {
+  const res = await fetch(`${BASE}/api/v1/admin/email-list`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error('Failed to load email list')
+  return res.json()
+}
+
+export async function addEmailRecipient(
+  token: string, email: string, label: string
+): Promise<EmailRecipient> {
+  const res = await fetch(`${BASE}/api/v1/admin/email-list`, {
+    method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, label }),
+  })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Add failed') }
+  return res.json()
+}
+
+export async function removeEmailRecipient(token: string, id: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/v1/admin/email-list/${id}`, {
+    method: 'DELETE', headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error('Remove failed')
+}
+
+export async function toggleEmailRecipient(token: string, id: string): Promise<EmailRecipient> {
+  const res = await fetch(`${BASE}/api/v1/admin/email-list/${id}/toggle`, {
+    method: 'PATCH', headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error('Toggle failed')
   return res.json()
 }
 

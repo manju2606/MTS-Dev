@@ -6,10 +6,41 @@ import { NavBar } from '@/components/nav-bar'
 import {
   getAdminStats, listAdminUsers, updateAdminUser, createAdminUser,
   listEmailRecipients, addEmailRecipient, removeEmailRecipient, toggleEmailRecipient,
+  sendReportNow,
 } from '@/lib/api'
 import type { AdminStats, AdminUser, EmailRecipient } from '@/lib/api'
 
 type Tab = 'users' | 'email-list'
+
+function SendReportButton({ tokenRef }: { tokenRef: React.RefObject<string> }) {
+  const [busy, setBusy] = useState(false)
+  const [ok, setOk] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  async function send() {
+    setBusy(true); setOk(false); setErr(null)
+    try {
+      await sendReportNow(tokenRef.current)
+      setOk(true)
+      setTimeout(() => setOk(false), 4000)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed')
+      setTimeout(() => setErr(null), 4000)
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <button
+      onClick={send}
+      disabled={busy}
+      className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
+        ok ? 'bg-emerald-600 text-white' : err ? 'bg-red-600 text-white' : 'bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-60'
+      }`}
+    >
+      {busy ? 'Sending…' : ok ? 'Sent!' : err ?? 'Send Report Now'}
+    </button>
+  )
+}
 
 // ── Add User Form ─────────────────────────────────────────────────────────────
 
@@ -243,7 +274,10 @@ export default function AdminView() {
     <div className="min-h-full bg-zinc-50 dark:bg-zinc-950">
       <NavBar active="Admin" />
       <main className="mx-auto max-w-6xl px-4 py-8">
-        <h1 className="mb-6 text-lg font-semibold text-zinc-900 dark:text-zinc-50">Admin Panel</h1>
+        <div className="mb-6 flex items-center justify-between">
+          <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Admin Panel</h1>
+          <SendReportButton tokenRef={tokenRef} />
+        </div>
 
         {msg && (
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-800 dark:bg-red-950 dark:text-red-300">

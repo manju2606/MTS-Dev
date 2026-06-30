@@ -1297,6 +1297,15 @@ export async function getReportPerformance(token: string, reportId: string): Pro
   return res.json()
 }
 
+export async function sendReportNow(token: string): Promise<{ message: string }> {
+  const res = await fetch(`${BASE}/api/v1/discovery/send-report`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
 export async function getEnsembleSignal(token: string, symbol: string): Promise<EnsembleSignal> {
   const res = await fetch(`${BASE}/api/v1/ai/ensemble/${encodeURIComponent(symbol)}`, {
     method: 'POST',

@@ -158,6 +158,17 @@ async def trigger_scan(
     return {"message": "Discovery scan started", "started": True}
 
 
+@router.post("/send-report", status_code=status.HTTP_202_ACCEPTED)
+async def trigger_report(current_user: CurrentUser) -> dict:
+    """Admin-only: send the daily report email immediately."""
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin only")
+    import asyncio
+    from app.infra.email.report import send_daily_report
+    asyncio.create_task(send_daily_report())
+    return {"message": "Report email queued"}
+
+
 @router.get("/reports")
 async def list_reports(
     current_user: CurrentUser,

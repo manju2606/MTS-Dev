@@ -179,6 +179,70 @@ async def get_report(report_id: str, current_user: CurrentUser) -> dict:
     return doc
 
 
+@router.get("/reports/{report_id}/performance")
+async def get_report_performance(report_id: str, current_user: CurrentUser) -> dict:
+    """Return each pick in the report enriched with the current market price and P&L."""
+    import asyncio
+    from app.infra.market_data.yfinance_client import YFinanceClient
+
+    repo = DiscoveryRepository()
+    doc = await repo.get_report(report_id)
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
+
+    picks = doc.get("picks", [])
+    symbols = list({p["symbol"] for p in picks})
+
+    client = YFinanceClient()
+    results = await asyncio.gather(
+        *[client.get_quote(s) for s in symbols], return_exceptions=True
+    )
+    prices: dict[str, float] = {}
+    for sym, r in zip(symbols, results, strict=True):
+        if not isinstance(r, Exception):
+            prices[sym] = r.price
+
+    def _status(pick: dict, current: float) -> str:
+        entry = pick["entry_price"]
+        stop  = pick["stop_loss"]
+        target = pick.get("target")
+        signal = pick.get("signal", "")
+        is_long = signal in ("BUY", "STRONG_BUY", "WATCH")
+        if target:
+            if is_long and current >= target:
+                return "TARGET_HIT"
+            if not is_long and current <= target:
+                return "TARGET_HIT"
+        if is_long and current <= stop:
+            return "STOP_HIT"
+        if not is_long and current >= stop:
+            return "STOP_HIT"
+        if current > entry * 1.001:
+            return "ABOVE_ENTRY"
+        if current < entry * 0.999:
+            return "BELOW_ENTRY"
+        return "AT_ENTRY"
+
+    enriched = []
+    for pick in picks:
+        current = prices.get(pick["symbol"])
+        entry = pick["entry_price"]
+        pnl_pct = round((current - entry) / entry * 100, 2) if current else None
+        enriched.append({
+            **pick,
+            "current_price": current,
+            "pnl_pct": pnl_pct,
+            "status": _status(pick, current) if current else "NO_DATA",
+        })
+
+    return {
+        "id": doc["id"],
+        "generated_at": doc["generated_at"],
+        "scanned_count": doc["scanned_count"],
+        "picks": enriched,
+    }
+
+
 def _universe_size() -> int:
     try:
         from app.infra.discovery.universe import NSE_UNIVERSE

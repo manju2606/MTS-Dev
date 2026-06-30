@@ -2,8 +2,8 @@
 
 import React, { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { listReportHistory, getReportDetail } from '@/lib/api'
-import type { ReportSummary, ReportDetail, ReportPick } from '@/lib/api'
+import { listReportHistory, getReportDetail, getReportPerformance } from '@/lib/api'
+import type { ReportSummary, ReportDetail, ReportPick, ReportPerformance, PerformancePick } from '@/lib/api'
 import { NavBar } from '@/components/nav-bar'
 
 const SIGNAL_STYLE: Record<string, string> = {
@@ -96,12 +96,79 @@ function PicksTable({ picks }: { picks: ReportPick[] }) {
   )
 }
 
+// ── Performance table ─────────────────────────────────────────────────────────
+
+const STATUS_STYLE: Record<string, { label: string; cls: string }> = {
+  TARGET_HIT:   { label: 'Target Hit',   cls: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300' },
+  STOP_HIT:     { label: 'Stop Hit',     cls: 'bg-red-100 text-red-700 dark:bg-red-900/60 dark:text-red-300' },
+  ABOVE_ENTRY:  { label: 'Above Entry',  cls: 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
+  BELOW_ENTRY:  { label: 'Below Entry',  cls: 'bg-red-50 text-red-500 dark:bg-red-900/20 dark:text-red-400' },
+  AT_ENTRY:     { label: 'At Entry',     cls: 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400' },
+  NO_DATA:      { label: 'No Data',      cls: 'bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500' },
+}
+
+function PerformanceTable({ picks }: { picks: PerformancePick[] }) {
+  const fmt = (n: number) => `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-zinc-100 dark:border-zinc-800">
+            {['#', 'Symbol', 'Signal', 'Entry', 'Stop', 'Target', 'Current', 'P&L %', 'Status'].map(h => (
+              <th key={h} className="px-3 py-2 text-left text-xs font-medium text-zinc-400">{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {picks.map((p, i) => {
+            const st = STATUS_STYLE[p.status] ?? STATUS_STYLE.NO_DATA
+            const pnlColor = p.pnl_pct == null ? '' : p.pnl_pct >= 0
+              ? 'text-emerald-600 dark:text-emerald-400'
+              : 'text-red-500 dark:text-red-400'
+            return (
+              <tr key={p.symbol} className={`border-b border-zinc-50 dark:border-zinc-800/50 ${i % 2 === 0 ? 'bg-zinc-50/50 dark:bg-zinc-800/20' : ''}`}>
+                <td className="px-3 py-2 text-xs text-zinc-400">{i + 1}</td>
+                <td className="px-3 py-2">
+                  <p className="font-semibold text-zinc-900 dark:text-zinc-50">{p.symbol.replace(/\.(NS|BO)$/, '')}</p>
+                  <p className="text-[10px] text-zinc-400">{p.name}</p>
+                </td>
+                <td className="px-3 py-2"><SignalBadge signal={p.signal} /></td>
+                <td className="px-3 py-2 font-mono text-xs text-zinc-600 dark:text-zinc-300">{fmt(p.entry_price)}</td>
+                <td className="px-3 py-2 font-mono text-xs text-red-500">{fmt(p.stop_loss)}</td>
+                <td className="px-3 py-2 font-mono text-xs text-emerald-600 dark:text-emerald-400">
+                  {p.target ? fmt(p.target) : '—'}
+                </td>
+                <td className="px-3 py-2 font-mono text-xs font-semibold text-zinc-900 dark:text-zinc-50">
+                  {p.current_price != null ? fmt(p.current_price) : <span className="text-zinc-300">—</span>}
+                </td>
+                <td className={`px-3 py-2 font-mono text-xs font-bold ${pnlColor}`}>
+                  {p.pnl_pct != null ? `${p.pnl_pct >= 0 ? '+' : ''}${p.pnl_pct.toFixed(2)}%` : '—'}
+                </td>
+                <td className="px-3 py-2">
+                  <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${st.cls}`}>
+                    {st.label}
+                  </span>
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 // ── Report row (collapsible) ──────────────────────────────────────────────────
 
+type ViewMode = 'picks' | 'performance'
+
 function ReportRow({ report, tokenRef }: { report: ReportSummary; tokenRef: React.RefObject<string> }) {
-  const [open, setOpen]       = useState(false)
-  const [detail, setDetail]   = useState<ReportDetail | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [open, setOpen]           = useState(false)
+  const [mode, setMode]           = useState<ViewMode>('picks')
+  const [detail, setDetail]       = useState<ReportDetail | null>(null)
+  const [perf, setPerf]           = useState<ReportPerformance | null>(null)
+  const [loading, setLoading]     = useState(false)
+  const [perfLoading, setPerfLoading] = useState(false)
 
   function toggle() {
     if (!open && !detail) {
@@ -113,6 +180,18 @@ function ReportRow({ report, tokenRef }: { report: ReportSummary; tokenRef: Reac
     setOpen(o => !o)
   }
 
+  function analyse(e: React.MouseEvent) {
+    e.stopPropagation()
+    setOpen(true)
+    setMode('performance')
+    if (!perf) {
+      setPerfLoading(true)
+      getReportPerformance(tokenRef.current, report.id)
+        .then(p => { setPerf(p); setPerfLoading(false) })
+        .catch(() => setPerfLoading(false))
+    }
+  }
+
   const dt = new Date(report.generated_at)
   const dateStr = dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
   const timeStr = dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
@@ -120,18 +199,12 @@ function ReportRow({ report, tokenRef }: { report: ReportSummary; tokenRef: Reac
   return (
     <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
       {/* Summary row */}
-      <button
-        onClick={toggle}
-        className="flex w-full items-center justify-between px-5 py-4 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
-      >
-        <div className="flex items-start gap-4">
-          {/* Timestamp */}
+      <div className="flex items-center justify-between px-5 py-4">
+        <button onClick={toggle} className="flex flex-1 items-start gap-4 text-left">
           <div className="min-w-[90px]">
             <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">{timeStr}</p>
             <p className="text-xs text-zinc-400">{dateStr}</p>
           </div>
-
-          {/* Stats */}
           <div className="flex flex-wrap items-center gap-3">
             <span className="rounded-lg bg-zinc-100 px-2 py-0.5 text-xs text-zinc-500 dark:bg-zinc-800">
               {report.scanned_count} scanned
@@ -141,22 +214,52 @@ function ReportRow({ report, tokenRef }: { report: ReportSummary; tokenRef: Reac
             </span>
             <SummaryPills summary={report.signal_summary} />
           </div>
+        </button>
+        <div className="ml-4 flex items-center gap-2">
+          <button
+            onClick={analyse}
+            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500"
+          >
+            Analyse
+          </button>
+          <button onClick={toggle} className="text-zinc-400">{open ? '▲' : '▼'}</button>
         </div>
+      </div>
 
-        <span className="ml-4 text-zinc-400">{open ? '▲' : '▼'}</span>
-      </button>
-
-      {/* Expanded picks */}
+      {/* Expanded content */}
       {open && (
         <div className="border-t border-zinc-100 dark:border-zinc-800">
-          {loading && (
-            <div className="flex justify-center py-8">
-              <div className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
-            </div>
+          {/* Mode tabs */}
+          <div className="flex border-b border-zinc-100 px-5 dark:border-zinc-800">
+            {(['picks', 'performance'] as ViewMode[]).map(m => (
+              <button
+                key={m}
+                onClick={() => { setMode(m); if (m === 'performance' && !perf) analyse({ stopPropagation: () => {} } as React.MouseEvent) }}
+                className={`mr-4 border-b-2 py-2.5 text-xs font-semibold transition-colors ${
+                  mode === m
+                    ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400'
+                    : 'border-transparent text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
+                }`}
+              >
+                {m === 'picks' ? 'Original Picks' : 'vs Current Price'}
+              </button>
+            ))}
+          </div>
+
+          {mode === 'picks' && (
+            <>
+              {loading && <div className="flex justify-center py-8"><div className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" /></div>}
+              {!loading && detail && <PicksTable picks={detail.picks} />}
+              {!loading && !detail && <p className="px-5 py-4 text-sm text-zinc-400">Failed to load picks.</p>}
+            </>
           )}
-          {!loading && detail && <PicksTable picks={detail.picks} />}
-          {!loading && !detail && (
-            <p className="px-5 py-4 text-sm text-zinc-400">Failed to load picks.</p>
+
+          {mode === 'performance' && (
+            <>
+              {perfLoading && <div className="flex justify-center py-8"><div className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" /></div>}
+              {!perfLoading && perf && <PerformanceTable picks={perf.picks} />}
+              {!perfLoading && !perf && <p className="px-5 py-4 text-sm text-zinc-400">Failed to load performance data.</p>}
+            </>
           )}
         </div>
       )}

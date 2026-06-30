@@ -1206,6 +1206,19 @@ export type ReportPick = {
 
 export type ReportDetail = ReportSummary & { picks: ReportPick[] }
 
+export type PerformancePick = ReportPick & {
+  current_price: number | null
+  pnl_pct: number | null
+  status: 'TARGET_HIT' | 'STOP_HIT' | 'ABOVE_ENTRY' | 'BELOW_ENTRY' | 'AT_ENTRY' | 'NO_DATA'
+}
+
+export type ReportPerformance = {
+  id: string
+  generated_at: string
+  scanned_count: number
+  picks: PerformancePick[]
+}
+
 export async function listReportHistory(token: string, limit = 50, skip = 0): Promise<ReportSummary[]> {
   const res = await fetch(`${BASE}/api/v1/discovery/reports?limit=${limit}&skip=${skip}`, {
     headers: authHeaders(token),
@@ -1216,6 +1229,14 @@ export async function listReportHistory(token: string, limit = 50, skip = 0): Pr
 
 export async function getReportDetail(token: string, reportId: string): Promise<ReportDetail | null> {
   const res = await fetch(`${BASE}/api/v1/discovery/reports/${reportId}`, {
+    headers: authHeaders(token),
+  })
+  if (!res.ok) return null
+  return res.json()
+}
+
+export async function getReportPerformance(token: string, reportId: string): Promise<ReportPerformance | null> {
+  const res = await fetch(`${BASE}/api/v1/discovery/reports/${reportId}/performance`, {
     headers: authHeaders(token),
   })
   if (!res.ok) return null

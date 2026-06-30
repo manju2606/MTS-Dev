@@ -10,7 +10,7 @@ const LINK = 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:te
 const ACTIVE = 'font-medium text-zinc-900 dark:text-zinc-50'
 
 const NAV: { href: string; label: string }[] = [
-  { href: '/dashboard', label: 'Watchlist' },
+  { href: '/dashboard', label: 'Dashboard' },
   { href: '/portfolio', label: 'Portfolio' },
   { href: '/market-pulse', label: 'Market Pulse' },
   { href: '/research', label: 'Research' },

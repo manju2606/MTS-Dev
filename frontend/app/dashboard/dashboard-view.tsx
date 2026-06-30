@@ -2,703 +2,373 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import {
-  addItemToWatchlist,
-  checkAlerts,
-  createAlert,
-  createWatchlist,
-  deleteAlert,
-  deleteWatchlist,
-  getHistory,
-  getMe,
-  getQuote,
-  getWatchlistItems,
-  listAlerts,
-  listWatchlists,
-  removeItemFromWatchlist,
-  renameWatchlist,
-  seedWatchlistDefaults,
-} from '@/lib/api'
-import type { AlertRule, ChartPeriod, HistoryBar, Quote, User, Watchlist, WatchlistItem } from '@/lib/api'
+import Link from 'next/link'
 import { NavBar } from '@/components/nav-bar'
-import { SparkLine } from '@/components/spark-line'
-import { PriceChart } from '@/components/price-chart'
-import { OnboardingBanner } from '@/components/onboarding-banner'
+import {
+  getMe, getTopPicks, getDiscoveryStatus, listTrades, listAlerts,
+} from '@/lib/api'
+import type { User, StockScore, DiscoveryStatus, Trade, AlertRule } from '@/lib/api'
 
-type Signal = 'BUY' | 'HOLD' | 'SELL'
+// ── Signal config ─────────────────────────────────────────────────────────────
 
-function computeSignal(q: Quote): { score: number; signal: Signal } {
-  const range = q.day_high - q.day_low
-  const pos = range > 0 ? (q.price - q.day_low) / range : 0.5
-  const raw = 50 + q.change_pct * 6 + (pos - 0.5) * 20
-  const score = Math.round(Math.min(100, Math.max(0, raw)))
-  return { score, signal: score >= 60 ? 'BUY' : score <= 40 ? 'SELL' : 'HOLD' }
+const SIGNAL_RANK: Record<string, number> = {
+  STRONG_BUY: 6, BUY: 5, WATCH: 4, NEUTRAL: 3, SELL: 2, STRONG_SELL: 1,
+}
+const SIGNAL_STYLE: Record<string, string> = {
+  STRONG_BUY:  'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300',
+  BUY:         'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400',
+  WATCH:       'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400',
+  NEUTRAL:     'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400',
+  SELL:        'bg-red-50 text-red-600 dark:bg-red-950/50 dark:text-red-400',
+  STRONG_SELL: 'bg-red-100 text-red-800 dark:bg-red-900/60 dark:text-red-300',
 }
 
-function SignalBadge({ signal }: { signal: Signal }) {
-  const cls =
-    signal === 'BUY'
-      ? 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:ring-emerald-800'
-      : signal === 'SELL'
-        ? 'bg-red-50 text-red-600 ring-red-200 dark:bg-red-950 dark:text-red-300 dark:ring-red-800'
-        : 'bg-amber-50 text-amber-600 ring-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:ring-amber-800'
-  return (
-    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${cls}`}>
-      {signal}
-    </span>
-  )
+type SortKey = 'signal' | 'score' | 'entry_price' | 'risk_reward_ratio'
+type SortDir = 'asc' | 'desc'
+
+function sortPicks(arr: StockScore[], key: SortKey, dir: SortDir): StockScore[] {
+  return [...arr].sort((a, b) => {
+    const av = key === 'signal' ? (SIGNAL_RANK[a.signal] ?? 0) : (a[key] as number)
+    const bv = key === 'signal' ? (SIGNAL_RANK[b.signal] ?? 0) : (b[key] as number)
+    return dir === 'desc' ? bv - av : av - bv
+  })
 }
 
-function ScoreBar({ score }: { score: number }) {
-  const color = score >= 60 ? 'bg-emerald-500' : score <= 40 ? 'bg-red-500' : 'bg-amber-400'
+// ── Stat card ─────────────────────────────────────────────────────────────────
+
+function StatCard({ label, value, sub, accent }: { label: string; value: string | number; sub?: string; accent?: string }) {
   return (
-    <div className="flex items-center gap-2">
-      <div className="h-1.5 w-16 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
-        <div className={`h-full rounded-full ${color}`} style={{ width: `${score}%` }} />
-      </div>
-      <span className="w-6 text-right text-xs text-zinc-500">{score}</span>
+    <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+      <p className="text-xs text-zinc-400">{label}</p>
+      <p className={`mt-1 text-2xl font-bold ${accent ?? 'text-zinc-900 dark:text-zinc-50'}`}>{value}</p>
+      {sub && <p className="mt-0.5 text-[11px] text-zinc-400">{sub}</p>}
     </div>
   )
 }
 
+// ── Open positions mini table ─────────────────────────────────────────────────
+
+function OpenPositions({ trades }: { trades: Trade[] }) {
+  if (trades.length === 0) return (
+    <p className="py-4 text-center text-sm text-zinc-400">No open paper positions.</p>
+  )
+  return (
+    <table className="w-full text-xs">
+      <thead>
+        <tr className="border-b border-zinc-100 dark:border-zinc-800">
+          {['Symbol', 'Signal', 'Entry', 'Stop', 'Target', 'Qty'].map(h => (
+            <th key={h} className="px-3 py-2 text-left font-medium text-zinc-400">{h}</th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {trades.map(t => (
+          <tr key={t.id} className="border-b border-zinc-50 dark:border-zinc-800/50">
+            <td className="px-3 py-2 font-semibold text-zinc-900 dark:text-zinc-50">{t.symbol.replace(/\.(NS|BO)$/, '')}</td>
+            <td className="px-3 py-2">
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${t.signal === 'BUY' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300'}`}>
+                {t.signal}
+              </span>
+            </td>
+            <td className="px-3 py-2 font-mono text-zinc-700 dark:text-zinc-300">₹{t.entry_price.toFixed(2)}</td>
+            <td className="px-3 py-2 font-mono text-red-500">₹{t.stop_loss.toFixed(2)}</td>
+            <td className="px-3 py-2 font-mono text-emerald-600 dark:text-emerald-400">₹{t.target.toFixed(2)}</td>
+            <td className="px-3 py-2 text-zinc-500">{t.quantity}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+// ── Sort header ───────────────────────────────────────────────────────────────
+
+function SortTh({ label, k, sortKey, sortDir, onSort }: {
+  label: string; k: SortKey; sortKey: SortKey; sortDir: SortDir; onSort: (k: SortKey) => void
+}) {
+  return (
+    <th
+      onClick={() => onSort(k)}
+      className={`cursor-pointer select-none px-3 py-2.5 text-left text-xs font-medium hover:text-zinc-700 dark:hover:text-zinc-200 ${
+        sortKey === k ? 'text-indigo-600 dark:text-indigo-400' : 'text-zinc-400'
+      }`}
+    >
+      {label}{sortKey === k ? (sortDir === 'desc' ? ' ▼' : ' ▲') : ' ⇅'}
+    </th>
+  )
+}
+
+// ── Main view ─────────────────────────────────────────────────────────────────
+
 export default function DashboardView() {
   const router = useRouter()
-  const tokenRef = useRef<string>('')
+  const tokenRef = useRef('')
 
-  const [user, setUser] = useState<User | null>(null)
-  const [watchlists, setWatchlists] = useState<Watchlist[]>([])
-  const [activeId, setActiveId] = useState<string | null>(null)
-  const [items, setItems] = useState<WatchlistItem[]>([])
-  const [quotes, setQuotes] = useState<Record<string, Quote>>({})
-  const [sparklines, setSparklines] = useState<Record<string, number[]>>({})
+  const [user, setUser]         = useState<User | null>(null)
+  const [picks, setPicks]       = useState<StockScore[] | null>(null)
+  const [status, setStatus]     = useState<DiscoveryStatus | null>(null)
+  const [trades, setTrades]     = useState<Trade[]>([])
+  const [alerts, setAlerts]     = useState<AlertRule[]>([])
+  const [sortKey, setSortKey]   = useState<SortKey>('signal')
+  const [sortDir, setSortDir]   = useState<SortDir>('desc')
+  const [sigFilter, setSigFilter] = useState<string>('All')
 
-  // Chart panel state
-  const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null)
-  const [chartPeriod, setChartPeriod] = useState<ChartPeriod>('1M')
-  const [chartData, setChartData] = useState<HistoryBar[]>([])
-  const [chartLoading, setChartLoading] = useState(false)
-
-  const [loading, setLoading] = useState(true)
-  const [itemsLoading, setItemsLoading] = useState(false)
-  const [showOnboarding, setShowOnboarding] = useState(false)
-
-  // Alerts
-  const [alerts, setAlerts] = useState<AlertRule[]>([])
-  const [triggeredAlerts, setTriggeredAlerts] = useState<AlertRule[]>([])
-  const [alertSymbol, setAlertSymbol] = useState<string | null>(null)
-  const [alertTarget, setAlertTarget] = useState('')
-  const [alertDir, setAlertDir] = useState<'above' | 'below'>('above')
-  const wsRef = useRef<WebSocket | null>(null)
-
-  // Watchlist sidebar state
-  const [creating, setCreating] = useState(false)
-  const [newName, setNewName] = useState('')
-  const [createError, setCreateError] = useState<string | null>(null)
-  const [renamingId, setRenamingId] = useState<string | null>(null)
-  const [renameVal, setRenameVal] = useState('')
-
-  // Add symbol form
-  const [addSymbol, setAddSymbol] = useState('')
-  const [addLoading, setAddLoading] = useState(false)
-  const [addError, setAddError] = useState<string | null>(null)
-
-  const fetchQuotes = useCallback(async (wl: WatchlistItem[]) => {
-    if (wl.length === 0) return
-    const results = await Promise.allSettled(wl.map(i => getQuote(tokenRef.current, i.symbol)))
-    setQuotes(prev => {
-      const next = { ...prev }
-      results.forEach((r, idx) => {
-        if (r.status === 'fulfilled') next[wl[idx].symbol] = r.value
-      })
-      return next
-    })
+  const load = useCallback(async (token: string) => {
+    const [me, p, s, t, a] = await Promise.all([
+      getMe(token),
+      getTopPicks(token, 50, undefined, 0),
+      getDiscoveryStatus(token),
+      listTrades(token, 'open').catch(() => [] as Trade[]),
+      listAlerts(token).catch(() => [] as AlertRule[]),
+    ])
+    setUser(me)
+    setPicks(p)
+    setStatus(s)
+    setTrades((t as Trade[]).filter((tr: Trade) => tr.status === 'open'))
+    setAlerts((a as AlertRule[]).filter((al: AlertRule) => !al.triggered))
   }, [])
-
-  const fetchSparklines = useCallback(async (wl: WatchlistItem[]) => {
-    if (wl.length === 0) return
-    const results = await Promise.allSettled(
-      wl.map(i => getHistory(tokenRef.current, i.symbol, '1M')),
-    )
-    setSparklines(prev => {
-      const next = { ...prev }
-      results.forEach((r, idx) => {
-        if (r.status === 'fulfilled') {
-          next[wl[idx].symbol] = r.value.map(b => b.close)
-        }
-      })
-      return next
-    })
-  }, [])
-
-  const loadItems = useCallback(
-    async (id: string) => {
-      setItemsLoading(true)
-      try {
-        const wl = await getWatchlistItems(tokenRef.current, id)
-        setItems(wl)
-        // Quotes and sparklines in parallel
-        await Promise.all([fetchQuotes(wl), fetchSparklines(wl)])
-      } finally {
-        setItemsLoading(false)
-      }
-    },
-    [fetchQuotes, fetchSparklines],
-  )
 
   useEffect(() => {
     const t = localStorage.getItem('mts_token')
     if (!t) { router.replace('/login'); return }
     tokenRef.current = t
+    const run = async () => { try { await load(t) } catch { router.replace('/login') } }
+    void run()
+  }, [router, load])
 
-    if (!localStorage.getItem('mts_onboarded')) {
-      setShowOnboarding(true)
-    }
-
-    Promise.all([getMe(t), listWatchlists(t)])
-      .then(async ([me, wls]) => {
-        setUser(me)
-        if (wls.length === 0) {
-          const created = await createWatchlist(t, 'My Watchlist')
-          const updated = await listWatchlists(t)
-          setWatchlists(updated)
-          setActiveId(created.id)
-          await loadItems(created.id)
-        } else {
-          setWatchlists(wls)
-          setActiveId(wls[0].id)
-          await loadItems(wls[0].id)
-        }
-      })
-      .catch(() => {
-        localStorage.removeItem('mts_token')
-        router.replace('/login')
-      })
-      .finally(() => setLoading(false))
-  }, [router, loadItems])
-
-  // WebSocket live prices — reconnects on symbol list change
-  useEffect(() => {
-    if (items.length === 0 || !tokenRef.current) return
-    const symbols = items.map(i => i.symbol).join(',')
-    const wsUrl = `ws://localhost:8000/ws/prices?token=${encodeURIComponent(tokenRef.current)}&symbols=${encodeURIComponent(symbols)}`
-
-    const connect = () => {
-      const ws = new WebSocket(wsUrl)
-      wsRef.current = ws
-      ws.onmessage = e => {
-        try {
-          const data = JSON.parse(e.data) as Record<string, Quote>
-          setQuotes(prev => ({ ...prev, ...data }))
-        } catch { /* ignore */ }
-      }
-      ws.onclose = () => {
-        // Fallback poll every 30 s if WS disconnects
-        const id = setTimeout(() => { if (!wsRef.current || wsRef.current.readyState > 1) connect() }, 30_000)
-        return () => clearTimeout(id)
-      }
-    }
-    connect()
-    return () => { wsRef.current?.close(); wsRef.current = null }
-  }, [items])
-
-  // Check price alerts every 60 s
-  useEffect(() => {
-    if (!tokenRef.current) return
-    const check = async () => {
-      const triggered = await checkAlerts(tokenRef.current).catch(() => [])
-      if (triggered.length > 0) setTriggeredAlerts(prev => [...prev, ...triggered])
-    }
-    const id = setInterval(check, 60_000)
-    return () => clearInterval(id)
-  }, [])
-
-  // Load chart whenever symbol or period changes
-  useEffect(() => {
-    if (!selectedSymbol) return
-    setChartLoading(true)
-    setChartData([])
-    getHistory(tokenRef.current, selectedSymbol, chartPeriod)
-      .then(setChartData)
-      .catch(() => setChartData([]))
-      .finally(() => setChartLoading(false))
-  }, [selectedSymbol, chartPeriod])
-
-  // Keep localStorage in sync so NavBar search can add to the active watchlist
-  useEffect(() => {
-    if (activeId) localStorage.setItem('mts_active_watchlist_id', activeId)
-  }, [activeId])
-
-  async function switchWatchlist(id: string) {
-    setActiveId(id)
-    setSelectedSymbol(null)
-    setChartData([])
-    setQuotes({})
-    setSparklines({})
-    await loadItems(id)
+  function handleSort(key: SortKey) {
+    if (sortKey === key) setSortDir(d => d === 'desc' ? 'asc' : 'desc')
+    else { setSortKey(key); setSortDir('desc') }
   }
 
-  function handleRowClick(symbol: string) {
-    if (selectedSymbol === symbol) {
-      setSelectedSymbol(null)
-    } else {
-      setSelectedSymbol(symbol)
-      setChartPeriod('1M')
-    }
-  }
+  const SIGS = ['All', 'STRONG_BUY', 'BUY', 'WATCH', 'NEUTRAL', 'SELL', 'STRONG_SELL']
 
-  async function handleCreateWatchlist() {
-    const name = newName.trim()
-    if (!name) return
-    setCreateError(null)
-    try {
-      const wl = await createWatchlist(tokenRef.current, name)
-      setWatchlists(prev => [...prev, wl])
-      setNewName('')
-      setCreating(false)
-      await switchWatchlist(wl.id)
-    } catch (err) {
-      setCreateError(err instanceof Error ? err.message : 'Failed')
-    }
-  }
+  const displayed = picks
+    ? sortPicks(
+        sigFilter === 'All' ? picks : picks.filter(p => p.signal === sigFilter),
+        sortKey, sortDir
+      ).slice(0, 15)
+    : null
 
-  async function handleRename(id: string) {
-    const name = renameVal.trim()
-    if (!name) { setRenamingId(null); return }
-    try {
-      const updated = await renameWatchlist(tokenRef.current, id, name)
-      setWatchlists(prev => prev.map(w => (w.id === id ? updated : w)))
-    } catch { /* ignore */ } finally {
-      setRenamingId(null)
-    }
-  }
+  const lastScan = status?.last_scan_at
+    ? new Date(status.last_scan_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+    : '—'
 
-  async function handleDelete(id: string) {
-    if (!confirm('Delete this watchlist and all its items?')) return
-    await deleteWatchlist(tokenRef.current, id)
-    const remaining = watchlists.filter(w => w.id !== id)
-    setWatchlists(remaining)
-    if (activeId === id) {
-      if (remaining.length > 0) {
-        setActiveId(remaining[0].id)
-        await loadItems(remaining[0].id)
-      } else {
-        setActiveId(null)
-        setItems([])
-      }
-    }
-  }
-
-  async function handleAdd(e: React.FormEvent) {
-    e.preventDefault()
-    if (!addSymbol.trim() || !activeId) return
-    setAddLoading(true)
-    setAddError(null)
-    try {
-      const item = await addItemToWatchlist(tokenRef.current, activeId, addSymbol.trim())
-      setItems(prev => [item, ...prev])
-      setAddSymbol('')
-      // Fetch quote + sparkline for the new symbol
-      const [q, hist] = await Promise.allSettled([
-        getQuote(tokenRef.current, item.symbol),
-        getHistory(tokenRef.current, item.symbol, '1M'),
-      ])
-      if (q.status === 'fulfilled') setQuotes(prev => ({ ...prev, [item.symbol]: q.value }))
-      if (hist.status === 'fulfilled') {
-        setSparklines(prev => ({ ...prev, [item.symbol]: hist.value.map(b => b.close) }))
-      }
-    } catch (err) {
-      setAddError(err instanceof Error ? err.message : 'Failed to add symbol')
-    } finally {
-      setAddLoading(false)
-    }
-  }
-
-  async function handleRemove(symbol: string, e: React.MouseEvent) {
-    e.stopPropagation()
-    if (!activeId) return
-    try {
-      await removeItemFromWatchlist(tokenRef.current, activeId, symbol)
-      setItems(prev => prev.filter(i => i.symbol !== symbol))
-      setQuotes(prev => { const n = { ...prev }; delete n[symbol]; return n })
-      setSparklines(prev => { const n = { ...prev }; delete n[symbol]; return n })
-      if (selectedSymbol === symbol) setSelectedSymbol(null)
-    } catch {
-      if (activeId) await loadItems(activeId)
-    }
-  }
-
-  const activeWatchlist = watchlists.find(w => w.id === activeId)
-
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-zinc-950">
-        <p className="text-sm text-zinc-400">Loading…</p>
-      </div>
-    )
-  }
+  const sigCounts = picks
+    ? Object.fromEntries(
+        ['STRONG_BUY', 'BUY', 'WATCH'].map(s => [s, picks.filter(p => p.signal === s).length])
+      )
+    : {}
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
-      <NavBar active="Watchlist" />
+      <NavBar active="Dashboard" />
+      <main className="mx-auto max-w-7xl px-4 py-8">
 
-      {showOnboarding && (
-        <div className="mx-auto max-w-7xl px-4 pt-4">
-          <OnboardingBanner
-            onSeed={async () => {
-              if (activeId) {
-                await seedWatchlistDefaults(tokenRef.current, activeId).catch(() => {})
-                await loadItems(activeId)
-              }
-            }}
-            onDismiss={() => {
-              setShowOnboarding(false)
-              localStorage.setItem('mts_onboarded', '1')
-            }}
-          />
-        </div>
-      )}
-
-      <div className="mx-auto flex max-w-7xl gap-0 px-4 py-6">
-        {/* ── Sidebar ── */}
-        <aside className="w-52 shrink-0 pr-4">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-              Watchlists
-            </span>
-            <button
-              onClick={() => { setCreating(true); setNewName(''); setCreateError(null) }}
-              title="Create watchlist"
-              className="rounded p-0.5 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-            >
-              +
-            </button>
-          </div>
-
-          <ul className="space-y-0.5">
-            {watchlists.map(wl => (
-              <li key={wl.id}>
-                {renamingId === wl.id ? (
-                  <input
-                    autoFocus
-                    value={renameVal}
-                    onChange={e => setRenameVal(e.target.value)}
-                    onBlur={() => handleRename(wl.id)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') handleRename(wl.id)
-                      if (e.key === 'Escape') setRenamingId(null)
-                    }}
-                    className="w-full rounded border border-indigo-400 px-2 py-1 text-xs focus:outline-none dark:bg-zinc-800 dark:text-zinc-100"
-                  />
-                ) : (
-                  <div
-                    className={`group flex cursor-pointer items-center justify-between rounded px-2 py-1.5 text-sm ${
-                      activeId === wl.id
-                        ? 'bg-indigo-50 font-medium text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300'
-                        : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'
-                    }`}
-                    onClick={() => switchWatchlist(wl.id)}
-                  >
-                    <span className="truncate">{wl.name}</span>
-                    <span className="hidden gap-0.5 group-hover:flex">
-                      <button
-                        title="Rename"
-                        onClick={e => {
-                          e.stopPropagation()
-                          setRenamingId(wl.id)
-                          setRenameVal(wl.name)
-                        }}
-                        className="rounded px-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
-                      >
-                        ✎
-                      </button>
-                      <button
-                        title="Delete"
-                        onClick={e => { e.stopPropagation(); handleDelete(wl.id) }}
-                        className="rounded px-1 text-zinc-400 hover:text-red-500"
-                      >
-                        ×
-                      </button>
-                    </span>
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
-
-          {creating && (
-            <div className="mt-2 flex flex-col gap-1">
-              <input
-                autoFocus
-                value={newName}
-                onChange={e => setNewName(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') handleCreateWatchlist()
-                  if (e.key === 'Escape') setCreating(false)
-                }}
-                placeholder="Watchlist name"
-                className="w-full rounded border border-indigo-400 px-2 py-1 text-xs focus:outline-none dark:bg-zinc-800 dark:text-zinc-100"
-              />
-              {createError && <p className="text-xs text-red-500">{createError}</p>}
-              <div className="flex gap-1">
-                <button
-                  onClick={handleCreateWatchlist}
-                  className="flex-1 rounded bg-indigo-600 py-1 text-xs font-medium text-white hover:bg-indigo-500"
-                >
-                  Create
-                </button>
-                <button
-                  onClick={() => setCreating(false)}
-                  className="flex-1 rounded bg-zinc-200 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-300 dark:bg-zinc-700 dark:text-zinc-300"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
-        </aside>
-
-        {/* ── Main area ── */}
-        <main className="min-w-0 flex-1">
-          <div className="mb-4 flex items-center justify-between">
+        {/* Greeting */}
+        <div className="mb-6 flex items-center justify-between">
+          <div>
             <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-              {activeWatchlist?.name ?? 'Select a watchlist'}
+              {user ? `Welcome back, ${user.full_name.split(' ')[0]}` : 'Dashboard'}
             </h1>
-            <p className="text-xs text-zinc-400">Click any row to open chart · refreshes every 30 s</p>
+            <p className="text-xs text-zinc-400 mt-0.5">
+              Last scan: {lastScan} · {status?.stocks_scanned ?? 0} stocks · Next scan every 5 min
+            </p>
+          </div>
+          <Link href="/discovery"
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">
+            Full Discovery →
+          </Link>
+        </div>
+
+        {/* Stats row */}
+        <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <StatCard label="AI Picks Today" value={picks?.length ?? '—'}
+            sub={`${sigCounts['STRONG_BUY'] ?? 0} strong buy · ${sigCounts['BUY'] ?? 0} buy`}
+            accent="text-indigo-600 dark:text-indigo-400" />
+          <StatCard label="Open Positions" value={trades.length}
+            sub="paper trades"
+            accent={trades.length > 0 ? 'text-emerald-600 dark:text-emerald-400' : undefined} />
+          <StatCard label="Active Alerts" value={alerts.length}
+            sub="price alerts"
+            accent={alerts.length > 0 ? 'text-amber-600 dark:text-amber-400' : undefined} />
+          <StatCard label="Universe" value={status?.universe_size ?? '—'}
+            sub="NSE/BSE stocks scanned" />
+        </div>
+
+        {/* Two-column layout */}
+        <div className="grid gap-6 lg:grid-cols-3">
+
+          {/* Left — AI Picks (2/3 width) */}
+          <div className="lg:col-span-2">
+            <div className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+              {/* Header + signal filter */}
+              <div className="border-b border-zinc-100 px-5 py-3 dark:border-zinc-800">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                    Today&apos;s AI Picks
+                    {picks !== null && <span className="ml-2 text-xs font-normal text-zinc-400">top 15 shown</span>}
+                  </p>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {SIGS.map(s => (
+                    <button key={s} onClick={() => setSigFilter(s)}
+                      className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold transition-colors ${
+                        sigFilter === s
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400'
+                      }`}
+                    >
+                      {s === 'All' ? `All (${picks?.length ?? 0})` : s.replace('_', ' ')}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Picks table */}
+              {displayed === null ? (
+                <div className="space-y-2 p-4">
+                  {Array.from({ length: 8 }).map((_, i) => (
+                    <div key={i} className="h-10 animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" />
+                  ))}
+                </div>
+              ) : displayed.length === 0 ? (
+                <p className="py-10 text-center text-sm text-zinc-400">
+                  No picks yet — run a scan from the Discovery page.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-zinc-100 dark:border-zinc-800">
+                        <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-400">#</th>
+                        <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-400">Symbol</th>
+                        <SortTh label="Signal" k="signal" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                        <SortTh label="Score" k="score" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                        <SortTh label="Entry" k="entry_price" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                        <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-400">Stop</th>
+                        <th className="px-3 py-2.5 text-left text-xs font-medium text-emerald-600 dark:text-emerald-400">T1</th>
+                        <th className="px-3 py-2.5 text-left text-xs font-medium text-emerald-700 dark:text-emerald-500">T2</th>
+                        <SortTh label="R:R" k="risk_reward_ratio" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                        <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-400">Hold</th>
+                        <th className="px-3 py-2.5" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {displayed.map((s, i) => {
+                        const t1 = s.targets[0], t2 = s.targets[1]
+                        const t1pct = t1 ? `+${(((t1 - s.entry_price) / s.entry_price) * 100).toFixed(1)}%` : ''
+                        const t2pct = t2 ? `+${(((t2 - s.entry_price) / s.entry_price) * 100).toFixed(1)}%` : ''
+                        return (
+                          <tr key={s.id} className={`border-b border-zinc-50 dark:border-zinc-800/50 ${i % 2 === 0 ? 'bg-zinc-50/30 dark:bg-zinc-800/10' : ''}`}>
+                            <td className="px-3 py-2 text-xs text-zinc-400">{i + 1}</td>
+                            <td className="px-3 py-2">
+                              <p className="font-semibold text-zinc-900 dark:text-zinc-50 text-xs">{s.symbol.replace(/\.(NS|BO)$/, '')}</p>
+                              <p className="text-[10px] text-zinc-400">{s.name}</p>
+                            </td>
+                            <td className="px-3 py-2">
+                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${SIGNAL_STYLE[s.signal] ?? ''}`}>
+                                {s.signal.replace('_', ' ')}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2">
+                              <div className="flex items-center gap-1.5">
+                                <div className="h-1.5 w-10 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
+                                  <div className={`h-full rounded-full ${s.score >= 70 ? 'bg-emerald-500' : s.score >= 50 ? 'bg-amber-400' : 'bg-red-400'}`} style={{ width: `${s.score}%` }} />
+                                </div>
+                                <span className="text-[10px] font-bold text-zinc-600 dark:text-zinc-300">{s.score.toFixed(0)}</span>
+                              </div>
+                            </td>
+                            <td className="px-3 py-2 font-mono text-xs text-zinc-700 dark:text-zinc-300">₹{s.entry_price.toFixed(2)}</td>
+                            <td className="px-3 py-2 font-mono text-xs text-red-500">₹{s.stop_loss.toFixed(2)}</td>
+                            <td className="px-3 py-2 font-mono text-xs text-emerald-600 dark:text-emerald-400">
+                              {t1 ? <>₹{t1.toFixed(2)}<span className="block text-[10px] text-zinc-400">{t1pct}</span></> : '—'}
+                            </td>
+                            <td className="px-3 py-2 font-mono text-xs text-emerald-700 dark:text-emerald-500">
+                              {t2 ? <>₹{t2.toFixed(2)}<span className="block text-[10px] text-zinc-400">{t2pct}</span></> : '—'}
+                            </td>
+                            <td className={`px-3 py-2 text-xs font-bold ${s.risk_reward_ratio >= 2 ? 'text-emerald-600 dark:text-emerald-400' : s.risk_reward_ratio >= 1.5 ? 'text-amber-500' : 'text-red-500'}`}>
+                              {s.risk_reward_ratio.toFixed(2)}
+                            </td>
+                            <td className="px-3 py-2 text-xs text-zinc-400">{s.holding_period}</td>
+                            <td className="px-3 py-2">
+                              {!['NEUTRAL', 'SELL', 'STRONG_SELL'].includes(s.signal) && (
+                                <Link href={`/paper?symbol=${encodeURIComponent(s.symbol)}&signal=${s.signal.replace('STRONG_', '')}`}
+                                  className="text-[10px] font-semibold text-indigo-500 hover:text-indigo-700 whitespace-nowrap">
+                                  Trade →
+                                </Link>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Add symbol */}
-          {activeId && (
-            <form onSubmit={handleAdd} className="mb-4 flex items-start gap-2">
-              <div className="flex flex-col gap-1">
-                <input
-                  value={addSymbol}
-                  onChange={e => setAddSymbol(e.target.value)}
-                  placeholder="e.g. RELIANCE or TCS.NS"
-                  disabled={addLoading}
-                  className="w-60 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm placeholder-zinc-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
-                />
-                {addError && <p className="text-xs text-red-600">{addError}</p>}
+          {/* Right column (1/3) */}
+          <div className="space-y-5">
+            {/* Open Positions */}
+            <div className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
+                <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Open Positions</p>
+                <Link href="/paper" className="text-xs text-indigo-500 hover:text-indigo-700">View all →</Link>
               </div>
-              <button
-                type="submit"
-                disabled={addLoading || !addSymbol.trim()}
-                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {addLoading ? 'Adding…' : 'Add symbol'}
-              </button>
-            </form>
-          )}
+              <div className="px-1">
+                <OpenPositions trades={trades.slice(0, 5)} />
+              </div>
+            </div>
 
-          {/* Items table */}
-          {!activeId ? (
-            <div className="rounded-xl border border-zinc-200 bg-white px-4 py-12 text-center dark:border-zinc-800 dark:bg-zinc-900">
-              <p className="text-sm text-zinc-400">
-                {watchlists.length === 0
-                  ? 'Create your first watchlist using the + button.'
-                  : 'Select a watchlist from the sidebar.'}
-              </p>
+            {/* Active Alerts */}
+            <div className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
+                <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Active Price Alerts</p>
+                <Link href="/alerts" className="text-xs text-indigo-500 hover:text-indigo-700">Manage →</Link>
+              </div>
+              {alerts.length === 0 ? (
+                <p className="px-4 py-5 text-xs text-zinc-400">No active alerts. Set one from the Alerts page.</p>
+              ) : (
+                <ul className="divide-y divide-zinc-50 dark:divide-zinc-800/50">
+                  {alerts.slice(0, 5).map(a => (
+                    <li key={a.id} className="flex items-center justify-between px-4 py-2.5">
+                      <div>
+                        <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-50">{a.symbol.replace(/\.(NS|BO)$/, '')}</p>
+                        <p className="text-[10px] text-zinc-400">{a.direction} ₹{a.price_target}</p>
+                      </div>
+                      <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+                        {a.direction}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
-          ) : itemsLoading ? (
-            <div className="rounded-xl border border-zinc-200 bg-white px-4 py-12 text-center dark:border-zinc-800 dark:bg-zinc-900">
-              <p className="text-sm text-zinc-400">Loading…</p>
-            </div>
-          ) : items.length === 0 ? (
-            <div className="rounded-xl border border-zinc-200 bg-white px-4 py-12 text-center dark:border-zinc-800 dark:bg-zinc-900">
-              <p className="text-sm text-zinc-400">This watchlist is empty. Add a symbol above.</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-zinc-100 text-left dark:border-zinc-800">
-                    <th className="px-4 py-3 text-xs font-medium text-zinc-500">Symbol</th>
-                    <th className="px-4 py-3 text-xs font-medium text-zinc-500">30D</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500">Price</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500">Change</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500">High</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500">Low</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-zinc-500">Volume</th>
-                    <th className="px-4 py-3 text-center text-xs font-medium text-zinc-500">Score</th>
-                    <th className="px-4 py-3 text-center text-xs font-medium text-zinc-500">Signal</th>
-                    <th className="px-4 py-3 text-xs font-medium text-zinc-500">Alert</th>
-                    <th className="px-4 py-3" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                  {items.map(item => {
-                    const q = quotes[item.symbol]
-                    const up = q ? q.change >= 0 : null
-                    const sig = q ? computeSignal(q) : null
-                    const spark = sparklines[item.symbol]
-                    const isSelected = selectedSymbol === item.symbol
-                    return (
-                      <tr
-                        key={item.id}
-                        onClick={() => handleRowClick(item.symbol)}
-                        className={`cursor-pointer transition-colors ${
-                          isSelected
-                            ? 'bg-indigo-50 dark:bg-indigo-950/40'
-                            : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/40'
-                        }`}
-                      >
-                        <td className="px-4 py-3">
-                          <span className="font-medium text-zinc-900 dark:text-zinc-50">
-                            {item.symbol.replace(/\.(NS|BO)$/, '')}
-                          </span>
-                          <span className="ml-2 text-xs text-zinc-400">{item.exchange}</span>
-                        </td>
-                        <td className="px-4 py-2">
-                          {spark ? (
-                            <SparkLine prices={spark} />
-                          ) : (
-                            <div className="h-[28px] w-[80px] animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" />
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono text-zinc-900 dark:text-zinc-50">
-                          {q ? `₹${q.price.toFixed(2)}` : '—'}
-                        </td>
-                        <td
-                          className={`px-4 py-3 text-right font-mono text-xs ${
-                            up === null
-                              ? 'text-zinc-400'
-                              : up
-                                ? 'text-emerald-600 dark:text-emerald-400'
-                                : 'text-red-500 dark:text-red-400'
-                          }`}
-                        >
-                          {q
-                            ? `${up ? '+' : ''}${q.change.toFixed(2)} (${up ? '+' : ''}${q.change_pct.toFixed(2)}%)`
-                            : '—'}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono text-xs text-zinc-500">
-                          {q ? `₹${q.day_high.toFixed(2)}` : '—'}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono text-xs text-zinc-500">
-                          {q ? `₹${q.day_low.toFixed(2)}` : '—'}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono text-xs text-zinc-500">
-                          {q ? q.volume.toLocaleString('en-IN') : '—'}
-                        </td>
-                        <td className="px-4 py-3">
-                          {sig ? <ScoreBar score={sig.score} /> : <span className="text-xs text-zinc-300">—</span>}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          {sig ? <SignalBadge signal={sig.signal} /> : <span className="text-xs text-zinc-300">—</span>}
-                        </td>
-                        <td className="px-4 py-3">
-                          <button
-                            title={`Set price alert for ${item.symbol}`}
-                            onClick={e => { e.stopPropagation(); setAlertSymbol(item.symbol); setAlertTarget(q ? String(q.price.toFixed(2)) : '') }}
-                            className="text-zinc-300 hover:text-amber-500 dark:text-zinc-600 dark:hover:text-amber-400"
-                          >
-                            🔔
-                          </button>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <button
-                            onClick={e => handleRemove(item.symbol, e)}
-                            aria-label={`Remove ${item.symbol}`}
-                            className="text-zinc-300 hover:text-red-500 dark:text-zinc-600 dark:hover:text-red-400"
-                          >
-                            ×
-                          </button>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
 
-          {/* Chart panel — appears below table when a symbol is selected */}
-          {selectedSymbol && (
-            <div className="mt-4">
-              <PriceChart
-                symbol={selectedSymbol}
-                data={chartData}
-                period={chartPeriod}
-                onPeriodChange={setChartPeriod}
-                loading={chartLoading}
-              />
-            </div>
-          )}
-
-          {user && (
-            <p className="mt-3 text-right text-xs text-zinc-400">{user.full_name}</p>
-          )}
-        </main>
-      </div>
-
-      {/* Alert creation modal */}
-      {alertSymbol && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setAlertSymbol(null)}>
-          <div className="w-80 rounded-2xl bg-white p-6 shadow-xl dark:bg-zinc-900" onClick={e => e.stopPropagation()}>
-            <h3 className="mb-4 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-              Price Alert — {alertSymbol.replace(/\.(NS|BO)$/, '')}
-            </h3>
-            <div className="mb-3 flex gap-2">
-              {(['above', 'below'] as const).map(d => (
-                <button
-                  key={d}
-                  onClick={() => setAlertDir(d)}
-                  className={`flex-1 rounded-lg py-2 text-xs font-medium ${alertDir === d ? 'bg-indigo-600 text-white' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'}`}
-                >
-                  Price goes {d}
-                </button>
-              ))}
-            </div>
-            <input
-              type="number"
-              value={alertTarget}
-              onChange={e => setAlertTarget(e.target.value)}
-              placeholder="Target price ₹"
-              className="mb-4 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
-            />
-            <div className="flex gap-2">
-              <button
-                onClick={() => setAlertSymbol(null)}
-                className="flex-1 rounded-lg py-2 text-xs text-zinc-500 hover:text-zinc-700"
-              >Cancel</button>
-              <button
-                onClick={async () => {
-                  const t = parseFloat(alertTarget)
-                  if (!isNaN(t) && alertSymbol) {
-                    const a = await createAlert(tokenRef.current, alertSymbol, t, alertDir).catch(() => null)
-                    if (a) setAlerts(prev => [...prev, a])
-                    setAlertSymbol(null)
-                  }
-                }}
-                className="flex-1 rounded-lg bg-indigo-600 py-2 text-xs font-semibold text-white hover:bg-indigo-500"
-              >Set Alert</button>
+            {/* Quick links */}
+            <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+              <p className="mb-3 text-xs font-semibold text-zinc-400 uppercase tracking-wide">Quick Access</p>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { href: '/discovery', label: 'Discovery' },
+                  { href: '/reports', label: 'Reports' },
+                  { href: '/alerts', label: 'Alerts' },
+                  { href: '/paper', label: 'Paper Trading' },
+                  { href: '/market-pulse', label: 'Market Pulse' },
+                  { href: '/admin', label: 'Admin' },
+                ].map(({ href, label }) => (
+                  <Link key={href} href={href}
+                    className="rounded-lg border border-zinc-100 px-3 py-2 text-xs font-medium text-zinc-600 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700 dark:border-zinc-800 dark:text-zinc-400 dark:hover:border-indigo-700 dark:hover:bg-indigo-950/30 dark:hover:text-indigo-300">
+                    {label}
+                  </Link>
+                ))}
+              </div>
             </div>
           </div>
         </div>
-      )}
-
-      {/* Triggered alert toasts */}
-      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
-        {triggeredAlerts.map(a => (
-          <div
-            key={a.id}
-            className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 shadow-lg dark:border-amber-800 dark:bg-amber-950"
-          >
-            <span className="text-amber-600 dark:text-amber-400">🔔</span>
-            <div className="text-xs">
-              <p className="font-semibold text-zinc-900 dark:text-zinc-50">
-                {a.symbol.replace(/\.(NS|BO)$/, '')} alert triggered
-              </p>
-              <p className="text-zinc-500">
-                Price {a.direction} ₹{a.price_target} — current ₹{a.triggered_price?.toFixed(2)}
-              </p>
-            </div>
-            <button
-              onClick={() => setTriggeredAlerts(prev => prev.filter(x => x.id !== a.id))}
-              className="ml-2 text-zinc-400 hover:text-zinc-700"
-            >×</button>
-          </div>
-        ))}
-      </div>
+      </main>
     </div>
   )
 }

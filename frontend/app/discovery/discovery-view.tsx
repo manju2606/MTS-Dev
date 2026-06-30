@@ -25,6 +25,21 @@ const SIGNAL_STYLES: Record<string, string> = {
 const FILTERS = ['All', 'STRONG_BUY', 'BUY', 'WATCH', 'NEUTRAL', 'SELL', 'STRONG_SELL'] as const
 type FilterType = typeof FILTERS[number]
 
+type SortKey = 'signal' | 'score' | 'entry_price' | 'risk_reward_ratio' | 'stop_loss'
+type SortDir = 'asc' | 'desc'
+
+const SIGNAL_RANK: Record<string, number> = {
+  STRONG_BUY: 6, BUY: 5, WATCH: 4, NEUTRAL: 3, SELL: 2, STRONG_SELL: 1,
+}
+
+function sortPicks(picks: StockScore[], key: SortKey, dir: SortDir): StockScore[] {
+  return [...picks].sort((a, b) => {
+    const av = key === 'signal' ? (SIGNAL_RANK[a.signal] ?? 0) : (a[key] as number)
+    const bv = key === 'signal' ? (SIGNAL_RANK[b.signal] ?? 0) : (b[key] as number)
+    return dir === 'desc' ? bv - av : av - bv
+  })
+}
+
 function ScoreBar({ value, color }: { value: number; color: string }) {
   return (
     <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
@@ -138,6 +153,8 @@ export default function DiscoveryView() {
   const [picks, setPicks] = useState<StockScore[] | null>(null)
   const [news, setNews] = useState<DiscoveryNewsItem[] | null>(null)
   const [filter, setFilter] = useState<FilterType>('All')
+  const [sortKey, setSortKey] = useState<SortKey>('signal')
+  const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [tab, setTab] = useState<'picks' | 'news'>('picks')
   const [scanning, setScanning] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -168,6 +185,11 @@ export default function DiscoveryView() {
       .then(items => setNews(items))
       .catch(() => setNews([]))
   }, [tab])
+
+  function handleSort(key: SortKey) {
+    if (sortKey === key) setSortDir(d => d === 'desc' ? 'asc' : 'desc')
+    else { setSortKey(key); setSortDir('desc') }
+  }
 
   function handleFilter(f: FilterType) {
     setFilter(f)
@@ -286,13 +308,39 @@ export default function DiscoveryView() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-zinc-100 dark:border-zinc-800">
-                      {['#', 'Symbol', 'Score', 'Signal', 'Entry', 'Stop', 'T1', 'T2', 'T3', 'R:R', 'Hold'].map(h => (
-                        <th key={h} className={`px-3 py-3 text-left text-xs font-medium ${h === 'T1' ? 'text-emerald-600 dark:text-emerald-400' : h === 'T2' ? 'text-emerald-700 dark:text-emerald-500' : h === 'T3' ? 'text-emerald-800 dark:text-emerald-600' : 'text-zinc-500'}`}>{h}</th>
+                      {([
+                        { h: '#',    key: null },
+                        { h: 'Symbol', key: null },
+                        { h: 'Score',  key: 'score' as SortKey },
+                        { h: 'Signal', key: 'signal' as SortKey },
+                        { h: 'Entry',  key: 'entry_price' as SortKey },
+                        { h: 'Stop',   key: 'stop_loss' as SortKey },
+                        { h: 'T1',     key: null },
+                        { h: 'T2',     key: null },
+                        { h: 'T3',     key: null },
+                        { h: 'R:R',    key: 'risk_reward_ratio' as SortKey },
+                        { h: 'Hold',   key: null },
+                      ]).map(({ h, key }) => (
+                        <th
+                          key={h}
+                          onClick={() => key && handleSort(key)}
+                          className={`px-3 py-3 text-left text-xs font-medium select-none ${
+                            key ? 'cursor-pointer hover:text-zinc-800 dark:hover:text-zinc-200' : ''
+                          } ${
+                            h === 'T1' ? 'text-emerald-600 dark:text-emerald-400'
+                            : h === 'T2' ? 'text-emerald-700 dark:text-emerald-500'
+                            : h === 'T3' ? 'text-emerald-800 dark:text-emerald-600'
+                            : sortKey === key ? 'text-indigo-600 dark:text-indigo-400'
+                            : 'text-zinc-500'
+                          }`}
+                        >
+                          {h}{key && sortKey === key ? (sortDir === 'desc' ? ' ▼' : ' ▲') : key ? ' ⇅' : ''}
+                        </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {picks.map((s, idx) => (
+                    {sortPicks(picks, sortKey, sortDir).map((s, idx) => (
                       <>
                         <tr
                           key={s.id}

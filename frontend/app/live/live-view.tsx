@@ -3,8 +3,75 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { NavBar } from '@/components/nav-bar'
-import { placeLiveOrder, listLiveOrders, cancelLiveOrder, getLivePositions } from '@/lib/api'
-import type { LiveOrder, LivePosition } from '@/lib/api'
+import { cancelLiveOrder, getLivePositions, getQuote, listLiveOrders, placeLiveOrder, searchStocks } from '@/lib/api'
+import type { LiveOrder, LivePosition, StockSearchResult } from '@/lib/api'
+
+const INPUT = 'w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-indigo-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500'
+
+// ── Symbol search dropdown ────────────────────────────────────────────────────
+
+function SymbolSearch({
+  value, onChange, tokenRef, disabled,
+}: {
+  value: string; onChange: (sym: string) => void; tokenRef: React.RefObject<string>; disabled: boolean
+}) {
+  const [q, setQ] = useState(value)
+  const [results, setResults] = useState<StockSearchResult[]>([])
+  const [open, setOpen] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const v = e.target.value
+    setQ(v)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    if (v.trim().length < 2) { setResults([]); setOpen(false); return }
+    debounceRef.current = setTimeout(async () => {
+      const r = await searchStocks(tokenRef.current, v).catch(() => [] as StockSearchResult[])
+      setResults(r); setOpen(r.length > 0)
+    }, 250)
+  }
+
+  function pick(r: StockSearchResult) {
+    setQ(r.symbol.replace(/\.(NS|BO)$/, ''))
+    onChange(r.symbol)
+    setResults([]); setOpen(false)
+  }
+
+  useEffect(() => {
+    function onClick(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onClick)
+    return () => document.removeEventListener('mousedown', onClick)
+  }, [])
+
+  return (
+    <div ref={containerRef} className="relative">
+      <input value={q} onChange={handleChange} onFocus={() => results.length > 0 && setOpen(true)}
+        placeholder="Search symbol…" disabled={disabled} className={INPUT} />
+      {open && results.length > 0 && (
+        <div className="absolute left-0 top-full z-50 mt-1 w-72 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+          {results.slice(0, 8).map(r => (
+            <button key={r.symbol} type="button" onMouseDown={() => pick(r)}
+              className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800">
+              <div>
+                <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                  {r.symbol.replace(/\.(NS|BO)$/, '')}
+                </span>
+                <span className="ml-2 text-xs text-zinc-400">{r.exchange}</span>
+                <p className="max-w-[160px] truncate text-xs text-zinc-500 dark:text-zinc-400">{r.name}</p>
+              </div>
+              <span className="text-[10px] text-zinc-400">{r.sector}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Main view ─────────────────────────────────────────────────────────────────
 
 function LiveViewInner() {
   const router = useRouter()
@@ -15,6 +82,8 @@ function LiveViewInner() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [ltp, setLtp] = useState<number | null>(null)
+  const [symbolFull, setSymbolFull] = useState(params.get('symbol') ?? '')
 
   const [form, setForm] = useState({
     symbol: params.get('symbol')?.replace(/\.(NS|BO)$/, '') ?? '',
@@ -28,8 +97,7 @@ function LiveViewInner() {
 
   const refresh = useCallback(async (token: string) => {
     const [ords, pos] = await Promise.all([listLiveOrders(token), getLivePositions(token)])
-    setOrders(ords)
-    setPositions(pos)
+    setOrders(ords); setPositions(pos)
   }, [])
 
   useEffect(() => {
@@ -44,9 +112,10 @@ function LiveViewInner() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true); setError(null); setSuccess(null)
+    const sym = symbolFull || `${form.symbol.toUpperCase()}.NS`
     try {
       const order = await placeLiveOrder(tokenRef.current, {
-        symbol: form.symbol.toUpperCase(),
+        symbol: sym,
         signal: form.signal,
         quantity: form.quantity,
         order_type: form.order_type,
@@ -68,15 +137,16 @@ function LiveViewInner() {
     } catch (e) { setError(e instanceof Error ? e.message : 'Cancel failed') }
   }
 
+  const signalCls = (s: string) => s === 'BUY'
+    ? 'text-emerald-700 dark:text-emerald-400'
+    : 'text-red-600 dark:text-red-400'
 
-  const signalColor = (s: string) => s === 'BUY'
-    ? 'text-emerald-600 dark:text-emerald-400'
-    : 'text-red-500 dark:text-red-400'
-
-  const statusColor = (s: string) =>
-    s === 'filled' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
-    : s === 'cancelled' || s === 'rejected' ? 'bg-red-100 text-red-600 dark:bg-red-950 dark:text-red-300'
-    : 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
+  const statusCls = (s: string) =>
+    s === 'filled'
+      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+      : s === 'cancelled' || s === 'rejected'
+        ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300'
+        : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
 
   return (
     <div className="min-h-full bg-zinc-50 dark:bg-zinc-950">
@@ -84,7 +154,7 @@ function LiveViewInner() {
       <main className="mx-auto max-w-6xl px-4 py-8">
         <div className="mb-6">
           <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Live Trading</h1>
-          <p className="text-xs text-zinc-400">
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">
             Orders execute through your connected broker (Zerodha or Simulated). Configure broker on the Broker page.
           </p>
         </div>
@@ -95,86 +165,99 @@ function LiveViewInner() {
             <form onSubmit={handleSubmit} className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
               <p className="mb-4 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Place Order</p>
 
-              {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950 dark:text-red-300">{error}</p>}
-              {success && <p className="mb-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">{success}</p>}
+              {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950 dark:text-red-300">{error}</p>}
+              {success && <p className="mb-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">{success}</p>}
 
               <div className="flex flex-col gap-3">
+                {/* Symbol */}
                 <div>
-                  <label className="mb-1 block text-xs text-zinc-500">Symbol</label>
-                  <input
-                    required
+                  <label className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">Symbol</label>
+                  <SymbolSearch
+                    key={form.symbol}
                     value={form.symbol}
-                    onChange={e => setForm(f => ({ ...f, symbol: e.target.value.toUpperCase() }))}
-                    placeholder="RELIANCE"
-                    className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                    tokenRef={tokenRef}
+                    disabled={loading}
+                    onChange={(sym) => {
+                      setSymbolFull(sym)
+                      setForm(f => ({ ...f, symbol: sym.replace(/\.(NS|BO)$/, '') }))
+                      setLtp(null)
+                      getQuote(tokenRef.current, sym).then(q => setLtp(q.price)).catch(() => {})
+                    }}
                   />
+                  {ltp !== null && (
+                    <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                      LTP: <span className="font-mono font-semibold text-zinc-900 dark:text-zinc-50">₹{ltp.toFixed(2)}</span>
+                    </p>
+                  )}
                 </div>
 
+                {/* Signal */}
                 <div>
-                  <label className="mb-1 block text-xs text-zinc-500">Signal</label>
-                  <select
-                    value={form.signal}
-                    onChange={e => setForm(f => ({ ...f, signal: e.target.value as 'BUY' | 'SELL' }))}
-                    className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                  >
-                    <option>BUY</option>
-                    <option>SELL</option>
-                  </select>
+                  <label className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">Signal</label>
+                  <div className="flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-600">
+                    {(['BUY', 'SELL'] as const).map(s => (
+                      <button key={s} type="button" onClick={() => setForm(f => ({ ...f, signal: s }))}
+                        className={`flex-1 py-2 text-sm font-semibold transition-colors ${
+                          form.signal === s
+                            ? s === 'BUY' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'
+                            : 'bg-white text-zinc-600 hover:bg-zinc-50 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700'
+                        }`}>{s}</button>
+                    ))}
+                  </div>
                 </div>
 
+                {/* Quantity */}
                 <div>
-                  <label className="mb-1 block text-xs text-zinc-500">Quantity</label>
-                  <input
-                    required type="number" min={1}
-                    value={form.quantity}
+                  <label className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">Quantity</label>
+                  <input required type="number" min={1} value={form.quantity}
                     onChange={e => setForm(f => ({ ...f, quantity: parseInt(e.target.value) || 1 }))}
-                    className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                  />
+                    className={INPUT} />
                 </div>
 
+                {/* Order type */}
                 <div>
-                  <label className="mb-1 block text-xs text-zinc-500">Order Type</label>
-                  <select
-                    value={form.order_type}
-                    onChange={e => setForm(f => ({ ...f, order_type: e.target.value as 'MARKET' | 'LIMIT' }))}
-                    className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                  >
-                    <option>MARKET</option>
-                    <option>LIMIT</option>
-                  </select>
+                  <label className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">Order Type</label>
+                  <div className="flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-600">
+                    {(['MARKET', 'LIMIT'] as const).map(t => (
+                      <button key={t} type="button" onClick={() => setForm(f => ({ ...f, order_type: t }))}
+                        className={`flex-1 py-2 text-xs font-semibold transition-colors ${
+                          form.order_type === t
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-white text-zinc-600 hover:bg-zinc-50 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700'
+                        }`}>{t}</button>
+                    ))}
+                  </div>
                 </div>
 
+                {/* Limit price */}
                 {form.order_type === 'LIMIT' && (
                   <div>
-                    <label className="mb-1 block text-xs text-zinc-500">Limit Price (₹)</label>
-                    <input
-                      type="number" step="0.01"
-                      value={form.price}
+                    <label className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">Limit Price (₹)</label>
+                    <input type="number" step="0.01" value={form.price}
                       onChange={e => setForm(f => ({ ...f, price: e.target.value }))}
-                      className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                    />
+                      placeholder={ltp ? ltp.toFixed(2) : '0.00'}
+                      className={INPUT} />
                   </div>
                 )}
 
+                {/* Stop loss + target */}
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="mb-1 block text-xs text-zinc-500">Stop Loss</label>
+                    <label className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">Stop Loss</label>
                     <input type="number" step="0.01" value={form.stop_loss}
                       onChange={e => setForm(f => ({ ...f, stop_loss: e.target.value }))}
-                      className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
+                      className={INPUT} />
                   </div>
                   <div>
-                    <label className="mb-1 block text-xs text-zinc-500">Target</label>
+                    <label className="mb-1 block text-xs font-medium text-zinc-500 dark:text-zinc-400">Target</label>
                     <input type="number" step="0.01" value={form.target}
                       onChange={e => setForm(f => ({ ...f, target: e.target.value }))}
-                      className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
+                      className={INPUT} />
                   </div>
                 </div>
 
-                <button
-                  type="submit" disabled={loading}
-                  className="mt-1 rounded-lg bg-indigo-600 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-60"
-                >
+                <button type="submit" disabled={loading}
+                  className="mt-1 rounded-lg bg-indigo-600 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-60">
                   {loading ? 'Placing…' : 'Place Order'}
                 </button>
               </div>
@@ -187,13 +270,13 @@ function LiveViewInner() {
             <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
               <p className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Open Positions</p>
               {positions.length === 0 ? (
-                <p className="text-xs text-zinc-400">No positions yet.</p>
+                <p className="text-xs text-zinc-400 dark:text-zinc-500">No positions yet.</p>
               ) : (
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b border-zinc-100 dark:border-zinc-800">
                       {['Symbol', 'Signal', 'Qty', 'Avg Price'].map(h => (
-                        <th key={h} className="pb-2 text-left text-zinc-400 font-medium">{h}</th>
+                        <th key={h} className="pb-2 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400">{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -201,9 +284,9 @@ function LiveViewInner() {
                     {positions.map((p, i) => (
                       <tr key={i} className="border-b border-zinc-50 dark:border-zinc-800/50">
                         <td className="py-2 font-mono font-semibold text-zinc-900 dark:text-zinc-50">{p.symbol.replace(/\.(NS|BO)$/, '')}</td>
-                        <td className={`py-2 font-semibold ${signalColor(p.signal)}`}>{p.signal}</td>
+                        <td className={`py-2 font-bold ${signalCls(p.signal)}`}>{p.signal}</td>
                         <td className="py-2 text-zinc-600 dark:text-zinc-300">{p.quantity}</td>
-                        <td className="py-2 font-mono text-zinc-600 dark:text-zinc-300">₹{p.avg_price.toFixed(2)}</td>
+                        <td className="py-2 font-mono text-zinc-700 dark:text-zinc-300">₹{p.avg_price.toFixed(2)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -215,13 +298,13 @@ function LiveViewInner() {
             <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
               <p className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Order Book</p>
               {orders.length === 0 ? (
-                <p className="text-xs text-zinc-400">No orders placed yet.</p>
+                <p className="text-xs text-zinc-400 dark:text-zinc-500">No orders placed yet.</p>
               ) : (
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b border-zinc-100 dark:border-zinc-800">
                       {['Symbol', 'Signal', 'Qty', 'Fill Price', 'Status', ''].map(h => (
-                        <th key={h} className="pb-2 text-left text-zinc-400 font-medium">{h}</th>
+                        <th key={h} className="pb-2 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400">{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -229,25 +312,23 @@ function LiveViewInner() {
                     {orders.map(o => (
                       <tr key={o.id} className="border-b border-zinc-50 dark:border-zinc-800/50">
                         <td className="py-2 font-mono font-semibold text-zinc-900 dark:text-zinc-50">{o.symbol.replace(/\.(NS|BO)$/, '')}</td>
-                        <td className={`py-2 font-semibold ${signalColor(o.signal)}`}>{o.signal}</td>
+                        <td className={`py-2 font-bold ${signalCls(o.signal)}`}>{o.signal}</td>
                         <td className="py-2 text-zinc-600 dark:text-zinc-300">{o.quantity}</td>
-                        <td className="py-2 font-mono text-zinc-600 dark:text-zinc-300">
+                        <td className="py-2 font-mono text-zinc-700 dark:text-zinc-300">
                           {o.fill_price ? `₹${o.fill_price.toFixed(2)}` : '—'}
                         </td>
                         <td className="py-2">
-                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusColor(o.status)}`}>
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusCls(o.status)}`}>
                             {o.status}
                           </span>
                         </td>
                         <td className="py-2">
-                          {o.status === 'open' || o.status === 'pending' ? (
-                            <button
-                              onClick={() => handleCancel(o.broker_order_id ?? o.id)}
-                              className="text-red-400 hover:text-red-600"
-                            >
+                          {(o.status === 'open' || o.status === 'pending') && (
+                            <button onClick={() => handleCancel(o.broker_order_id ?? o.id)}
+                              className="text-xs font-medium text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300">
                               Cancel
                             </button>
-                          ) : null}
+                          )}
                         </td>
                       </tr>
                     ))}

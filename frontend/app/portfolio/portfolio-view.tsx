@@ -46,23 +46,23 @@ function MetricCard({
 }
 
 function JournalDrawer({
-  tradeId, onClose, token,
-}: { tradeId: string; onClose: () => void; token: string }) {
+  tradeId, onClose, tokenRef,
+}: { tradeId: string; onClose: () => void; tokenRef: React.RefObject<string> }) {
   const [notes, setNotes] = useState('')
   const [rating, setRating] = useState(3)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
   useEffect(() => {
-    getJournalEntry(token, tradeId).then(e => {
+    getJournalEntry(tokenRef.current, tradeId).then(e => {
       if (e) { setNotes(e.notes); setRating(e.rating) }
     })
-  }, [token, tradeId])
+  }, [tokenRef, tradeId])
 
   async function handleSave() {
     setSaving(true)
     try {
-      await saveJournalEntry(token, tradeId, notes, rating, [])
+      await saveJournalEntry(tokenRef.current, tradeId, notes, rating, [])
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     } finally {
@@ -85,7 +85,7 @@ function JournalDrawer({
             <button
               key={n}
               onClick={() => setRating(n)}
-              className={`text-xl ${n <= rating ? 'text-amber-400' : 'text-zinc-300'}`}
+              className={`text-xl ${n <= rating ? 'text-amber-500 dark:text-amber-400' : 'text-zinc-300 dark:text-zinc-600'}`}
             >
               ★
             </button>
@@ -327,7 +327,7 @@ export default function PortfolioView() {
                       </td>
                       <td className="px-3 py-3 text-xs text-zinc-500">{t.days_held}d</td>
                       <td className="px-3 py-3 text-xs text-zinc-500">
-                        {t.closed_at ? new Date(t.closed_at).toLocaleDateString('en-IN') : '—'}
+                        {t.closed_at ? new Date(t.closed_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }) : '—'}
                       </td>
                       <td className="px-3 py-3">
                         <button
@@ -350,7 +350,7 @@ export default function PortfolioView() {
         <JournalDrawer
           tradeId={journalTradeId}
           onClose={() => setJournalTradeId(null)}
-          token={tokenRef.current}
+          tokenRef={tokenRef}
         />
       )}
     </div>

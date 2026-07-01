@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { NavBar } from '@/components/nav-bar'
-import { getBrokerStatus, getZerodhaLoginUrl, connectZerodha, disconnectBroker, useSimulatedBroker } from '@/lib/api'
+import { getBrokerStatus, getZerodhaLoginUrl, connectZerodha, disconnectBroker, activateSimulatedBroker } from '@/lib/api'
 import type { BrokerStatus } from '@/lib/api'
 
 export default function BrokerView() {
@@ -19,8 +19,9 @@ export default function BrokerView() {
     const t = localStorage.getItem('mts_token')
     if (!t) { router.replace('/login'); return }
     tokenRef.current = t
-    setAuthChecked(true)
     getBrokerStatus(t).then(setStatus).catch(() => null)
+    const id = setTimeout(() => setAuthChecked(true), 0)
+    return () => clearTimeout(id)
   }, [router])
 
   async function handleZerodhaLogin() {
@@ -49,7 +50,7 @@ export default function BrokerView() {
   async function handleSimulated() {
     setLoading(true); setMsg(null)
     try {
-      const s = await useSimulatedBroker(tokenRef.current)
+      const s = await activateSimulatedBroker(tokenRef.current)
       setStatus(s)
       setMsg({ type: 'ok', text: 'Switched to simulated broker.' })
     } catch (e) {
@@ -150,7 +151,7 @@ export default function BrokerView() {
           <button
             onClick={handleDisconnect}
             disabled={loading}
-            className="text-xs text-red-500 hover:text-red-400"
+            className="text-xs text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
           >
             Disconnect Zerodha
           </button>

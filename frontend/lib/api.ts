@@ -65,6 +65,7 @@ export type PlaceTradeBody = {
   stop_loss: number
   target: number
   quantity: number
+  limit_price?: number
 }
 
 export type AIRecommendation = {
@@ -801,7 +802,7 @@ export async function disconnectBroker(token: string): Promise<BrokerStatus> {
   return res.json()
 }
 
-export async function useSimulatedBroker(token: string): Promise<BrokerStatus> {
+export async function activateSimulatedBroker(token: string): Promise<BrokerStatus> {
   const res = await fetch(`${BASE}/api/v1/broker/use-simulated`, { method: 'POST', headers: authHeaders(token) })
   if (!res.ok) throw new Error('Failed')
   return res.json()

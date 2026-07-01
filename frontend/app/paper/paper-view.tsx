@@ -5,9 +5,83 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { NavBar } from '@/components/nav-bar'
 import {
   closeTrade, getJournalEntry, getMe, getQuote,
-  listTrades, placeTrade, saveJournalEntry,
+  listTrades, placeTrade, saveJournalEntry, searchStocks,
 } from '@/lib/api'
-import type { JournalEntry, PlaceTradeBody, Trade, User } from '@/lib/api'
+import type { JournalEntry, PlaceTradeBody, StockSearchResult, Trade, User } from '@/lib/api'
+
+// ── Symbol search dropdown ────────────────────────────────────────────────────
+
+function SymbolSearch({
+  value, onChange, tokenRef, disabled,
+}: {
+  value: string; onChange: (sym: string) => void; tokenRef: React.RefObject<string>; disabled: boolean
+}) {
+  const [q, setQ] = useState(value)
+  const [results, setResults] = useState<StockSearchResult[]>([])
+  const [open, setOpen] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const v = e.target.value
+    setQ(v)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    if (v.trim().length < 2) { setResults([]); setOpen(false); return }
+    debounceRef.current = setTimeout(async () => {
+      const r = await searchStocks(tokenRef.current, v).catch(() => [] as StockSearchResult[])
+      setResults(r)
+      setOpen(r.length > 0)
+    }, 250)
+  }
+
+  function pick(r: StockSearchResult) {
+    setQ(r.symbol.replace(/\.(NS|BO)$/, ''))
+    onChange(r.symbol)
+    setResults([]); setOpen(false)
+  }
+
+  useEffect(() => {
+    function onClick(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onClick)
+    return () => document.removeEventListener('mousedown', onClick)
+  }, [])
+
+  return (
+    <div ref={containerRef} className="relative">
+      <input
+        value={q}
+        onChange={handleChange}
+        onFocus={() => results.length > 0 && setOpen(true)}
+        placeholder="Search symbol…"
+        disabled={disabled}
+        className={`w-44 ${INPUT}`}
+      />
+      {open && results.length > 0 && (
+        <div className="absolute left-0 top-full z-50 mt-1 w-72 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+          {results.slice(0, 8).map(r => (
+            <button
+              key={r.symbol}
+              type="button"
+              onMouseDown={() => pick(r)}
+              className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800"
+            >
+              <div>
+                <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                  {r.symbol.replace(/\.(NS|BO)$/, '')}
+                </span>
+                <span className="ml-2 text-xs text-zinc-400">{r.exchange}</span>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate max-w-[160px]">{r.name}</p>
+              </div>
+              <span className="text-[10px] text-zinc-400">{r.sector}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 type Tab = 'open' | 'closed'
 type JournalDraft = { notes: string; rating: number; tags: string }
@@ -70,9 +144,13 @@ export default function PaperView() {
   const [symbol, setSymbol] = useState(
     () => searchParams.get('symbol')?.replace(/\.(NS|BO)$/i, '') ?? ''
   )
+  const [symbolFull, setSymbolFull] = useState(() => searchParams.get('symbol') ?? '')
   const [stopLoss, setStopLoss] = useState(() => searchParams.get('stop_loss') ?? '')
   const [target, setTarget] = useState(() => searchParams.get('target') ?? '')
   const [quantity, setQuantity] = useState('')
+  const [orderType, setOrderType] = useState<'MARKET' | 'LIMIT'>('MARKET')
+  const [limitPrice, setLimitPrice] = useState('')
+  const [ltp, setLtp] = useState<number | null>(null)
   const [formLoading, setFormLoading] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
@@ -117,21 +195,29 @@ export default function PaperView() {
   async function handlePlace(e: React.FormEvent) {
     e.preventDefault()
     setFormError(null)
+    const sym = symbolFull || (symbol.trim().toUpperCase().endsWith('.NS') || symbol.trim().toUpperCase().endsWith('.BO')
+      ? symbol.trim()
+      : `${symbol.trim().toUpperCase()}.NS`)
     const body: PlaceTradeBody = {
-      symbol: symbol.trim(),
+      symbol: sym,
       signal,
       stop_loss: parseFloat(stopLoss),
       target: parseFloat(target),
       quantity: parseInt(quantity, 10),
+      ...(orderType === 'LIMIT' && limitPrice ? { limit_price: parseFloat(limitPrice) } : {}),
     }
-    if (!body.symbol || isNaN(body.stop_loss) || isNaN(body.target) || isNaN(body.quantity)) {
+    if (!symbol.trim() || isNaN(body.stop_loss) || isNaN(body.target) || isNaN(body.quantity)) {
       setFormError('All fields are required')
+      return
+    }
+    if (orderType === 'LIMIT' && (!limitPrice || isNaN(parseFloat(limitPrice)))) {
+      setFormError('Limit price is required for LIMIT orders')
       return
     }
     setFormLoading(true)
     try {
       await placeTrade(tokenRef.current, body)
-      setSymbol(''); setStopLoss(''); setTarget(''); setQuantity('')
+      setSymbol(''); setSymbolFull(''); setStopLoss(''); setTarget(''); setQuantity(''); setLimitPrice('')
       await fetchTrades()
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Failed to place trade')
@@ -215,58 +301,96 @@ export default function PaperView() {
           <h1 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50">Place Trade</h1>
           <div className="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
             <form onSubmit={handlePlace} className="flex flex-wrap items-end gap-3">
+              {/* Signal */}
               <div className="flex flex-col gap-1">
-                <span className="text-xs font-medium text-zinc-500">Signal</span>
-                <div className="flex rounded-lg border border-zinc-300 dark:border-zinc-600 overflow-hidden">
+                <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Signal</span>
+                <div className="flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-600">
                   {(['BUY', 'SELL'] as const).map(s => (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => setSignal(s)}
+                    <button key={s} type="button" onClick={() => setSignal(s)}
                       className={`px-4 py-2 text-sm font-semibold transition-colors ${
                         signal === s
                           ? s === 'BUY' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'
                           : 'bg-white text-zinc-600 hover:bg-zinc-50 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700'
-                      }`}
-                    >
-                      {s}
-                    </button>
+                      }`}>{s}</button>
                   ))}
                 </div>
               </div>
 
+              {/* Symbol search */}
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-zinc-500">Symbol</label>
-                <input value={symbol} onChange={e => setSymbol(e.target.value)} placeholder="RELIANCE"
-                  disabled={formLoading} className={`w-32 ${INPUT}`} />
+                <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Symbol</label>
+                <SymbolSearch
+                  key={symbol}
+                  value={symbol}
+                  tokenRef={tokenRef}
+                  disabled={formLoading}
+                  onChange={(sym) => {
+                    setSymbolFull(sym)
+                    setSymbol(sym.replace(/\.(NS|BO)$/, ''))
+                    setLtp(null)
+                    getQuote(tokenRef.current, sym)
+                      .then(q => setLtp(q.price))
+                      .catch(() => {})
+                  }}
+                />
+                {ltp !== null && (
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                    LTP: <span className="font-mono font-semibold text-zinc-900 dark:text-zinc-50">₹{ltp.toFixed(2)}</span>
+                  </p>
+                )}
               </div>
 
+              {/* Order type */}
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-zinc-500">Stop Loss (₹)</label>
+                <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Order Type</span>
+                <div className="flex overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-600">
+                  {(['MARKET', 'LIMIT'] as const).map(t => (
+                    <button key={t} type="button" onClick={() => setOrderType(t)}
+                      className={`px-3 py-2 text-xs font-semibold transition-colors ${
+                        orderType === t
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-white text-zinc-600 hover:bg-zinc-50 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700'
+                      }`}>{t}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Limit price — only for LIMIT orders */}
+              {orderType === 'LIMIT' && (
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Limit Price (₹)</label>
+                  <input type="number" step="0.01" min="0" value={limitPrice}
+                    onChange={e => setLimitPrice(e.target.value)} placeholder="1000.00"
+                    disabled={formLoading} className={`w-28 ${INPUT}`} />
+                </div>
+              )}
+
+              {/* Stop loss */}
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Stop Loss (₹)</label>
                 <input type="number" step="0.01" min="0" value={stopLoss}
                   onChange={e => setStopLoss(e.target.value)} placeholder="950.00"
                   disabled={formLoading} className={`w-28 ${INPUT}`} />
               </div>
 
+              {/* Target */}
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-zinc-500">Target (₹)</label>
+                <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Target (₹)</label>
                 <input type="number" step="0.01" min="0" value={target}
                   onChange={e => setTarget(e.target.value)} placeholder="1100.00"
                   disabled={formLoading} className={`w-28 ${INPUT}`} />
               </div>
 
+              {/* Quantity */}
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-zinc-500">Quantity</label>
+                <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Quantity</label>
                 <input type="number" step="1" min="1" value={quantity}
                   onChange={e => setQuantity(e.target.value)} placeholder="10"
                   disabled={formLoading} className={`w-24 ${INPUT}`} />
               </div>
 
-              <button
-                type="submit"
-                disabled={formLoading}
-                className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
-              >
+              <button type="submit" disabled={formLoading}
+                className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60">
                 {formLoading ? 'Placing…' : 'Place Trade'}
               </button>
             </form>
@@ -393,8 +517,9 @@ export default function PaperView() {
                           <td className={TD_R}>{trade.risk_reward_ratio.toFixed(2)}</td>
                           <td className={TD_R}>
                             {trade.closed_at
-                              ? new Date(trade.closed_at).toLocaleDateString('en-IN', {
+                              ? new Date(trade.closed_at).toLocaleString('en-IN', {
                                   day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+                                  timeZone: 'Asia/Kolkata',
                                 })
                               : '—'}
                           </td>
@@ -441,7 +566,7 @@ export default function PaperView() {
                                             onClick={() => patchDraft(trade.id, { rating: n })}
                                             className={`text-xl leading-none transition-colors ${
                                               draft.rating >= n
-                                                ? 'text-amber-400'
+                                                ? 'text-amber-500 dark:text-amber-400'
                                                 : 'text-zinc-300 dark:text-zinc-600'
                                             }`}
                                           >

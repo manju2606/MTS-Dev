@@ -13,6 +13,15 @@ import {
 import type { RiskConfig, UsageInfo, User } from '@/lib/api'
 import { NavBar } from '@/components/nav-bar'
 
+function Feedback({ msg }: { msg: { ok: boolean; text: string } | null }) {
+  if (!msg) return null
+  return (
+    <p className={`mt-3 text-xs ${msg.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+      {msg.text}
+    </p>
+  )
+}
+
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900">
@@ -38,7 +47,7 @@ export default function SettingsView() {
   const router = useRouter()
   const tokenRef = useRef('')
   const [user, setUser] = useState<User | null>(null)
-  const [riskConfig, setRiskConfig] = useState<RiskConfig | null>(null)
+  const [, setRiskConfig] = useState<RiskConfig | null>(null)
   const [usage, setUsage] = useState<UsageInfo | null>(null)
 
   // Profile form state
@@ -131,15 +140,6 @@ export default function SettingsView() {
     } finally {
       setRiskLoading(false)
     }
-  }
-
-  function Feedback({ msg }: { msg: { ok: boolean; text: string } | null }) {
-    if (!msg) return null
-    return (
-      <p className={`mt-3 text-xs ${msg.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
-        {msg.text}
-      </p>
-    )
   }
 
   return (

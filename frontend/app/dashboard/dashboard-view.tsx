@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { NavBar } from '@/components/nav-bar'
 import {
-  getMe, getTopPicks, getDiscoveryStatus, listTrades, listAlerts,
+  getMe, getTopPicks, getDiscoveryStatus, listTrades, listAlerts, getQuote,
 } from '@/lib/api'
 import type { User, StockScore, DiscoveryStatus, Trade, AlertRule } from '@/lib/api'
 
@@ -71,7 +71,7 @@ function OpenPositions({ trades }: { trades: Trade[] }) {
               </span>
             </td>
             <td className="px-3 py-2 font-mono text-zinc-700 dark:text-zinc-300">₹{t.entry_price.toFixed(2)}</td>
-            <td className="px-3 py-2 font-mono text-red-500">₹{t.stop_loss.toFixed(2)}</td>
+            <td className="px-3 py-2 font-mono text-red-600 dark:text-red-400">₹{t.stop_loss.toFixed(2)}</td>
             <td className="px-3 py-2 font-mono text-emerald-600 dark:text-emerald-400">₹{t.target.toFixed(2)}</td>
             <td className="px-3 py-2 text-zinc-500">{t.quantity}</td>
           </tr>
@@ -112,6 +112,7 @@ export default function DashboardView() {
   const [sortKey, setSortKey]   = useState<SortKey>('signal')
   const [sortDir, setSortDir]   = useState<SortDir>('desc')
   const [sigFilter, setSigFilter] = useState<string>('All')
+  const [ltps, setLtps]         = useState<Record<string, number>>({})
 
   const load = useCallback(async (token: string) => {
     const [me, p, s, t, a] = await Promise.all([
@@ -136,6 +137,16 @@ export default function DashboardView() {
     void run()
   }, [router, load])
 
+  // Fetch LTPs for all picks after picks load — fire and forget so display isn't blocked
+  useEffect(() => {
+    if (!picks || picks.length === 0) return
+    const token = tokenRef.current
+    const prices: Record<string, number> = {}
+    Promise.allSettled(picks.map(async r => {
+      try { const q = await getQuote(token, r.symbol); prices[r.symbol] = q.price } catch { /* skip */ }
+    })).then(() => setLtps({ ...prices }))
+  }, [picks])
+
   function handleSort(key: SortKey) {
     if (sortKey === key) setSortDir(d => d === 'desc' ? 'asc' : 'desc')
     else { setSortKey(key); setSortDir('desc') }
@@ -151,7 +162,7 @@ export default function DashboardView() {
     : null
 
   const lastScan = status?.last_scan_at
-    ? new Date(status.last_scan_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+    ? new Date(status.last_scan_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) + ' IST'
     : '—'
 
   const sigCounts = picks
@@ -246,6 +257,7 @@ export default function DashboardView() {
                         <SortTh label="Signal" k="signal" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
                         <SortTh label="Score" k="score" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
                         <SortTh label="Entry" k="entry_price" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                        <th className="px-3 py-2.5 text-left text-xs font-medium text-indigo-500 dark:text-indigo-400">LTP</th>
                         <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-400">Stop</th>
                         <th className="px-3 py-2.5 text-left text-xs font-medium text-emerald-600 dark:text-emerald-400">T1</th>
                         <th className="px-3 py-2.5 text-left text-xs font-medium text-emerald-700 dark:text-emerald-500">T2</th>
@@ -280,14 +292,24 @@ export default function DashboardView() {
                               </div>
                             </td>
                             <td className="px-3 py-2 font-mono text-xs text-zinc-700 dark:text-zinc-300">₹{s.entry_price.toFixed(2)}</td>
-                            <td className="px-3 py-2 font-mono text-xs text-red-500">₹{s.stop_loss.toFixed(2)}</td>
-                            <td className="px-3 py-2 font-mono text-xs text-emerald-600 dark:text-emerald-400">
-                              {t1 ? <>₹{t1.toFixed(2)}<span className="block text-[10px] text-zinc-400">{t1pct}</span></> : '—'}
+                            <td className="px-3 py-2 text-xs">
+                              {ltps[s.symbol] ? (
+                                <>
+                                  <span className="font-mono font-semibold text-zinc-900 dark:text-zinc-50">₹{ltps[s.symbol].toFixed(2)}</span>
+                                  <span className={`ml-1 text-[10px] font-medium ${ltps[s.symbol] >= s.entry_price ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                                    {ltps[s.symbol] >= s.entry_price ? '+' : ''}{(((ltps[s.symbol] - s.entry_price) / s.entry_price) * 100).toFixed(1)}%
+                                  </span>
+                                </>
+                              ) : <span className="text-zinc-300 dark:text-zinc-600">—</span>}
                             </td>
-                            <td className="px-3 py-2 font-mono text-xs text-emerald-700 dark:text-emerald-500">
-                              {t2 ? <>₹{t2.toFixed(2)}<span className="block text-[10px] text-zinc-400">{t2pct}</span></> : '—'}
+                            <td className="px-3 py-2 font-mono text-xs text-red-600 dark:text-red-400">₹{s.stop_loss.toFixed(2)}</td>
+                            <td className="px-3 py-2 font-mono text-xs text-emerald-700 dark:text-emerald-400">
+                              {t1 ? <>₹{t1.toFixed(2)}<span className="block text-[10px] text-zinc-500 dark:text-zinc-400">{t1pct}</span></> : '—'}
                             </td>
-                            <td className={`px-3 py-2 text-xs font-bold ${s.risk_reward_ratio >= 2 ? 'text-emerald-600 dark:text-emerald-400' : s.risk_reward_ratio >= 1.5 ? 'text-amber-500' : 'text-red-500'}`}>
+                            <td className="px-3 py-2 font-mono text-xs text-emerald-800 dark:text-emerald-500">
+                              {t2 ? <>₹{t2.toFixed(2)}<span className="block text-[10px] text-zinc-500 dark:text-zinc-400">{t2pct}</span></> : '—'}
+                            </td>
+                            <td className={`px-3 py-2 text-xs font-bold ${s.risk_reward_ratio >= 2 ? 'text-emerald-700 dark:text-emerald-400' : s.risk_reward_ratio >= 1.5 ? 'text-amber-700 dark:text-amber-400' : 'text-red-600 dark:text-red-400'}`}>
                               {s.risk_reward_ratio.toFixed(2)}
                             </td>
                             <td className="px-3 py-2 text-xs text-zinc-400">{s.holding_period}</td>

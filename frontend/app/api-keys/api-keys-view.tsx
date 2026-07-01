@@ -184,9 +184,9 @@ export default function ApiKeysView() {
                   <tr key={k.id} className="border-b border-zinc-50 dark:border-zinc-800/50">
                     <td className="py-2 font-medium text-zinc-900 dark:text-zinc-50">{k.name}</td>
                     <td className="py-2 font-mono text-zinc-500">mts_{k.key_prefix}…</td>
-                    <td className="py-2 text-zinc-500">{new Date(k.created_at).toLocaleDateString()}</td>
+                    <td className="py-2 text-zinc-500">{new Date(k.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })}</td>
                     <td className="py-2 text-zinc-500">
-                      {k.last_used_at ? new Date(k.last_used_at).toLocaleDateString() : 'Never'}
+                      {k.last_used_at ? new Date(k.last_used_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }) : 'Never'}
                     </td>
                     <td className="py-2 text-right">
                       <button

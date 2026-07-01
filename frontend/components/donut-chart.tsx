@@ -28,13 +28,14 @@ export function DonutChart({ data }: { data: Slice[] }) {
   )
 
   const cx = 80, cy = 80, outer = 65, inner = 42
-  let angle = 0
-  const slices = data.map((d, i) => {
-    const sweep = (d.value / total) * 360
-    const start = angle
-    angle += sweep
-    return { ...d, start, sweep, color: COLORS[i % COLORS.length] }
-  })
+  const slices = data.reduce<Array<typeof data[0] & { start: number; sweep: number; color: string }>>(
+    (acc, d, i) => {
+      const start = acc.length > 0 ? acc[acc.length - 1].start + acc[acc.length - 1].sweep : 0
+      acc.push({ ...d, start, sweep: (d.value / total) * 360, color: COLORS[i % COLORS.length] })
+      return acc
+    },
+    [],
+  )
 
   return (
     <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">

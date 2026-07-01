@@ -132,7 +132,7 @@ function LTPBadge({ ltp, loading }: { ltp: number | null; loading: boolean }) {
 function DistancePill({ ltp, target, direction }: { ltp: number; target: number; direction: string }) {
   const dist = ((target - ltp) / ltp) * 100
   const hit = direction === 'above' ? ltp >= target : ltp <= target
-  if (hit) return <span className="text-xs font-semibold text-amber-500">At target</span>
+  if (hit) return <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">At target</span>
   const sign = dist > 0 ? '+' : ''
   const color = direction === 'above'
     ? (dist > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400')
@@ -156,7 +156,6 @@ export default function AlertsView() {
 
   // Form state
   const [selSymbol, setSelSymbol] = useState('')   // e.g. "RELIANCE.NS"
-  const [selLabel, setSelLabel]   = useState('')   // e.g. "Reliance Industries"
   const [ltp, setLtp]             = useState<number | null>(null)
   const [ltpLoading, setLtpLoading] = useState(false)
   const [newTarget, setNewTarget] = useState('')
@@ -210,9 +209,8 @@ export default function AlertsView() {
   }
 
   // Fetch LTP when a stock is selected
-  function handleSelect(symbol: string, name: string) {
+  function handleSelect(symbol: string) {
     setSelSymbol(symbol)
-    setSelLabel(name)
     setLtp(null)
     setLtpLoading(true)
     getQuote(tokenRef.current, symbol)
@@ -236,7 +234,7 @@ export default function AlertsView() {
     try {
       const created = await createAlert(tokenRef.current, selSymbol, price, newDir)
       setAlerts(prev => [created, ...(prev ?? [])])
-      setSelSymbol(''); setSelLabel(''); setLtp(null); setNewTarget('')
+      setSelSymbol(''); setLtp(null); setNewTarget('')
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : 'Failed to create alert')
     } finally { setCreating(false) }
@@ -454,7 +452,7 @@ export default function AlertsView() {
                         ₹{a.price_target.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </td>
                       <td className="px-4 py-3 text-xs text-zinc-500">
-                        {a.triggered_at ? new Date(a.triggered_at).toLocaleString('en-IN') : '—'}
+                        {a.triggered_at ? new Date(a.triggered_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) + ' IST' : '—'}
                         {a.triggered_price && (
                           <span className="ml-1 font-mono text-zinc-400">
                             @ ₹{a.triggered_price.toFixed(2)}
@@ -515,7 +513,7 @@ export default function AlertsView() {
                         <p className="mt-1 font-semibold text-zinc-900 dark:text-zinc-50">
                           {sym}
                           <span className="ml-2 text-xs font-normal text-zinc-400">
-                            {new Date(a.triggered_at).toLocaleString('en-IN')}
+                            {new Date(a.triggered_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })} IST
                           </span>
                         </p>
                       </div>

@@ -70,11 +70,11 @@ function ExpandedRow({ s, onClose }: { s: StockScore; onClose: () => void }) {
             <div className="space-y-1 text-sm">
               <div className="flex justify-between">
                 <span className="text-zinc-500">Entry</span>
-                <span className="font-mono font-semibold">₹{s.entry_price.toFixed(2)}</span>
+                <span className="font-mono font-semibold text-zinc-900 dark:text-zinc-50">₹{s.entry_price.toFixed(2)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-zinc-500">Stop Loss</span>
-                <span className="font-mono font-semibold text-red-500">₹{s.stop_loss.toFixed(2)}</span>
+                <span className="font-mono font-semibold text-red-600 dark:text-red-400">₹{s.stop_loss.toFixed(2)}</span>
               </div>
               {s.targets.map((t, i) => (
                 <div key={i} className="flex justify-between">
@@ -84,7 +84,7 @@ function ExpandedRow({ s, onClose }: { s: StockScore; onClose: () => void }) {
               ))}
               <div className="flex justify-between border-t border-zinc-200 pt-1 dark:border-zinc-700">
                 <span className="text-zinc-500">R:R (T1)</span>
-                <span className={`font-bold ${s.risk_reward_ratio >= 2 ? 'text-emerald-600' : s.risk_reward_ratio >= 1.5 ? 'text-amber-500' : 'text-red-500'}`}>
+                <span className={`font-bold ${s.risk_reward_ratio >= 2 ? 'text-emerald-700 dark:text-emerald-400' : s.risk_reward_ratio >= 1.5 ? 'text-amber-700 dark:text-amber-400' : 'text-red-600 dark:text-red-400'}`}>
                   {s.risk_reward_ratio.toFixed(2)}
                 </span>
               </div>
@@ -236,8 +236,8 @@ export default function DiscoveryView() {
             {status && (
               <div className="text-right text-xs text-zinc-400">
                 {status.last_scan_at
-                  ? <span>Last scan: {new Date(status.last_scan_at).toLocaleTimeString()}</span>
-                  : <span className="text-amber-500">No scan yet</span>}
+                  ? <span>Last scan: {new Date(status.last_scan_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })} IST</span>
+                  : <span className="text-amber-700 dark:text-amber-400">No scan yet</span>}
                 {status.scheduler_active && (
                   <span className="ml-2 inline-flex h-2 w-2 rounded-full bg-emerald-500" title="Scheduler active" />
                 )}
@@ -356,29 +356,29 @@ export default function DiscoveryView() {
                           <td className="px-3 py-2.5">
                             <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${SIGNAL_STYLES[s.signal] ?? ''}`}>{s.signal}</span>
                           </td>
-                          <td className="px-3 py-2.5 font-mono text-xs">₹{s.entry_price.toFixed(2)}</td>
-                          <td className="px-3 py-2.5 font-mono text-xs text-red-500 dark:text-red-400">
+                          <td className="px-3 py-2.5 font-mono text-xs font-semibold text-zinc-900 dark:text-zinc-50">₹{s.entry_price.toFixed(2)}</td>
+                          <td className="px-3 py-2.5 font-mono text-xs font-semibold text-red-600 dark:text-red-400">
                             ₹{s.stop_loss.toFixed(2)}
-                            <span className="block text-[10px] text-zinc-400">
+                            <span className="block text-[10px] font-normal text-zinc-500 dark:text-zinc-400">
                               {s.entry_price > 0 ? `${(((s.stop_loss - s.entry_price) / s.entry_price) * 100).toFixed(1)}%` : ''}
                             </span>
                           </td>
                           {[0, 1, 2].map(i => (
-                            <td key={i} className="px-3 py-2.5 font-mono text-xs text-emerald-600 dark:text-emerald-400">
+                            <td key={i} className="px-3 py-2.5 font-mono text-xs font-semibold text-emerald-700 dark:text-emerald-400">
                               {s.targets[i] != null ? (
                                 <>
                                   ₹{s.targets[i].toFixed(2)}
-                                  <span className="block text-[10px] text-zinc-400">
+                                  <span className="block text-[10px] font-normal text-zinc-500 dark:text-zinc-400">
                                     +{(((s.targets[i] - s.entry_price) / s.entry_price) * 100).toFixed(1)}%
                                   </span>
                                 </>
-                              ) : '—'}
+                              ) : <span className="text-zinc-400">—</span>}
                             </td>
                           ))}
-                          <td className={`px-3 py-2.5 text-xs font-bold ${s.risk_reward_ratio >= 2 ? 'text-emerald-600 dark:text-emerald-400' : s.risk_reward_ratio >= 1.5 ? 'text-amber-500' : 'text-red-500'}`}>
+                          <td className={`px-3 py-2.5 text-xs font-bold ${s.risk_reward_ratio >= 2 ? 'text-emerald-700 dark:text-emerald-400' : s.risk_reward_ratio >= 1.5 ? 'text-amber-700 dark:text-amber-400' : 'text-red-600 dark:text-red-400'}`}>
                             {s.risk_reward_ratio.toFixed(2)}
                           </td>
-                          <td className="px-3 py-2.5 text-xs text-zinc-400">{s.holding_period}</td>
+                          <td className="px-3 py-2.5 text-xs text-zinc-600 dark:text-zinc-400">{s.holding_period}</td>
                         </tr>
                         {expandedId === s.id && (
                           <ExpandedRow key={`${s.id}-exp`} s={s} onClose={() => setExpandedId(null)} />
@@ -415,7 +415,7 @@ export default function DiscoveryView() {
                       <div className="mt-1 flex flex-wrap items-center gap-2">
                         <span className="text-[10px] text-zinc-400">{n.source}</span>
                         <span className="text-[10px] text-zinc-300 dark:text-zinc-600">·</span>
-                        <span className="text-[10px] text-zinc-400">{new Date(n.published_at).toLocaleString('en-IN')}</span>
+                        <span className="text-[10px] text-zinc-400">{new Date(n.published_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })} IST</span>
                         {n.mentioned_symbols.slice(0, 4).map(sym => (
                           <span key={sym} className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
                             {sym.replace(/\.(NS|BO)$/, '')}

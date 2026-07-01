@@ -16,6 +16,8 @@ const NAV: { href: string; label: string }[] = [
   { href: '/research', label: 'Research' },
   { href: '/ai', label: 'AI Analysis' },
   { href: '/ml', label: 'ML Signals' },
+  { href: '/discovery', label: 'Discovery' },
+  { href: '/reports', label: 'Reports' },
   { href: '/risk', label: 'Risk' },
   { href: '/backtest', label: 'Backtest' },
   { href: '/paper', label: 'Paper Trading' },
@@ -24,8 +26,6 @@ const NAV: { href: string; label: string }[] = [
   { href: '/alerts', label: 'Alerts' },
   { href: '/admin', label: 'Admin' },
   { href: '/api-keys', label: 'API Keys' },
-  { href: '/discovery', label: 'Discovery' },
-  { href: '/reports', label: 'Reports' },
 ]
 
 // ── Dark mode ────────────────────────────────────────────────────────────────
@@ -36,8 +36,9 @@ function useDarkMode() {
     const saved = localStorage.getItem('mts_theme')
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
     const isDark = saved ? saved === 'dark' : prefersDark
-    setDark(isDark)
     document.documentElement.classList.toggle('dark', isDark)
+    const id = setTimeout(() => setDark(isDark), 0)
+    return () => clearTimeout(id)
   }, [])
 
   function toggle() {

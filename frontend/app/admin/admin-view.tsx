@@ -192,16 +192,16 @@ function EmailListPanel({ tokenRef }: { tokenRef: React.RefObject<string> }) {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-xs text-zinc-400">
-                    {new Date(r.added_at).toLocaleDateString('en-IN')}
+                    {new Date(r.added_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-3">
                       <button onClick={() => toggle(r.id)}
-                        className={`text-xs ${r.active ? 'text-amber-500 hover:text-amber-600' : 'text-emerald-500 hover:text-emerald-600'}`}>
+                        className={`text-xs ${r.active ? 'text-amber-700 hover:text-amber-900 dark:text-amber-500 dark:hover:text-amber-400' : 'text-emerald-700 hover:text-emerald-900 dark:text-emerald-500 dark:hover:text-emerald-400'}`}>
                         {r.active ? 'Pause' : 'Resume'}
                       </button>
                       <button onClick={() => remove(r.id)}
-                        className="text-xs text-red-400 hover:text-red-600">
+                        className="text-xs text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300">
                         Remove
                       </button>
                     </div>
@@ -282,7 +282,7 @@ export default function AdminView() {
         {msg && (
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
             {msg}
-            <button onClick={() => setMsg(null)} className="ml-3 text-red-400 hover:text-red-600">✕</button>
+            <button onClick={() => setMsg(null)} className="ml-3 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300">✕</button>
           </div>
         )}
 
@@ -375,13 +375,13 @@ export default function AdminView() {
                           </span>
                         </td>
                         <td className="px-4 py-3 text-zinc-400">
-                          {new Date(u.created_at).toLocaleDateString('en-IN')}
+                          {new Date(u.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })}
                         </td>
                         <td className="px-4 py-3">
                           <button
                             onClick={() => toggleActive(u)}
                             disabled={loading}
-                            className={`text-xs ${u.is_active ? 'text-red-400 hover:text-red-600' : 'text-emerald-500 hover:text-emerald-600'}`}
+                            className={`text-xs ${u.is_active ? 'text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300' : 'text-emerald-700 hover:text-emerald-900 dark:text-emerald-500 dark:hover:text-emerald-400'}`}
                           >
                             {u.is_active ? 'Deactivate' : 'Activate'}
                           </button>

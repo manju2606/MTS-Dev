@@ -118,7 +118,7 @@ export function OnboardingBanner({
 
       {allDone && (
         <p className="mt-4 text-center text-xs font-medium text-emerald-600 dark:text-emerald-400">
-          All steps complete! You're ready to trade.
+          All steps complete! You&apos;re ready to trade.
           <button onClick={onDismiss} className="ml-2 underline">Dismiss</button>
         </p>
       )}

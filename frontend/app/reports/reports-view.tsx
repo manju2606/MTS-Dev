@@ -96,7 +96,7 @@ function PicksTable({ picks }: { picks: ReportPick[] }) {
                 <td className="px-3 py-2 font-mono text-xs text-zinc-700 dark:text-zinc-300">
                   ₹{p.entry_price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </td>
-                <td className="px-3 py-2 font-mono text-xs text-red-500">
+                <td className="px-3 py-2 font-mono text-xs text-red-600 dark:text-red-400">
                   ₹{p.stop_loss.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   <span className="block text-[10px] text-zinc-400">{stopPct}</span>
                 </td>
@@ -177,9 +177,9 @@ function PerformanceTable({ picks }: { picks: PerformancePick[] }) {
                 </td>
                 <td className="px-3 py-2"><SignalBadge signal={p.signal} /></td>
                 <td className="px-3 py-2 font-mono text-xs text-zinc-600 dark:text-zinc-300">{fmt(p.entry_price)}</td>
-                <td className="px-3 py-2 font-mono text-xs text-red-500">
+                <td className="px-3 py-2 font-mono text-xs text-red-600 dark:text-red-400">
                   {fmt(p.stop_loss)}
-                  <span className="block text-[10px] text-zinc-400">
+                  <span className="block text-[10px] text-zinc-500 dark:text-zinc-400">
                     {p.entry_price > 0 ? `${(((p.stop_loss - p.entry_price) / p.entry_price) * 100).toFixed(1)}%` : ''}
                   </span>
                 </td>
@@ -194,7 +194,7 @@ function PerformanceTable({ picks }: { picks: PerformancePick[] }) {
                   </td>
                 ))}
                 <td className="px-3 py-2 font-mono text-xs font-semibold text-zinc-900 dark:text-zinc-50">
-                  {p.current_price != null ? fmt(p.current_price) : <span className="text-zinc-300">—</span>}
+                  {p.current_price != null ? fmt(p.current_price) : <span className="text-zinc-400 dark:text-zinc-500">—</span>}
                 </td>
                 <td className={`px-3 py-2 font-mono text-xs font-bold ${pnlColor}`}>
                   {p.pnl_pct != null ? `${p.pnl_pct >= 0 ? '+' : ''}${p.pnl_pct.toFixed(2)}%` : '—'}
@@ -248,8 +248,8 @@ function ReportRow({ report, tokenRef }: { report: ReportSummary; tokenRef: Reac
   }
 
   const dt = new Date(report.generated_at)
-  const dateStr = dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-  const timeStr = dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+  const dateStr = dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })
+  const timeStr = dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) + ' IST'
 
   return (
     <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">

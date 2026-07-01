@@ -494,7 +494,7 @@ export default function AIView() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-zinc-100 dark:border-zinc-800">
-                    {['Date', 'Symbol', 'Signal', 'Conf', 'Entry', 'Target', 'Stop', 'R:R', 'Hold', 'Engine'].map(h => (
+                    {['Date & Time', 'Symbol', 'Signal', 'Conf', 'Entry', 'Target', 'Stop', 'R:R', 'Hold', 'Engine'].map(h => (
                       <th key={h} className="px-3 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400">{h}</th>
                     ))}
                   </tr>
@@ -504,7 +504,10 @@ export default function AIView() {
                     const sigCls = SIGNAL_TEXT[s.signal as string] ?? 'text-zinc-600 dark:text-zinc-300'
                     return (
                       <tr key={s.id} className="border-b border-zinc-50 last:border-0 hover:bg-zinc-50 dark:border-zinc-800/50 dark:hover:bg-zinc-800/30">
-                        <td className="px-3 py-2.5 text-xs text-zinc-400">{new Date(s.created_at).toLocaleDateString('en-IN')}</td>
+                        <td className="px-3 py-2.5 text-xs text-zinc-400 whitespace-nowrap">
+                          <div>{new Date(s.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })}</div>
+                          <div className="text-zinc-500 dark:text-zinc-400">{new Date(s.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })} IST</div>
+                        </td>
                         <td className="px-3 py-2.5 font-medium text-zinc-900 dark:text-zinc-50">{s.symbol.replace(/\.(NS|BO)$/, '')}</td>
                         <td className={`px-3 py-2.5 font-bold ${sigCls}`}>{s.signal}</td>
                         <td className="px-3 py-2.5 text-zinc-600 dark:text-zinc-300">{(s.confidence * 100).toFixed(0)}%</td>

@@ -75,7 +75,8 @@ export default function MLView() {
     const t = localStorage.getItem('mts_token')
     if (!t) { router.replace('/login'); return }
     tokenRef.current = t
-    setAuthChecked(true)
+    const id = setTimeout(() => setAuthChecked(true), 0)
+    return () => clearTimeout(id)
   }, [router])
 
   const runAll = useCallback(async () => {

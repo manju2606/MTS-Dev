@@ -28,6 +28,7 @@ class PlaceTradeRequest(BaseModel):
     stop_loss: float = Field(gt=0)
     target: float = Field(gt=0)
     quantity: int = Field(ge=1)
+    limit_price: float | None = Field(default=None, gt=0)
 
 
 @router.post("/trades", status_code=http_status.HTTP_201_CREATED, dependencies=[_trader_or_admin])
@@ -47,7 +48,8 @@ async def place_trade(
             status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
         ) from exc
 
-    entry = quote.price
+    # LIMIT order: use caller-specified price; MARKET order: use live quote
+    entry = body.limit_price if body.limit_price is not None else quote.price
 
     if body.signal == TradeSignal.BUY:
         if body.stop_loss >= entry:

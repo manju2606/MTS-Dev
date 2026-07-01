@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { listReportHistory, getReportDetail, getReportPerformance } from '@/lib/api'
+import { listReportHistory, countReports, getReportDetail, getReportPerformance } from '@/lib/api'
 import type { ReportSummary, ReportDetail, ReportPick, ReportPerformance, PerformancePick } from '@/lib/api'
 import { NavBar } from '@/components/nav-bar'
 
@@ -324,33 +324,114 @@ function ReportRow({ report, tokenRef }: { report: ReportSummary; tokenRef: Reac
 
 // ── Main view ─────────────────────────────────────────────────────────────────
 
+const PAGE = 30
+
 export default function ReportsView() {
   const router   = useRouter()
   const tokenRef = useRef('')
-  const [reports, setReports] = useState<ReportSummary[] | null>(null)
+  const [reports,     setReports]     = useState<ReportSummary[] | null>(null)
+  const [total,       setTotal]       = useState<number>(0)
+  const [skip,        setSkip]        = useState(0)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [fromDate,    setFromDate]    = useState('')
+  const [toDate,      setToDate]      = useState('')
+
+  async function fetchPage(token: string, s: number, fd: string, td: string, replace: boolean) {
+    const from = fd || undefined
+    const to   = td ? td + 'T23:59:59' : undefined
+    const [rows, cnt] = await Promise.all([
+      listReportHistory(token, PAGE, s, from, to),
+      s === 0 ? countReports(token, from, to) : Promise.resolve(total),
+    ])
+    if (replace) {
+      setReports(rows)
+      setTotal(cnt)
+    } else {
+      setReports(prev => [...(prev ?? []), ...rows])
+    }
+    return rows.length
+  }
 
   useEffect(() => {
     const t = localStorage.getItem('mts_token')
     if (!t) { router.replace('/login'); return }
     tokenRef.current = t
-    listReportHistory(t, 100)
-      .then(r => setReports(r))
-      .catch(() => setReports([]))
+    const id = setTimeout(() => fetchPage(t, 0, '', '', true), 0)
+    return () => clearTimeout(id)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router])
+
+  function applyFilter() {
+    setSkip(0)
+    fetchPage(tokenRef.current, 0, fromDate, toDate, true)
+  }
+
+  function clearFilter() {
+    setFromDate('')
+    setToDate('')
+    setSkip(0)
+    fetchPage(tokenRef.current, 0, '', '', true)
+  }
+
+  async function loadMore() {
+    setLoadingMore(true)
+    const newSkip = skip + PAGE
+    setSkip(newSkip)
+    await fetchPage(tokenRef.current, newSkip, fromDate, toDate, false)
+    setLoadingMore(false)
+  }
+
+  const hasMore = reports !== null && reports.length < total
 
   return (
     <div className="min-h-full bg-zinc-50 dark:bg-zinc-950">
       <NavBar active="Reports" />
       <main className="mx-auto max-w-4xl px-4 py-8">
-        <div className="mb-6 flex items-center justify-between">
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Report History</h1>
             <p className="text-sm text-zinc-400">Every hourly scan that generated an email is saved here.</p>
           </div>
           {reports !== null && (
             <span className="rounded-lg bg-zinc-100 px-3 py-1 text-sm text-zinc-500 dark:bg-zinc-800">
-              {reports.length} reports
+              {reports.length} / {total} reports
             </span>
+          )}
+        </div>
+
+        {/* Date filter */}
+        <div className="mb-5 flex flex-wrap items-end gap-3 rounded-xl border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+          <div>
+            <label className="mb-1 block text-xs text-zinc-500">From</label>
+            <input
+              type="date"
+              value={fromDate}
+              onChange={e => setFromDate(e.target.value)}
+              className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-zinc-500">To</label>
+            <input
+              type="date"
+              value={toDate}
+              onChange={e => setToDate(e.target.value)}
+              className="rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+            />
+          </div>
+          <button
+            onClick={applyFilter}
+            className="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500"
+          >
+            Filter
+          </button>
+          {(fromDate || toDate) && (
+            <button
+              onClick={clearFilter}
+              className="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+            >
+              Clear
+            </button>
           )}
         </div>
 
@@ -366,7 +447,7 @@ export default function ReportsView() {
         {/* Empty state */}
         {reports !== null && reports.length === 0 && (
           <div className="rounded-xl border border-zinc-200 bg-white px-4 py-20 text-center dark:border-zinc-800 dark:bg-zinc-900">
-            <p className="text-sm text-zinc-500">No reports yet.</p>
+            <p className="text-sm text-zinc-500">{fromDate || toDate ? 'No reports in this date range.' : 'No reports yet.'}</p>
             <p className="mt-1 text-xs text-zinc-400">Reports are saved automatically after each hourly scan email.</p>
           </div>
         )}
@@ -377,6 +458,19 @@ export default function ReportsView() {
             {reports.map(r => (
               <ReportRow key={r.id} report={r} tokenRef={tokenRef} />
             ))}
+          </div>
+        )}
+
+        {/* Load more */}
+        {hasMore && (
+          <div className="mt-6 text-center">
+            <button
+              onClick={loadMore}
+              disabled={loadingMore}
+              className="rounded-lg border border-zinc-300 bg-white px-6 py-2.5 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              {loadingMore ? 'Loading…' : `Load more (${total - reports.length} remaining)`}
+            </button>
           </div>
         )}
       </main>

@@ -76,12 +76,25 @@ class DiscoveryRepository:
         except Exception as exc:
             log.error("report_history.save_error", error=str(exc))
 
-    async def list_reports(self, limit: int = 50, skip: int = 0) -> list[dict]:
+    async def list_reports(
+        self,
+        limit: int = 30,
+        skip: int = 0,
+        from_date: datetime | None = None,
+        to_date: datetime | None = None,
+    ) -> list[dict]:
         """Return report history entries newest-first, without the full picks list."""
         try:
+            query: dict = {}
+            if from_date or to_date:
+                query["generated_at"] = {}
+                if from_date:
+                    query["generated_at"]["$gte"] = from_date
+                if to_date:
+                    query["generated_at"]["$lte"] = to_date
             cursor = (
                 self._reports
-                .find({}, {"picks": 0})
+                .find(query, {"picks": 0})
                 .sort("generated_at", -1)
                 .skip(skip)
                 .limit(limit)
@@ -95,6 +108,23 @@ class DiscoveryRepository:
         except Exception as exc:
             log.error("report_history.list_error", error=str(exc))
             return []
+
+    async def count_reports(
+        self,
+        from_date: datetime | None = None,
+        to_date: datetime | None = None,
+    ) -> int:
+        try:
+            query: dict = {}
+            if from_date or to_date:
+                query["generated_at"] = {}
+                if from_date:
+                    query["generated_at"]["$gte"] = from_date
+                if to_date:
+                    query["generated_at"]["$lte"] = to_date
+            return await self._reports.count_documents(query)
+        except Exception:
+            return 0
 
     async def get_report(self, report_id: str) -> dict | None:
         """Return a single report including full picks list."""

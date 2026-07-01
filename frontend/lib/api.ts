@@ -1274,12 +1274,33 @@ export type ReportPerformance = {
   picks: PerformancePick[]
 }
 
-export async function listReportHistory(token: string, limit = 50, skip = 0): Promise<ReportSummary[]> {
-  const res = await fetch(`${BASE}/api/v1/discovery/reports?limit=${limit}&skip=${skip}`, {
+export async function listReportHistory(
+  token: string,
+  limit = 30,
+  skip = 0,
+  fromDate?: string,
+  toDate?: string,
+): Promise<ReportSummary[]> {
+  const params = new URLSearchParams({ limit: String(limit), skip: String(skip) })
+  if (fromDate) params.set('from_date', fromDate)
+  if (toDate) params.set('to_date', toDate)
+  const res = await fetch(`${BASE}/api/v1/discovery/reports?${params}`, {
     headers: authHeaders(token),
   })
   if (!res.ok) return []
   return res.json()
+}
+
+export async function countReports(token: string, fromDate?: string, toDate?: string): Promise<number> {
+  const params = new URLSearchParams()
+  if (fromDate) params.set('from_date', fromDate)
+  if (toDate) params.set('to_date', toDate)
+  const res = await fetch(`${BASE}/api/v1/discovery/reports/count?${params}`, {
+    headers: authHeaders(token),
+  })
+  if (!res.ok) return 0
+  const d = await res.json()
+  return d.total ?? 0
 }
 
 export async function getReportDetail(token: string, reportId: string): Promise<ReportDetail | null> {

@@ -169,15 +169,32 @@ async def trigger_report(current_user: CurrentUser) -> dict:
     return {"message": "Report email queued"}
 
 
+@router.get("/reports/count")
+async def count_reports(
+    current_user: CurrentUser,
+    from_date: str | None = Query(default=None),
+    to_date: str | None = Query(default=None),
+) -> dict:
+    repo = DiscoveryRepository()
+    from_dt = datetime.fromisoformat(from_date) if from_date else None
+    to_dt = datetime.fromisoformat(to_date) if to_date else None
+    total = await repo.count_reports(from_date=from_dt, to_date=to_dt)
+    return {"total": total}
+
+
 @router.get("/reports")
 async def list_reports(
     current_user: CurrentUser,
-    limit: int = Query(default=50, le=200),
+    limit: int = Query(default=30, le=200),
     skip: int = Query(default=0, ge=0),
+    from_date: str | None = Query(default=None),
+    to_date: str | None = Query(default=None),
 ) -> list[dict]:
     """Return report history summaries newest-first (picks list excluded)."""
     repo = DiscoveryRepository()
-    return await repo.list_reports(limit=limit, skip=skip)
+    from_dt = datetime.fromisoformat(from_date) if from_date else None
+    to_dt = datetime.fromisoformat(to_date) if to_date else None
+    return await repo.list_reports(limit=limit, skip=skip, from_date=from_dt, to_date=to_dt)
 
 
 @router.get("/reports/{report_id}")

@@ -1167,6 +1167,7 @@ export type StockScore = {
   patterns: string[]
   explanation: string
   scanned_at: string
+  sector?: string
 }
 
 export type DiscoveryStatus = {
@@ -1393,6 +1394,39 @@ export type ForecastAccuracyRecord = {
 
 export async function getForecast(token: string, symbol: string): Promise<ForecastResult> {
   const res = await fetch(`${BASE}/api/v1/forecast/${encodeURIComponent(symbol)}`, {
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+// ── Dashboard market overview ─────────────────────────────────────────────────
+
+export type IndexQuote = {
+  symbol: string
+  name: string
+  price: number
+  change: number
+  change_pct: number
+  high: number
+  low: number
+}
+
+export type EconomicEvent = {
+  date: string
+  event: string
+  category: 'rbi' | 'market' | 'results' | 'budget'
+}
+
+export type MarketOverviewData = {
+  indices: IndexQuote[]
+  global: IndexQuote[]
+  economic_events: EconomicEvent[]
+  fetched_at: number
+}
+
+export async function getMarketOverview(token: string): Promise<MarketOverviewData> {
+  const res = await fetch(`${BASE}/api/v1/dashboard/market-overview`, {
     headers: authHeaders(token),
   })
   if (!res.ok) throw new Error(await res.text())

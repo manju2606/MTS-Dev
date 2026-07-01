@@ -14,6 +14,7 @@ from app.core.scheduler import (
 from app.domain.models.discovery import DiscoveryStatus, StockScore
 from app.domain.models.user import UserRole
 from app.infra.db.repositories.discovery_repo import DiscoveryRepository
+from app.infra.scanner.universe import SYMBOL_SECTOR
 
 router = APIRouter(prefix="/discovery", tags=["discovery"])
 
@@ -40,6 +41,7 @@ def _serialize_score(s: StockScore) -> dict:
         "patterns": s.patterns,
         "explanation": s.explanation,
         "scanned_at": s.scanned_at.isoformat(),
+        "sector": SYMBOL_SECTOR.get(s.symbol, "Other"),
     }
 
 

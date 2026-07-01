@@ -238,7 +238,7 @@ function SectorHeatMap({ picks }: { picks: StockScore[] | null }) {
     <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
       <div className="flex items-center justify-between mb-3">
         <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide dark:text-zinc-400">Sector Heat Map</p>
-        <span className="text-[10px] text-zinc-400">Score 0–100</span>
+        <Link href="/heatmap" className="text-[10px] text-indigo-500 hover:text-indigo-700">Full map →</Link>
       </div>
       <div className="grid grid-cols-3 gap-1.5">
         {sectors.map(s => (

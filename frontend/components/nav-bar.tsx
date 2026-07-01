@@ -2,9 +2,9 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { addItemToWatchlist, getMe, searchStocks } from '@/lib/api'
-import type { StockSearchResult, User } from '@/lib/api'
+import { useEffect, useRef, useState } from 'react'
+import { getMe } from '@/lib/api'
+import type { User } from '@/lib/api'
 
 // ── Icon primitives ───────────────────────────────────────────────────────────
 
@@ -30,6 +30,7 @@ const ICONS: Record<string, string> = {
   users:     'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm8 4a2 2 0 1 1 0-4 2 2 0 0 1 0 4zM23 21v-2a4 4 0 0 0-3-3.87',
   key:        'M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4',
   trendingUp: 'M23 6l-9.5 9.5-5-5L1 18M17 6h6v6',
+  squares:   'M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z',
 }
 
 function Icon({ name, size = 15 }: { name: string; size?: number }) {
@@ -78,6 +79,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/ai',           label: 'AI Analysis',   icon: 'sparkles',  desc: 'Signal generation & history' },
       { href: '/ml',           label: 'ML Signals',    icon: 'cpu',       desc: 'Machine learning predictions' },
       { href: '/discovery',    label: 'Discovery',     icon: 'compass',     desc: 'Stock discovery engine' },
+      { href: '/heatmap',      label: 'Heat Map',      icon: 'squares',    desc: 'NSE-style market heat map' },
       { href: '/forecast',     label: 'Forecast',      icon: 'trendingUp', desc: 'ML price predictions: day, week, month' },
       { href: '/reports',      label: 'Reports',       icon: 'fileText',   desc: 'Hourly scan email reports' },
     ],
@@ -203,101 +205,6 @@ function MarketHours() {
       <span className={`h-2 w-2 shrink-0 rounded-full ${dot}`} />
       <span className="text-xs text-zinc-500 dark:text-zinc-400">{label}</span>
       <span className="text-xs text-zinc-400 dark:text-zinc-500">· {info.countdown}</span>
-    </div>
-  )
-}
-
-// ── Stock search ──────────────────────────────────────────────────────────────
-
-function StockSearch() {
-  const router       = useRouter()
-  const [q, setQ]             = useState('')
-  const [results, setResults] = useState<StockSearchResult[]>([])
-  const [open, setOpen]       = useState(false)
-  const [added, setAdded]     = useState<Record<string, boolean>>({})
-  const debounceRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
-
-  const search = useCallback(async (query: string) => {
-    const token = localStorage.getItem('mts_token') ?? ''
-    if (!token || query.trim().length < 2) { setResults([]); setOpen(false); return }
-    const r = await searchStocks(token, query).catch(() => [])
-    setResults(r); setOpen(r.length > 0)
-  }, [])
-
-  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const v = e.target.value; setQ(v)
-    if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => search(v), 250)
-  }
-
-  function pick(r: StockSearchResult) {
-    setQ(''); setResults([]); setOpen(false)
-    router.push(`/dashboard?symbol=${encodeURIComponent(r.symbol)}`)
-  }
-
-  async function addToWatchlist(e: React.MouseEvent, r: StockSearchResult) {
-    e.stopPropagation()
-    const token       = localStorage.getItem('mts_token') ?? ''
-    const watchlistId = localStorage.getItem('mts_active_watchlist_id') ?? ''
-    if (!token || !watchlistId) return
-    try {
-      await addItemToWatchlist(token, watchlistId, r.symbol)
-      setAdded(prev => ({ ...prev, [r.symbol]: true }))
-      setTimeout(() => setAdded(prev => { const n = { ...prev }; delete n[r.symbol]; return n }), 2000)
-    } catch { /* already in watchlist */ }
-  }
-
-  useEffect(() => {
-    function onClick(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', onClick)
-    return () => document.removeEventListener('mousedown', onClick)
-  }, [])
-
-  return (
-    <div ref={containerRef} className="relative">
-      <div className="relative">
-        <Icon name="search" size={13} />
-        <input
-          value={q}
-          onChange={handleChange}
-          onFocus={() => results.length > 0 && setOpen(true)}
-          placeholder="Search stocks…"
-          className="w-36 rounded-lg border border-zinc-300 bg-zinc-50 py-1.5 pl-7 pr-3 text-xs text-zinc-900 placeholder-zinc-400 focus:border-indigo-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500 sm:w-44"
-          style={{ paddingLeft: '1.75rem' }}
-        />
-        <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400">
-          <Icon name="search" size={13} />
-        </span>
-      </div>
-      {open && results.length > 0 && (
-        <div className="absolute right-0 top-full z-50 mt-1 w-80 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
-          {results.map(r => (
-            <div key={r.symbol} className="flex items-center hover:bg-zinc-50 dark:hover:bg-zinc-800">
-              <button onMouseDown={() => pick(r)} className="flex flex-1 items-center justify-between px-4 py-2.5 text-left">
-                <div>
-                  <span className="text-sm font-medium text-zinc-900 dark:text-zinc-50">{r.name}</span>
-                  <span className="ml-2 text-xs text-zinc-400">{r.exchange}</span>
-                </div>
-                <span className="text-xs text-zinc-400">{r.sector}</span>
-              </button>
-              <button
-                onMouseDown={e => addToWatchlist(e, r)}
-                title="Add to active watchlist"
-                className="mr-2 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-xs font-bold text-white transition-colors"
-                style={{ background: added[r.symbol] ? '#10b981' : '#6366f1' }}
-              >
-                {added[r.symbol] ? '✓' : '+'}
-              </button>
-            </div>
-          ))}
-          <p className="border-t border-zinc-100 px-4 py-1.5 text-[10px] text-zinc-400 dark:border-zinc-800">
-            Click name to view · + to add to active watchlist
-          </p>
-        </div>
-      )}
     </div>
   )
 }
@@ -460,7 +367,6 @@ export function NavBar({ active }: { active: string }) {
           {/* Right */}
           <div className="flex shrink-0 items-center gap-2">
             <MarketHours />
-            <StockSearch />
 
             {displayName && (
               <div className="hidden items-center gap-2 sm:flex">

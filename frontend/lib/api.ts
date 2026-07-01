@@ -1167,7 +1167,7 @@ export type StockScore = {
   patterns: string[]
   explanation: string
   scanned_at: string
-  sector?: string
+  sector: string
 }
 
 export type DiscoveryStatus = {

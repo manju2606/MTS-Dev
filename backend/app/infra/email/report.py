@@ -1,6 +1,6 @@
 """Daily stock research report — builds and sends an HTML email with today's top picks."""
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 
 import structlog
 
@@ -100,8 +100,10 @@ def _signal_counts(picks: list) -> dict[str, int]:
 
 
 def build_report_html(picks: list, scanned_count: int) -> str:
-    today = date.today().strftime("%A, %d %B %Y")
-    now_ist = datetime.now(timezone.utc).strftime("%H:%M UTC")
+    IST = timezone(timedelta(hours=5, minutes=30))
+    now_ist_dt = datetime.now(IST)
+    today = now_ist_dt.strftime("%A, %d %B %Y")
+    now_ist = now_ist_dt.strftime("%I:%M %p IST")
 
     counts = _signal_counts(picks)
     strong_buy = counts.get("STRONG_BUY", 0)
@@ -221,7 +223,7 @@ def build_report_html(picks: list, scanned_count: int) -> str:
       before placing any trade. Never risk more than you can afford to lose.
     </p>
     <p style="margin:8px 0 0;font-size:10px;color:#d1d5db;">
-      Manju Trade AI Pro · Indian Markets (NSE/BSE) · Automated every weekday at 08:00 IST
+      Manju Trade AI Pro · Indian Markets (NSE/BSE) · Automated hourly 08:15–15:15 IST, Mon–Fri
     </p>
   </div>
 

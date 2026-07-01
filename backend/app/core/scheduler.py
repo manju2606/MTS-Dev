@@ -153,11 +153,12 @@ def start_scheduler() -> None:
     )
 
     # Hourly scan + email report 08:15–15:15 IST (Mon–Fri)
+    # misfire_grace_time=None: server restarts outside market hours won't fire stale jobs
     _scheduler.add_job(
         run_morning_report,
         CronTrigger(
             day_of_week="mon-fri",
-            hour="8-15",
+            hour="8,9,10,11,12,13,14,15",
             minute=15,
             second=0,
             timezone="Asia/Kolkata",
@@ -165,7 +166,7 @@ def start_scheduler() -> None:
         id="morning_report",
         name="Hourly Report (scan + email)",
         max_instances=1,
-        misfire_grace_time=300,
+        misfire_grace_time=None,
     )
 
     # Position monitor every 5 minutes during market hours

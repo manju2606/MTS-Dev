@@ -271,6 +271,15 @@ function SectorHeatMap({ picks }: { picks: StockScore[] | null }) {
 
 // ── Economic events ───────────────────────────────────────────────────────────
 
+function daysUntil(dateStr: string) {
+  const diff = Math.ceil((new Date(dateStr).getTime() - Date.now()) / 86400000)
+  if (diff === 0) return 'Today'
+  if (diff === 1) return 'Tomorrow'
+  if (diff < 7) return `${diff}d`
+  if (diff < 30) return `${Math.ceil(diff / 7)}w`
+  return `${Math.ceil(diff / 30)}mo`
+}
+
 function EconomicEventsCard({ events }: { events: EconomicEvent[] }) {
   const catStyle: Record<string, string> = {
     rbi:     'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300',
@@ -280,15 +289,6 @@ function EconomicEventsCard({ events }: { events: EconomicEvent[] }) {
   }
   const catLabel: Record<string, string> = {
     rbi: 'RBI', market: 'F&O', results: 'Earnings', budget: 'Budget',
-  }
-
-  function daysUntil(dateStr: string) {
-    const diff = Math.ceil((new Date(dateStr).getTime() - Date.now()) / 86400000)
-    if (diff === 0) return 'Today'
-    if (diff === 1) return 'Tomorrow'
-    if (diff < 7) return `${diff}d`
-    if (diff < 30) return `${Math.ceil(diff / 7)}w`
-    return `${Math.ceil(diff / 30)}mo`
   }
 
   return (

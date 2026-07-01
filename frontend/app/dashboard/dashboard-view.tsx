@@ -426,7 +426,7 @@ function SotDDashCard({ sotd }: { sotd: StockOfDay | null }) {
         <div><p className="text-[9px] text-zinc-400">Entry</p><p className="font-mono font-semibold">₹{sotd.entry_price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p></div>
         <div><p className="text-[9px] text-zinc-400">SL</p><p className="font-mono font-semibold text-red-600 dark:text-red-400">₹{sotd.stop_loss.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p></div>
         <div><p className="text-[9px] text-zinc-400">Target</p><p className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">₹{sotd.target.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p></div>
-        <div><p className="text-[9px] text-zinc-400">Score</p><p className="font-bold text-indigo-600">{Math.round(sotd.composite_score)}</p></div>
+        <div><p className="text-[9px] text-zinc-400">Confidence Score</p><p className="font-bold text-indigo-600">{Math.round(sotd.composite_score)}</p></div>
         <div><p className="text-[9px] text-zinc-400">Status</p><p className={`font-bold text-[10px] ${statusColor[sotd.status] ?? ''}`}>{sotd.status.replace('_', ' ')}</p></div>
         {pnl != null && (
           <div><p className="text-[9px] text-zinc-400">P&L</p><p className={`font-bold font-mono ${pnlColor}`}>{pnl >= 0 ? '+' : ''}{pnl.toFixed(2)}%</p></div>
@@ -647,7 +647,7 @@ export default function DashboardView() {
                         <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-400">#</th>
                         <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-400">Symbol</th>
                         <SortTh label="Signal" k="signal" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
-                        <SortTh label="Score" k="score" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                        <SortTh label="Confidence Score" k="score" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
                         <SortTh label="Entry" k="entry_price" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
                         <th className="px-3 py-2.5 text-left text-xs font-medium text-indigo-500 dark:text-indigo-400">LTP</th>
                         <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-400">Stop</th>

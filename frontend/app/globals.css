@@ -2,8 +2,8 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f0f4f8;
+  --foreground: #1e293b;
 }
 
 .dark {
@@ -22,4 +22,27 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* ── Light mode: improve text contrast & avoid white-wash ────────────────────
+   Overrides are scoped to :root:not(.dark) so dark mode is completely
+   unaffected — Tailwind's original zinc values are used there.              */
+
+:root:not(.dark) {
+  /* Page / subtle backgrounds get a cool blue-gray tint instead of near-white.
+     bg-zinc-50 is used for all page wrappers and table row alternating rows.  */
+  --color-zinc-50:  #f0f4f8;  /* was #fafafa  */
+  --color-zinc-100: #e8edf3;  /* was #f4f4f5  */
+}
+
+/* Text: shift muted grays darker so labels are readable on light backgrounds.
+   Using class-level overrides (not CSS var remapping) to avoid affecting
+   bg-zinc-300/400/500 borders or progress bars.                             */
+:root:not(.dark) .text-zinc-300 { color: #71717a; }  /* → zinc-500 darkness */
+:root:not(.dark) .text-zinc-400 { color: #52525b; }  /* → zinc-600 darkness */
+:root:not(.dark) .text-zinc-500 { color: #3f3f46; }  /* → zinc-700 darkness */
+
+/* Borders: keep them visible without going too dark */
+:root:not(.dark) {
+  --color-zinc-200: #d1d9e0;  /* was #e4e4e7 — slightly deeper for contrast */
 }

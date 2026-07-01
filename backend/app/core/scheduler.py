@@ -35,6 +35,18 @@ def last_scan_info() -> tuple[datetime | None, int]:
     return _last_scan_at, _last_scan_count
 
 
+async def _resolve_forecast_accuracy() -> None:
+    """16:30 IST weekdays: fill actual prices into today's forecast records."""
+    from datetime import date
+    try:
+        from app.infra.db.repositories.forecast_repo import ForecastRepository
+        repo = ForecastRepository()
+        updated = await repo.resolve_predictions_for_date(date.today().isoformat())
+        log.info("scheduler.forecast_accuracy.done", updated=updated)
+    except Exception as exc:
+        log.error("scheduler.forecast_accuracy.error", error=str(exc))
+
+
 async def _run_position_check() -> None:
     """Delegate to the position monitor (import kept lazy to avoid circular imports)."""
     from app.infra.monitoring.position_monitor import run_position_check
@@ -183,6 +195,21 @@ def start_scheduler() -> None:
         name="Position Stop/Target Monitor",
         max_instances=1,
         misfire_grace_time=60,
+    )
+
+    # Resolve forecast accuracy daily at 16:30 IST (after market close)
+    _scheduler.add_job(
+        _resolve_forecast_accuracy,
+        CronTrigger(
+            day_of_week="mon-fri",
+            hour=16,
+            minute=30,
+            timezone="Asia/Kolkata",
+        ),
+        id="forecast_accuracy_resolver",
+        name="Resolve Forecast Accuracy",
+        max_instances=1,
+        misfire_grace_time=None,
     )
 
     _scheduler.start()

@@ -28,7 +28,8 @@ const ICONS: Record<string, string> = {
   bell:      'M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0',
   warning:   'M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01',
   users:     'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm8 4a2 2 0 1 1 0-4 2 2 0 0 1 0 4zM23 21v-2a4 4 0 0 0-3-3.87',
-  key:       'M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4',
+  key:        'M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4',
+  trendingUp: 'M23 6l-9.5 9.5-5-5L1 18M17 6h6v6',
 }
 
 function Icon({ name, size = 15 }: { name: string; size?: number }) {
@@ -76,8 +77,9 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/research',     label: 'Research',      icon: 'search',    desc: 'AI-powered stock screener' },
       { href: '/ai',           label: 'AI Analysis',   icon: 'sparkles',  desc: 'Signal generation & history' },
       { href: '/ml',           label: 'ML Signals',    icon: 'cpu',       desc: 'Machine learning predictions' },
-      { href: '/discovery',    label: 'Discovery',     icon: 'compass',   desc: 'Stock discovery engine' },
-      { href: '/reports',      label: 'Reports',       icon: 'fileText',  desc: 'Hourly scan email reports' },
+      { href: '/discovery',    label: 'Discovery',     icon: 'compass',     desc: 'Stock discovery engine' },
+      { href: '/forecast',     label: 'Forecast',      icon: 'trendingUp', desc: 'ML price predictions: day, week, month' },
+      { href: '/reports',      label: 'Reports',       icon: 'fileText',   desc: 'Hourly scan email reports' },
     ],
   },
   {

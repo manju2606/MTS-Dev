@@ -1336,3 +1336,81 @@ export async function getEnsembleSignal(token: string, symbol: string): Promise<
   if (!res.ok) throw new Error(await res.text())
   return res.json()
 }
+
+// ── Forecast types ────────────────────────────────────────────────────────────
+
+export type ModelForecast = {
+  model: string
+  predicted_price: number
+  change_pct: number
+  confidence: number
+  direction: 'UP' | 'DOWN' | 'FLAT'
+}
+
+export type HorizonForecast = {
+  horizon: string
+  horizon_days: number
+  target_date: string
+  ensemble_price: number
+  ensemble_change_pct: number
+  lower_bound: number
+  upper_bound: number
+  direction: 'UP' | 'DOWN' | 'FLAT'
+  models: ModelForecast[]
+}
+
+export type ForecastResult = {
+  id: string
+  symbol: string
+  name: string
+  current_price: number
+  prev_close: number
+  day_change_pct: number
+  week_change_pct: number
+  high_52w: number
+  low_52w: number
+  volume: number
+  avg_volume: number
+  forecasts: HorizonForecast[]
+  agent_analysis: string
+  generated_at: string
+}
+
+export type ForecastAccuracyRecord = {
+  symbol: string
+  horizon: string
+  model: string
+  predicted_price: number
+  predicted_change_pct: number
+  direction: string
+  base_price: number
+  target_date: string
+  generated_at: string
+  actual_price: number | null
+  error_pct: number | null
+  direction_correct: boolean | null
+}
+
+export async function getForecast(token: string, symbol: string): Promise<ForecastResult> {
+  const res = await fetch(`${BASE}/api/v1/forecast/${encodeURIComponent(symbol)}`, {
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+export async function getForecastHistory(
+  token: string,
+  symbol: string,
+  horizon?: string,
+  limit = 30,
+): Promise<ForecastAccuracyRecord[]> {
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (horizon) params.set('horizon', horizon)
+  const res = await fetch(
+    `${BASE}/api/v1/forecast/${encodeURIComponent(symbol)}/history?${params}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}

@@ -239,7 +239,7 @@ export default function PortfolioView() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-zinc-100 text-left dark:border-zinc-800">
-                    {['Symbol', 'Side', 'Qty', 'Entry', 'Current', 'Invested', 'Unreal P&L', 'Target', 'Stop', 'Days', 'Conf'].map(h => (
+                    {['Symbol', 'Side', 'Qty', 'Entry', 'Opened', 'Current', 'Invested', 'Unreal P&L', 'Target', 'Stop', 'Days', 'Conf'].map(h => (
                       <th key={h} className="px-3 py-3 text-xs font-medium text-zinc-500">{h}</th>
                     ))}
                   </tr>
@@ -264,6 +264,17 @@ export default function PortfolioView() {
                       </td>
                       <td className="px-3 py-3 font-mono text-xs text-zinc-700 dark:text-zinc-300">{p.quantity}</td>
                       <td className="px-3 py-3 font-mono text-xs text-zinc-700 dark:text-zinc-300">₹{p.entry_price.toFixed(2)}</td>
+                      <td className="px-3 py-3">
+                        {p.opened_at ? (() => {
+                          const d = new Date(p.opened_at)
+                          return (
+                            <>
+                              <div className="text-xs text-zinc-700 dark:text-zinc-300">{d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })}</div>
+                              <div className="text-[10px] text-zinc-400">{d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })} IST</div>
+                            </>
+                          )
+                        })() : <span className="text-xs text-zinc-400">—</span>}
+                      </td>
                       <td className="px-3 py-3 font-mono text-xs text-zinc-900 dark:text-zinc-50">₹{p.current_price.toFixed(2)}</td>
                       <td className="px-3 py-3 font-mono text-xs text-zinc-500">₹{p.invested.toFixed(0)}</td>
                       <td className="px-3 py-3">

@@ -1,12 +1,13 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { NavBar } from '@/components/nav-bar'
 import {
-  getSotDHistory, getSotDJournal, getSotDToday, triggerSotDGenerate,
+  getSotDHistory, getSotDJournal, getSotDToday, getSotDSettings, updateSotDSettings,
+  triggerSotDGenerate, getQuote,
 } from '@/lib/api'
-import type { SotDJournalEntry, StockOfDay } from '@/lib/api'
+import type { SotDJournalEntry, StockOfDay, SotDSettings } from '@/lib/api'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -73,9 +74,10 @@ function ScoreGauge({ score }: { score: number }) {
 // ── Today's Pick card ─────────────────────────────────────────────────────────
 
 function TodayCard({
-  sotd, onGenerate, generating,
+  sotd, ltp, onGenerate, generating,
 }: {
   sotd: StockOfDay | null
+  ltp: number | null
   onGenerate: () => void
   generating: boolean
 }) {
@@ -103,17 +105,45 @@ function TodayCard({
   const sym = sotd.symbol.replace(/\.(NS|BO)$/, '')
   const pctSl  = ((sotd.stop_loss  - sotd.entry_price) / sotd.entry_price * 100)
   const pctTgt = ((sotd.target     - sotd.entry_price) / sotd.entry_price * 100)
+  const ltpChg = ltp ? ((ltp - sotd.entry_price) / sotd.entry_price * 100) : null
+  const genTime = sotd.generated_at
+    ? new Date(sotd.generated_at).toLocaleString('en-IN', {
+        timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short',
+        hour: '2-digit', minute: '2-digit',
+      })
+    : sotd.date
+  const aiScore = Math.round(sotd.confidence * 100)
 
   return (
     <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       {/* Header */}
-      <div className="flex items-center justify-between gap-4 border-b border-zinc-100 bg-gradient-to-r from-indigo-600 to-violet-600 px-6 py-4 dark:border-zinc-800">
+      <div className="flex items-start justify-between gap-4 border-b border-zinc-100 bg-gradient-to-r from-indigo-600 to-violet-600 px-6 py-4 dark:border-zinc-800">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-200">⭐ Stock of the Day · {sotd.date}</p>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-200">⭐ Stock of the Day · {genTime} IST</p>
           <h2 className="mt-0.5 text-2xl font-extrabold text-white">{sym}</h2>
           <p className="text-sm text-indigo-200">{sotd.name} &nbsp;·&nbsp; {sotd.sector}</p>
+          {/* LTP row */}
+          <div className="mt-2 flex items-center gap-3">
+            {ltp != null ? (
+              <>
+                <span className="text-base font-bold text-white">
+                  LTP: ₹{ltp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+                {ltpChg != null && (
+                  <span className={`text-xs font-semibold ${ltpChg >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
+                    {ltpChg >= 0 ? '+' : ''}{ltpChg.toFixed(2)}% vs entry
+                  </span>
+                )}
+              </>
+            ) : (
+              <span className="text-xs text-indigo-300">Fetching LTP…</span>
+            )}
+            <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold text-white">
+              AI Score: {aiScore}%
+            </span>
+          </div>
         </div>
-        <div className="flex flex-col items-end gap-2">
+        <div className="flex flex-col items-end gap-2 shrink-0">
           <StatusBadge status={sotd.status} />
           {sotd.pnl_pct != null && (
             <PnlChip pnl={sotd.pnl_pct} outcome={sotd.outcome} />
@@ -212,7 +242,7 @@ function TodayCard({
               🔍 Scanner
             </Link>
             <Link
-              href="/paper-trading"
+              href="/paper"
               className="flex-1 rounded-lg border border-zinc-200 bg-zinc-50 py-2 text-center text-xs font-semibold text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
             >
               📋 Paper Trades
@@ -289,27 +319,37 @@ function HistoryTable({ history }: { history: StockOfDay[] }) {
           {history.map(row => {
             const sym = row.symbol.replace(/\.(NS|BO)$/, '')
             const pnl = row.pnl_pct
-            const pnlColor = pnl == null ? '' : pnl >= 0 ? 'text-emerald-600' : 'text-red-500'
+            const pnlColor = pnl == null ? '' : pnl >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'
+            const genDt = row.generated_at
+              ? new Date(row.generated_at).toLocaleString('en-IN', {
+                  timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short',
+                  hour: '2-digit', minute: '2-digit',
+                })
+              : row.date
             return (
               <tr key={row.date + row.symbol} className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/30">
-                <td className="px-3 py-2 text-zinc-400">{row.date}</td>
                 <td className="px-3 py-2">
-                  <Link href={`/forecast?symbol=${sym}`} className="font-bold text-zinc-800 hover:text-indigo-600 dark:text-zinc-200">
+                  <p className="text-zinc-800 dark:text-zinc-200 font-medium">{row.date}</p>
+                  <p className="text-[10px] text-zinc-400">{genDt} IST</p>
+                </td>
+                <td className="px-3 py-2">
+                  <Link href={`/forecast?symbol=${sym}`} className="font-bold text-zinc-800 hover:text-indigo-600 dark:text-zinc-200 dark:hover:text-indigo-400">
                     {sym}
                   </Link>
+                  <p className="text-[10px] text-zinc-400">{row.name}</p>
                 </td>
-                <td className="px-3 py-2 text-zinc-500">{row.sector}</td>
+                <td className="px-3 py-2 text-zinc-600 dark:text-zinc-400">{row.sector || '—'}</td>
                 <td className="px-3 py-2">
-                  <span className={`font-bold ${row.composite_score >= 85 ? 'text-emerald-600' : 'text-indigo-500'}`}>
+                  <span className={`font-bold ${row.composite_score >= 85 ? 'text-emerald-600 dark:text-emerald-400' : 'text-indigo-600 dark:text-indigo-400'}`}>
                     {Math.round(row.composite_score)}
                   </span>
                 </td>
-                <td className="px-3 py-2 font-mono">₹{fmt(row.entry_price)}</td>
+                <td className="px-3 py-2 font-mono font-semibold text-zinc-800 dark:text-zinc-200">₹{fmt(row.entry_price)}</td>
                 <td className="px-3 py-2 font-mono text-red-600 dark:text-red-400">₹{fmt(row.stop_loss)}</td>
                 <td className="px-3 py-2 font-mono text-emerald-600 dark:text-emerald-400">₹{fmt(row.target)}</td>
-                <td className="px-3 py-2 font-semibold text-indigo-600">{row.risk_reward.toFixed(2)}x</td>
+                <td className="px-3 py-2 font-semibold text-indigo-600 dark:text-indigo-400">{row.risk_reward.toFixed(2)}x</td>
                 <td className="px-3 py-2"><StatusBadge status={row.status} /></td>
-                <td className="px-3 py-2 font-mono">{row.exit_price ? `₹${fmt(row.exit_price)}` : '—'}</td>
+                <td className="px-3 py-2 font-mono text-zinc-700 dark:text-zinc-300">{row.exit_price ? `₹${fmt(row.exit_price)}` : '—'}</td>
                 <td className={`px-3 py-2 font-bold font-mono ${pnlColor}`}>
                   {pnl != null ? `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}%` : '—'}
                 </td>
@@ -350,18 +390,101 @@ function PnlSummary({ history }: { history: StockOfDay[] }) {
   )
 }
 
+// ── Settings panel (admin) ────────────────────────────────────────────────────
+
+function SettingsPanel({ token }: { token: string }) {
+  const [cfg, setCfg]       = useState<SotDSettings | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg]       = useState('')
+
+  useEffect(() => {
+    getSotDSettings(token).then(setCfg).catch(() => null)
+  }, [token])
+
+  async function save() {
+    if (!cfg) return
+    setSaving(true)
+    setMsg('')
+    try {
+      const saved = await updateSotDSettings(token, cfg)
+      setCfg(saved)
+      setMsg('Settings saved.')
+    } catch (e) {
+      setMsg(`Error: ${(e as Error).message}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!cfg) return <div className="h-12 animate-pulse rounded-xl bg-zinc-200 dark:bg-zinc-800" />
+
+  return (
+    <div className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-900">
+      <h3 className="mb-4 text-sm font-bold text-zinc-800 dark:text-zinc-200">⚙ Auto-Trade Rules (Admin)</h3>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <label className="flex items-center justify-between gap-3">
+          <span className="text-xs text-zinc-600 dark:text-zinc-400">Auto-trade enabled</span>
+          <input type="checkbox" checked={cfg.auto_trade_enabled}
+            onChange={e => setCfg({ ...cfg, auto_trade_enabled: e.target.checked })}
+            className="h-4 w-4 rounded" />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] text-zinc-400 uppercase">Score threshold (50–100)</span>
+          <input type="number" min={50} max={100} step={1} value={cfg.threshold}
+            onChange={e => setCfg({ ...cfg, threshold: Number(e.target.value) })}
+            className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-sm text-zinc-800 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200" />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] text-zinc-400 uppercase">Max trades per day</span>
+          <input type="number" min={1} max={10} step={1} value={cfg.max_daily_trades}
+            onChange={e => setCfg({ ...cfg, max_daily_trades: Number(e.target.value) })}
+            className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-sm text-zinc-800 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200" />
+        </label>
+        <label className="flex items-center justify-between gap-3">
+          <span className="text-xs text-zinc-600 dark:text-zinc-400">Market hours only (9:15–15:30 IST)</span>
+          <input type="checkbox" checked={cfg.market_hours_only}
+            onChange={e => setCfg({ ...cfg, market_hours_only: e.target.checked })}
+            className="h-4 w-4 rounded" />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] text-zinc-400 uppercase">Paper trade quantity</span>
+          <input type="number" min={1} max={100} step={1} value={cfg.paper_trade_quantity}
+            onChange={e => setCfg({ ...cfg, paper_trade_quantity: Number(e.target.value) })}
+            className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-sm text-zinc-800 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200" />
+        </label>
+      </div>
+      <div className="mt-4 flex items-center gap-3">
+        <button
+          onClick={save} disabled={saving}
+          className="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+        >
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        {msg && <p className={`text-xs ${msg.startsWith('Error') ? 'text-red-500' : 'text-emerald-600'}`}>{msg}</p>}
+      </div>
+      <p className="mt-3 text-[10px] text-zinc-400">
+        Rule 1: Only 1 auto-trade per day (configurable above). &nbsp;
+        Rule 2: Trade placed only when NSE is open 9:15–15:30 IST on weekdays (configurable above).
+      </p>
+    </div>
+  )
+}
+
 // ── Main view ─────────────────────────────────────────────────────────────────
 
 export function StockOfDayView() {
   const [today, setToday] = useState<StockOfDay | null>(null)
   const [history, setHistory] = useState<StockOfDay[]>([])
   const [journal, setJournal] = useState<SotDJournalEntry[]>([])
+  const [ltp, setLtp]         = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
+  const tokenRef = useRef('')
 
   async function load() {
-    const token = localStorage.getItem('mts_token') ?? ''
+    const token = tokenRef.current
     if (!token) return
     setLoading(true)
     try {
@@ -375,6 +498,9 @@ export function StockOfDayView() {
       if (todayRes.data) {
         const j = await getSotDJournal(token, todayRes.today)
         setJournal(j)
+        // Fetch LTP for today's symbol
+        const sym = todayRes.data.symbol
+        getQuote(token, sym).then(q => setLtp(q.price)).catch(() => null)
       }
     } catch (e) {
       setError((e as Error).message)
@@ -384,7 +510,7 @@ export function StockOfDayView() {
   }
 
   async function handleGenerate() {
-    const token = localStorage.getItem('mts_token') ?? ''
+    const token = tokenRef.current
     if (!token) return
     setGenerating(true)
     setError(null)
@@ -394,6 +520,7 @@ export function StockOfDayView() {
       const j = await getSotDJournal(token, sotd.date)
       setJournal(j)
       setHistory(prev => [sotd, ...prev.filter(h => h.date !== sotd.date)])
+      getQuote(token, sotd.symbol).then(q => setLtp(q.price)).catch(() => null)
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -401,7 +528,15 @@ export function StockOfDayView() {
     }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    const t = localStorage.getItem('mts_token') ?? ''
+    tokenRef.current = t
+    // Check if admin
+    import('@/lib/api').then(({ getMe }) => {
+      getMe(t).then(u => setIsAdmin(u.role === 'admin')).catch(() => null)
+    })
+    load()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
@@ -413,7 +548,7 @@ export function StockOfDayView() {
           <div>
             <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">Stock of the Day</h1>
             <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-              AI-selected best pick from Discovery + Scanner · Auto paper trade when confidence ≥ 85 · SL and target auto-executed
+              AI-selected best pick from Discovery + Scanner · Auto paper trade when confidence ≥ threshold · SL and target auto-executed
             </p>
           </div>
           <button
@@ -441,7 +576,7 @@ export function StockOfDayView() {
         ) : (
           <div className="space-y-6">
             {/* Today's pick */}
-            <TodayCard sotd={today} onGenerate={handleGenerate} generating={generating} />
+            <TodayCard sotd={today} ltp={ltp} onGenerate={handleGenerate} generating={generating} />
 
             {/* Journal for today */}
             {journal.length > 0 && (
@@ -461,6 +596,9 @@ export function StockOfDayView() {
               </h3>
               <HistoryTable history={history} />
             </div>
+
+            {/* Admin settings */}
+            {isAdmin && <SettingsPanel token={tokenRef.current} />}
           </div>
         )}
       </div>

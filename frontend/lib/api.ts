@@ -1571,6 +1571,30 @@ export async function triggerSotDGenerate(token: string): Promise<StockOfDay> {
   return res.json()
 }
 
+export type SotDSettings = {
+  auto_trade_enabled: boolean
+  threshold: number
+  max_daily_trades: number
+  market_hours_only: boolean
+  paper_trade_quantity: number
+}
+
+export async function getSotDSettings(token: string): Promise<SotDSettings> {
+  const res = await fetch(`${BASE}/api/v1/stock-of-day/settings`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+export async function updateSotDSettings(token: string, cfg: SotDSettings): Promise<SotDSettings> {
+  const res = await fetch(`${BASE}/api/v1/stock-of-day/settings`, {
+    method: 'PUT',
+    headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify(cfg),
+  })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
 // ── Market Data Sources ───────────────────────────────────────────────────────
 
 export type MarketSourceInfo = {

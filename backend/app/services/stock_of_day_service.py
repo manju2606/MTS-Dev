@@ -38,8 +38,9 @@ async def generate_and_save_daily_pick() -> StockOfDay | None:
     if sotd is None:
         return None
 
-    if sotd.composite_score >= AUTO_TRADE_THRESHOLD:
-        await _auto_place_trade(sotd)
+    cfg = await repo.get_settings()
+    if cfg.auto_trade_enabled and sotd.composite_score >= cfg.threshold:
+        await _auto_place_trade(sotd, cfg)
 
     await repo.save(sotd)
 
@@ -224,8 +225,37 @@ async def _build_pick(today: str) -> StockOfDay | None:
 
 # ── Auto trade ────────────────────────────────────────────────────────────────
 
-async def _auto_place_trade(sotd: StockOfDay) -> None:
+async def _auto_place_trade(sotd: StockOfDay, cfg) -> None:  # type: ignore[type-arg]
     """Place a paper trade for the first active admin user."""
+    from app.infra.db.repositories.stock_of_day_repo import StockOfDayRepository
+
+    # Check market hours
+    if cfg.market_hours_only:
+        now_ist = datetime.now(IST)
+        hm = now_ist.hour * 100 + now_ist.minute
+        weekday = now_ist.weekday()  # 0=Mon, 6=Sun
+        if weekday >= 5 or hm < 915 or hm > 1530:
+            log.warning(
+                "sotd.auto_trade.market_closed",
+                time=now_ist.isoformat(),
+                hm=hm,
+                weekday=weekday,
+            )
+            return
+
+    # Enforce max daily trades
+    today = datetime.now(IST).strftime("%Y-%m-%d")
+    repo = StockOfDayRepository()
+    trades_today = await repo.count_auto_trades_today(today)
+    if trades_today >= cfg.max_daily_trades:
+        log.info(
+            "sotd.auto_trade.daily_limit",
+            limit=cfg.max_daily_trades,
+            today=today,
+            trades_today=trades_today,
+        )
+        return
+
     try:
         from app.core.config import settings
         from app.domain.models.trade import Trade, TradeMode, TradeSignal, TradeStatus
@@ -257,6 +287,7 @@ async def _auto_place_trade(sotd: StockOfDay) -> None:
                 await engine.dispose()
                 return
 
+            qty = cfg.paper_trade_quantity if cfg.paper_trade_quantity > 0 else sotd.quantity
             trade = Trade(
                 user_id=admin_orm.id,
                 symbol=sotd.symbol,
@@ -265,7 +296,7 @@ async def _auto_place_trade(sotd: StockOfDay) -> None:
                 entry_price=sotd.entry_price,
                 stop_loss=sotd.stop_loss,
                 target=sotd.target,
-                quantity=sotd.quantity,
+                quantity=qty,
                 mode=TradeMode.PAPER,
                 status=TradeStatus.OPEN,
                 opened_at=datetime.utcnow(),
@@ -279,6 +310,7 @@ async def _auto_place_trade(sotd: StockOfDay) -> None:
         sotd.auto_traded = True
         sotd.paper_trade_id = str(saved.id)
         sotd.auto_trade_user_id = str(admin_orm.id)
+        sotd.quantity = qty
         sotd.status = "TRADING"
 
         await engine.dispose()

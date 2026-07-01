@@ -457,6 +457,20 @@ export default function DashboardView() {
   const [sigFilter, setSigFilter] = useState<string>('All')
   const [ltps, setLtps]         = useState<Record<string, number>>({})
 
+  const CACHE_KEY = 'mts_dashboard_cache'
+
+  const applyCache = useCallback((raw: string) => {
+    try {
+      const c = JSON.parse(raw)
+      if (c.picks)  setPicks(c.picks)
+      if (c.status) setStatus(c.status)
+      if (c.market) setMarket(c.market)
+      if (c.sotd !== undefined) setSotd(c.sotd)
+      if (c.trades) setTrades(c.trades)
+      if (c.alerts) setAlerts(c.alerts)
+    } catch { /* ignore corrupt cache */ }
+  }, [])
+
   const load = useCallback(async (token: string) => {
     const [me, p, s, t, a, mkt, sotdRes] = await Promise.all([
       getMe(token),
@@ -467,22 +481,45 @@ export default function DashboardView() {
       getMarketOverview(token).catch(() => null),
       getSotDToday(token).catch(() => null),
     ])
+    const openTrades = (t as Trade[]).filter((tr: Trade) => tr.status === 'open')
+    const activeAlerts = (a as AlertRule[]).filter((al: AlertRule) => !al.triggered)
     setUser(me)
     setPicks(p)
     setStatus(s)
-    setTrades((t as Trade[]).filter((tr: Trade) => tr.status === 'open'))
-    setAlerts((a as AlertRule[]).filter((al: AlertRule) => !al.triggered))
+    setTrades(openTrades)
+    setAlerts(activeAlerts)
     if (mkt) setMarket(mkt)
-    if (sotdRes) setSotd(sotdRes.data)
+    if (sotdRes !== null) setSotd(sotdRes?.data ?? null)
+
+    // Persist fresh data to cache
+    try {
+      localStorage.setItem(CACHE_KEY, JSON.stringify({
+        picks: p,
+        status: s,
+        market: mkt,
+        sotd: sotdRes?.data ?? null,
+        trades: openTrades,
+        alerts: activeAlerts,
+      }))
+    } catch { /* storage full — ignore */ }
   }, [])
 
   useEffect(() => {
     const t = localStorage.getItem('mts_token')
     if (!t) { router.replace('/login'); return }
     tokenRef.current = t
+
+    // Show cached data immediately (no blank screen)
+    const cached = localStorage.getItem(CACHE_KEY)
+    if (cached) applyCache(cached)
+
     const run = async () => { try { await load(t) } catch { router.replace('/login') } }
     void run()
-  }, [router, load])
+
+    // Auto-refresh every 5 seconds
+    const id = setInterval(() => { void load(t) }, 5000)
+    return () => clearInterval(id)
+  }, [router, load, applyCache])
 
   useEffect(() => {
     if (!picks || picks.length === 0) return

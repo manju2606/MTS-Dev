@@ -51,3 +51,13 @@ class StockOfDay:
 
 
 AUTO_TRADE_THRESHOLD = 85.0  # composite_score >= this → place paper trade
+
+
+@dataclass
+class SotDSettings:
+    """Admin-configurable rules for the Stock-of-the-Day auto-trade engine."""
+    auto_trade_enabled: bool = True
+    threshold: float = 85.0           # composite_score must be >= this to auto-trade
+    max_daily_trades: int = 1         # hard cap: at most N auto-trades per calendar day
+    market_hours_only: bool = True    # reject auto-trade if NSE is not open (9:15–15:30 IST weekdays)
+    paper_trade_quantity: int = 1     # default quantity for auto-placed paper trades

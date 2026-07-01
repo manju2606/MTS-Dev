@@ -100,3 +100,44 @@ async def trigger_price_check(_: CurrentUser) -> dict:
     from app.services.stock_of_day_service import run_sotd_price_check
     await run_sotd_price_check()
     return {"ok": True}
+
+
+@router.get("/settings")
+async def get_settings(_: CurrentUser) -> dict:
+    """Return current SotD auto-trade settings."""
+    repo = StockOfDayRepository()
+    cfg = await repo.get_settings()
+    return {
+        "auto_trade_enabled": cfg.auto_trade_enabled,
+        "threshold": cfg.threshold,
+        "max_daily_trades": cfg.max_daily_trades,
+        "market_hours_only": cfg.market_hours_only,
+        "paper_trade_quantity": cfg.paper_trade_quantity,
+    }
+
+
+@router.put("/settings", dependencies=[_admin_only])
+async def update_settings(body: dict, _: CurrentUser) -> dict:
+    """Update SotD auto-trade settings (admin only)."""
+    from app.domain.models.stock_of_day import SotDSettings
+    repo = StockOfDayRepository()
+    existing = await repo.get_settings()
+    updated = SotDSettings(
+        auto_trade_enabled=bool(body.get("auto_trade_enabled", existing.auto_trade_enabled)),
+        threshold=float(body.get("threshold", existing.threshold)),
+        max_daily_trades=int(body.get("max_daily_trades", existing.max_daily_trades)),
+        market_hours_only=bool(body.get("market_hours_only", existing.market_hours_only)),
+        paper_trade_quantity=int(body.get("paper_trade_quantity", existing.paper_trade_quantity)),
+    )
+    if not (50 <= updated.threshold <= 100):
+        raise HTTPException(status_code=422, detail="threshold must be between 50 and 100")
+    if not (1 <= updated.max_daily_trades <= 10):
+        raise HTTPException(status_code=422, detail="max_daily_trades must be between 1 and 10")
+    cfg = await repo.save_settings(updated)
+    return {
+        "auto_trade_enabled": cfg.auto_trade_enabled,
+        "threshold": cfg.threshold,
+        "max_daily_trades": cfg.max_daily_trades,
+        "market_hours_only": cfg.market_hours_only,
+        "paper_trade_quantity": cfg.paper_trade_quantity,
+    }

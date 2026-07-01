@@ -10,7 +10,7 @@ import motor.motor_asyncio
 import structlog
 
 from app.core.config import settings
-from app.domain.models.stock_of_day import StockOfDay
+from app.domain.models.stock_of_day import SotDSettings, StockOfDay
 
 log = structlog.get_logger()
 
@@ -101,6 +101,43 @@ class StockOfDayRepository:
             doc["_id"] = str(doc["_id"])
             entries.append(doc)
         return entries
+
+    async def count_auto_trades_today(self, date_str: str) -> int:
+        """Count how many auto-trades were placed for a given date."""
+        return await self._col.count_documents({"date": date_str, "auto_traded": True})
+
+    # ── Settings ──────────────────────────────────────────────────────────────
+
+    @property
+    def _settings_col(self) -> motor.motor_asyncio.AsyncIOMotorCollection:  # type: ignore[type-arg]
+        return _get_db()["sotd_settings"]
+
+    async def get_settings(self) -> SotDSettings:
+        doc = await self._settings_col.find_one({"_id": "singleton"})
+        if not doc:
+            return SotDSettings()
+        return SotDSettings(
+            auto_trade_enabled=bool(doc.get("auto_trade_enabled", True)),
+            threshold=float(doc.get("threshold", 85.0)),
+            max_daily_trades=int(doc.get("max_daily_trades", 1)),
+            market_hours_only=bool(doc.get("market_hours_only", True)),
+            paper_trade_quantity=int(doc.get("paper_trade_quantity", 1)),
+        )
+
+    async def save_settings(self, cfg: SotDSettings) -> SotDSettings:
+        await self._settings_col.update_one(
+            {"_id": "singleton"},
+            {"$set": {
+                "auto_trade_enabled": cfg.auto_trade_enabled,
+                "threshold": cfg.threshold,
+                "max_daily_trades": cfg.max_daily_trades,
+                "market_hours_only": cfg.market_hours_only,
+                "paper_trade_quantity": cfg.paper_trade_quantity,
+                "updated_at": datetime.utcnow(),
+            }},
+            upsert=True,
+        )
+        return cfg
 
 
 # ── Serialisation ─────────────────────────────────────────────────────────────

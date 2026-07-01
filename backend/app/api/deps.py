@@ -26,7 +26,7 @@ from app.infra.db.repositories.alert_repo import SQLAlertRepository
 from app.infra.db.repositories.trade_repo import SQLTradeRepository
 from app.infra.db.repositories.watchlist_repo import SQLWatchlistRepository
 from app.infra.db.session import get_db
-from app.infra.market_data.yfinance_client import YFinanceClient
+from app.infra.market_data.composite_client import CompositeMarketDataClient
 
 _bearer = HTTPBearer(auto_error=False)
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -110,7 +110,7 @@ async def check_ai_usage(current_user: Annotated[User, Depends(get_current_user)
 
 
 def get_market_data_client() -> MarketDataClient:
-    return YFinanceClient()
+    return CompositeMarketDataClient()
 
 
 def get_watchlist_repo(db: Annotated[AsyncSession, Depends(get_db)]) -> WatchlistRepository:

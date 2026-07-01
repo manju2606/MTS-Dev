@@ -1,0 +1,168 @@
+"""MongoDB repository for Stock-of-the-Day records.
+
+Collection: stock_of_day (in mts_journal DB)
+Index: date (unique, descending)
+"""
+
+from datetime import datetime
+
+import motor.motor_asyncio
+import structlog
+
+from app.core.config import settings
+from app.domain.models.stock_of_day import StockOfDay
+
+log = structlog.get_logger()
+
+_client: motor.motor_asyncio.AsyncIOMotorClient | None = None  # type: ignore[type-arg]
+
+
+def _get_db() -> motor.motor_asyncio.AsyncIOMotorDatabase:  # type: ignore[type-arg]
+    global _client
+    if _client is None:
+        _client = motor.motor_asyncio.AsyncIOMotorClient(settings.MONGODB_URL)
+    return _client[settings.MONGODB_DB]
+
+
+class StockOfDayRepository:
+    @property
+    def _col(self) -> motor.motor_asyncio.AsyncIOMotorCollection:  # type: ignore[type-arg]
+        return _get_db()["stock_of_day"]
+
+    @property
+    def _journal(self) -> motor.motor_asyncio.AsyncIOMotorCollection:  # type: ignore[type-arg]
+        return _get_db()["sotd_journal"]
+
+    # ── CRUD ─────────────────────────────────────────────────────────────────
+
+    async def save(self, sotd: StockOfDay) -> StockOfDay:
+        doc = _to_doc(sotd)
+        doc["updated_at"] = datetime.utcnow()
+        result = await self._col.insert_one(doc)
+        sotd.id = str(result.inserted_id)
+        return sotd
+
+    async def update(self, sotd: StockOfDay) -> None:
+        from bson import ObjectId
+        if not sotd.id:
+            return
+        patch = {
+            "status": sotd.status,
+            "auto_traded": sotd.auto_traded,
+            "paper_trade_id": sotd.paper_trade_id,
+            "auto_trade_user_id": sotd.auto_trade_user_id,
+            "exit_price": sotd.exit_price,
+            "exit_time": sotd.exit_time,
+            "pnl_pct": sotd.pnl_pct,
+            "outcome": sotd.outcome,
+            "updated_at": datetime.utcnow(),
+        }
+        await self._col.update_one(
+            {"_id": ObjectId(sotd.id)},
+            {"$set": patch},
+        )
+
+    async def get_by_date(self, date_str: str) -> StockOfDay | None:
+        doc = await self._col.find_one({"date": date_str})
+        return _from_doc(doc) if doc else None
+
+    async def get_by_trade_id(self, paper_trade_id: str) -> StockOfDay | None:
+        doc = await self._col.find_one({"paper_trade_id": paper_trade_id})
+        return _from_doc(doc) if doc else None
+
+    async def list_history(self, limit: int = 30) -> list[StockOfDay]:
+        cursor = self._col.find().sort("date", -1).limit(limit)
+        return [_from_doc(d) async for d in cursor]
+
+    async def list_trading(self) -> list[StockOfDay]:
+        """All picks currently in TRADING status (for price check)."""
+        cursor = self._col.find({"status": "TRADING"})
+        return [_from_doc(d) async for d in cursor]
+
+    # ── Journal entries ───────────────────────────────────────────────────────
+
+    async def add_journal_entry(
+        self,
+        date_str: str,
+        event: str,
+        details: dict,
+    ) -> None:
+        await self._journal.insert_one({
+            "date": date_str,
+            "event": event,
+            "details": details,
+            "logged_at": datetime.utcnow(),
+        })
+
+    async def get_journal(self, date_str: str) -> list[dict]:
+        cursor = self._journal.find({"date": date_str}).sort("logged_at", 1)
+        entries = []
+        async for doc in cursor:
+            doc["_id"] = str(doc["_id"])
+            entries.append(doc)
+        return entries
+
+
+# ── Serialisation ─────────────────────────────────────────────────────────────
+
+def _to_doc(s: StockOfDay) -> dict:
+    return {
+        "date": s.date,
+        "generated_at": s.generated_at,
+        "symbol": s.symbol,
+        "name": s.name,
+        "sector": s.sector,
+        "discovery_score": s.discovery_score,
+        "discovery_signal": s.discovery_signal,
+        "scanner_hits": s.scanner_hits,
+        "forecast_direction": s.forecast_direction,
+        "composite_score": s.composite_score,
+        "confidence": s.confidence,
+        "entry_price": s.entry_price,
+        "stop_loss": s.stop_loss,
+        "target": s.target,
+        "risk_reward": s.risk_reward,
+        "holding_period": s.holding_period,
+        "explanation": s.explanation,
+        "auto_traded": s.auto_traded,
+        "paper_trade_id": s.paper_trade_id,
+        "auto_trade_user_id": s.auto_trade_user_id,
+        "quantity": s.quantity,
+        "status": s.status,
+        "exit_price": s.exit_price,
+        "exit_time": s.exit_time,
+        "pnl_pct": s.pnl_pct,
+        "outcome": s.outcome,
+    }
+
+
+def _from_doc(doc: dict) -> StockOfDay:
+    return StockOfDay(
+        id=str(doc["_id"]),
+        date=doc["date"],
+        generated_at=doc.get("generated_at", ""),
+        symbol=doc["symbol"],
+        name=doc.get("name", ""),
+        sector=doc.get("sector", ""),
+        discovery_score=float(doc.get("discovery_score", 0)),
+        discovery_signal=doc.get("discovery_signal", ""),
+        scanner_hits=doc.get("scanner_hits", []),
+        forecast_direction=doc.get("forecast_direction", "N/A"),
+        composite_score=float(doc.get("composite_score", 0)),
+        confidence=float(doc.get("confidence", 0)),
+        entry_price=float(doc.get("entry_price", 0)),
+        stop_loss=float(doc.get("stop_loss", 0)),
+        target=float(doc.get("target", 0)),
+        risk_reward=float(doc.get("risk_reward", 0)),
+        holding_period=doc.get("holding_period", ""),
+        explanation=doc.get("explanation", ""),
+        auto_traded=bool(doc.get("auto_traded", False)),
+        paper_trade_id=doc.get("paper_trade_id"),
+        auto_trade_user_id=doc.get("auto_trade_user_id"),
+        quantity=int(doc.get("quantity", 1)),
+        status=doc.get("status", "WATCHING"),
+        exit_price=doc.get("exit_price"),
+        exit_time=doc.get("exit_time"),
+        pnl_pct=doc.get("pnl_pct"),
+        outcome=doc.get("outcome"),
+    )

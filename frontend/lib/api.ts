@@ -1498,3 +1498,133 @@ export async function getForecastHistory(
   if (!res.ok) throw new Error(await res.text())
   return res.json()
 }
+
+// ── Stock of the Day ──────────────────────────────────────────────────────────
+
+export type StockOfDay = {
+  id: string | null
+  date: string
+  generated_at: string
+  symbol: string
+  name: string
+  sector: string
+  discovery_score: number
+  discovery_signal: string
+  scanner_hits: string[]
+  forecast_direction: string
+  composite_score: number
+  confidence: number
+  entry_price: number
+  stop_loss: number
+  target: number
+  risk_reward: number
+  holding_period: string
+  explanation: string
+  auto_traded: boolean
+  paper_trade_id: string | null
+  quantity: number
+  status: 'WATCHING' | 'TRADING' | 'TARGET_HIT' | 'STOP_HIT' | 'EXPIRED'
+  exit_price: number | null
+  exit_time: string | null
+  pnl_pct: number | null
+  outcome: 'WIN' | 'LOSS' | 'NEUTRAL' | null
+}
+
+export type SotDJournalEntry = {
+  _id: string
+  date: string
+  event: string
+  details: Record<string, unknown>
+  logged_at: string
+}
+
+export async function getSotDToday(token: string): Promise<{ data: StockOfDay | null; today: string }> {
+  const res = await fetch(`${BASE}/api/v1/stock-of-day/today`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+export async function getSotDHistory(token: string, limit = 30): Promise<StockOfDay[]> {
+  const res = await fetch(
+    `${BASE}/api/v1/stock-of-day/history?limit=${limit}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+export async function getSotDJournal(token: string, dateStr: string): Promise<SotDJournalEntry[]> {
+  const res = await fetch(
+    `${BASE}/api/v1/stock-of-day/journal/${encodeURIComponent(dateStr)}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) return []
+  return res.json()
+}
+
+export async function triggerSotDGenerate(token: string): Promise<StockOfDay> {
+  const res = await fetch(`${BASE}/api/v1/stock-of-day/generate`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+// ── Market Data Sources ───────────────────────────────────────────────────────
+
+export type MarketSourceInfo = {
+  id: string
+  name: string
+  description: string
+  url: string
+  priority: number | null
+  coverage: string
+  delay: string
+  official: boolean
+  news_only?: boolean
+}
+
+export type SourceHealthEntry = {
+  source: string
+  success: number
+  failure: number
+  healthy: boolean
+  last_error: string
+}
+
+export type SourceCompareResult = {
+  source: string
+  ok: boolean
+  price?: number
+  change_pct?: number
+  volume?: number
+  exchange?: string
+  error?: string
+}
+
+export type MultiSourceQuote = {
+  symbol: string
+  sources: SourceCompareResult[]
+}
+
+export async function getMarketSources(token: string): Promise<MarketSourceInfo[]> {
+  const res = await fetch(`${BASE}/api/v1/market-data/sources/list`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+export async function getSourceHealth(token: string): Promise<SourceHealthEntry[]> {
+  const res = await fetch(`${BASE}/api/v1/market-data/sources/health`, { headers: authHeaders(token) })
+  if (!res.ok) return []
+  return res.json()
+}
+
+export async function compareQuoteSources(token: string, symbol: string): Promise<MultiSourceQuote> {
+  const res = await fetch(
+    `${BASE}/api/v1/market-data/sources/compare?symbol=${encodeURIComponent(symbol)}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}

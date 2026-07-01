@@ -35,6 +35,24 @@ def last_scan_info() -> tuple[datetime | None, int]:
     return _last_scan_at, _last_scan_count
 
 
+async def _run_sotd_generate() -> None:
+    """09:30 IST weekdays: pick the day's best stock and optionally auto-trade it."""
+    from app.services.stock_of_day_service import generate_and_save_daily_pick
+    await generate_and_save_daily_pick()
+
+
+async def _run_sotd_price_check() -> None:
+    """Every 5 minutes during market hours: check if SotD SL/target hit."""
+    from app.services.stock_of_day_service import run_sotd_price_check
+    await run_sotd_price_check()
+
+
+async def _run_sotd_expire() -> None:
+    """15:35 IST weekdays: expire any still-open SotD positions."""
+    from app.services.stock_of_day_service import expire_open_picks
+    await expire_open_picks()
+
+
 async def _resolve_forecast_accuracy() -> None:
     """16:30 IST weekdays: fill actual prices into today's forecast records."""
     from datetime import date
@@ -195,6 +213,42 @@ def start_scheduler() -> None:
         name="Position Stop/Target Monitor",
         max_instances=1,
         misfire_grace_time=60,
+    )
+
+    # SotD: generate daily pick at 09:30 IST
+    _scheduler.add_job(
+        _run_sotd_generate,
+        CronTrigger(day_of_week="mon-fri", hour=9, minute=30, second=0, timezone="Asia/Kolkata"),
+        id="sotd_generate",
+        name="Stock of the Day — Generate Pick",
+        max_instances=1,
+        misfire_grace_time=300,
+    )
+
+    # SotD: check SL/target every 5 minutes during market hours
+    _scheduler.add_job(
+        _run_sotd_price_check,
+        CronTrigger(
+            day_of_week="mon-fri",
+            hour="9-15",
+            minute="*/5",
+            second="45",
+            timezone="Asia/Kolkata",
+        ),
+        id="sotd_price_check",
+        name="Stock of the Day — SL/Target Check",
+        max_instances=1,
+        misfire_grace_time=60,
+    )
+
+    # SotD: expire open positions at market close 15:35 IST
+    _scheduler.add_job(
+        _run_sotd_expire,
+        CronTrigger(day_of_week="mon-fri", hour=15, minute=35, second=0, timezone="Asia/Kolkata"),
+        id="sotd_expire",
+        name="Stock of the Day — Expire Open Positions",
+        max_instances=1,
+        misfire_grace_time=None,
     )
 
     # Resolve forecast accuracy daily at 16:30 IST (after market close)

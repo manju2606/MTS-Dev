@@ -31,6 +31,8 @@ const ICONS: Record<string, string> = {
   key:        'M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4',
   trendingUp: 'M23 6l-9.5 9.5-5-5L1 18M17 6h6v6',
   squares:   'M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z',
+  star:      'M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z',
+  database:  'M12 2C6.477 2 2 4.239 2 7v10c0 2.761 4.477 5 10 5s10-2.239 10-5V7c0-2.761-4.477-5-10-5zM2 12c0 2.761 4.477 5 10 5s10-2.239 10-5M2 7c0 2.761 4.477 5 10 5s10-2.239 10-5',
 }
 
 function Icon({ name, size = 15 }: { name: string; size?: number }) {
@@ -81,8 +83,10 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/ml',           label: 'ML Signals',    icon: 'cpu',       desc: 'Machine learning predictions' },
       { href: '/discovery',    label: 'Discovery',     icon: 'compass',     desc: 'Stock discovery engine' },
       { href: '/heatmap',      label: 'Heat Map',      icon: 'squares',    desc: 'NSE-style market heat map' },
-      { href: '/forecast',     label: 'Forecast',      icon: 'trendingUp', desc: 'ML price predictions: day, week, month' },
-      { href: '/reports',      label: 'Reports',       icon: 'fileText',   desc: 'Hourly scan email reports' },
+      { href: '/forecast',      label: 'Forecast',       icon: 'trendingUp', desc: 'ML price predictions: day, week, month' },
+      { href: '/stock-of-day',    label: 'Stock of Day',   icon: 'star',     desc: 'AI top pick · auto paper trade · SL/target tracking' },
+      { href: '/market-sources', label: 'Data Sources',   icon: 'database', desc: 'Live source health & quote comparison' },
+      { href: '/reports',        label: 'Reports',        icon: 'fileText', desc: 'Hourly scan email reports' },
     ],
   },
   {

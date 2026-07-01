@@ -13,12 +13,14 @@ from app.api.v1 import (
     journal,
     live,
     market_pulse,
+    market_sources,
     ml_api,
     paper,
     portfolio,
     research,
     risk,
     scanner,
+    stock_of_day,
     usage,
 )
 
@@ -42,3 +44,5 @@ router.include_router(usage.router)
 router.include_router(dashboard.router)
 router.include_router(discovery.router)
 router.include_router(forecast.router)
+router.include_router(stock_of_day.router)
+router.include_router(market_sources.router)

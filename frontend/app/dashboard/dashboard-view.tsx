@@ -6,10 +6,11 @@ import Link from 'next/link'
 import { NavBar } from '@/components/nav-bar'
 import {
   getMe, getTopPicks, getDiscoveryStatus, listTrades, listAlerts, getQuote, getMarketOverview,
+  getSotDToday,
 } from '@/lib/api'
 import type {
   User, StockScore, DiscoveryStatus, Trade, AlertRule,
-  IndexQuote, EconomicEvent, MarketOverviewData,
+  IndexQuote, EconomicEvent, MarketOverviewData, StockOfDay,
 } from '@/lib/api'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -384,6 +385,60 @@ function SortTh({ label, k, sortKey, sortDir, onSort }: {
   )
 }
 
+// ── Stock of the Day compact card ─────────────────────────────────────────────
+
+function SotDDashCard({ sotd }: { sotd: StockOfDay | null }) {
+  if (!sotd) {
+    return (
+      <div className="flex items-center justify-between rounded-xl border border-dashed border-zinc-300 bg-white px-4 py-3 dark:border-zinc-700 dark:bg-zinc-900">
+        <div className="flex items-center gap-2">
+          <span className="text-base">⭐</span>
+          <div>
+            <p className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">Stock of the Day</p>
+            <p className="text-[10px] text-zinc-400">Auto-generates at 09:30 IST on trading days</p>
+          </div>
+        </div>
+        <Link href="/stock-of-day" className="text-[10px] font-semibold text-indigo-600 hover:underline dark:text-indigo-400">
+          View →
+        </Link>
+      </div>
+    )
+  }
+
+  const sym = sotd.symbol.replace(/\.(NS|BO)$/, '')
+  const pnl = sotd.pnl_pct
+  const pnlColor = pnl == null ? '' : pnl >= 0 ? 'text-emerald-600' : 'text-red-500'
+  const statusColor: Record<string, string> = {
+    WATCHING: 'text-amber-600', TRADING: 'text-blue-600 animate-pulse',
+    TARGET_HIT: 'text-emerald-600', STOP_HIT: 'text-red-600', EXPIRED: 'text-zinc-500',
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-4 rounded-xl border border-indigo-100 bg-gradient-to-r from-indigo-50 to-violet-50 px-4 py-3 dark:border-indigo-900/50 dark:from-indigo-950/30 dark:to-violet-950/20">
+      <div className="flex items-center gap-2 shrink-0">
+        <span className="text-base">⭐</span>
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wide text-indigo-400">Stock of the Day</p>
+          <p className="text-sm font-extrabold text-zinc-900 dark:text-zinc-50">{sym}</p>
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-4 text-xs">
+        <div><p className="text-[9px] text-zinc-400">Entry</p><p className="font-mono font-semibold">₹{sotd.entry_price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p></div>
+        <div><p className="text-[9px] text-zinc-400">SL</p><p className="font-mono font-semibold text-red-600 dark:text-red-400">₹{sotd.stop_loss.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p></div>
+        <div><p className="text-[9px] text-zinc-400">Target</p><p className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">₹{sotd.target.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p></div>
+        <div><p className="text-[9px] text-zinc-400">Score</p><p className="font-bold text-indigo-600">{Math.round(sotd.composite_score)}</p></div>
+        <div><p className="text-[9px] text-zinc-400">Status</p><p className={`font-bold text-[10px] ${statusColor[sotd.status] ?? ''}`}>{sotd.status.replace('_', ' ')}</p></div>
+        {pnl != null && (
+          <div><p className="text-[9px] text-zinc-400">P&L</p><p className={`font-bold font-mono ${pnlColor}`}>{pnl >= 0 ? '+' : ''}{pnl.toFixed(2)}%</p></div>
+        )}
+      </div>
+      <Link href="/stock-of-day" className="ml-auto shrink-0 rounded-lg bg-indigo-600 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-indigo-700">
+        Details →
+      </Link>
+    </div>
+  )
+}
+
 // ── Main view ─────────────────────────────────────────────────────────────────
 
 export default function DashboardView() {
@@ -396,19 +451,21 @@ export default function DashboardView() {
   const [trades, setTrades]     = useState<Trade[]>([])
   const [alerts, setAlerts]     = useState<AlertRule[]>([])
   const [market, setMarket]     = useState<MarketOverviewData | null>(null)
+  const [sotd, setSotd]         = useState<StockOfDay | null>(null)
   const [sortKey, setSortKey]   = useState<SortKey>('signal')
   const [sortDir, setSortDir]   = useState<SortDir>('desc')
   const [sigFilter, setSigFilter] = useState<string>('All')
   const [ltps, setLtps]         = useState<Record<string, number>>({})
 
   const load = useCallback(async (token: string) => {
-    const [me, p, s, t, a, mkt] = await Promise.all([
+    const [me, p, s, t, a, mkt, sotdRes] = await Promise.all([
       getMe(token),
       getTopPicks(token, 50, undefined, 0),
       getDiscoveryStatus(token),
       listTrades(token, 'open').catch(() => [] as Trade[]),
       listAlerts(token).catch(() => [] as AlertRule[]),
       getMarketOverview(token).catch(() => null),
+      getSotDToday(token).catch(() => null),
     ])
     setUser(me)
     setPicks(p)
@@ -416,6 +473,7 @@ export default function DashboardView() {
     setTrades((t as Trade[]).filter((tr: Trade) => tr.status === 'open'))
     setAlerts((a as AlertRule[]).filter((al: AlertRule) => !al.triggered))
     if (mkt) setMarket(mkt)
+    if (sotdRes) setSotd(sotdRes.data)
   }, [])
 
   useEffect(() => {
@@ -492,6 +550,11 @@ export default function DashboardView() {
             accent={alerts.length > 0 ? 'text-amber-600 dark:text-amber-400' : undefined} />
           <StatCard label="Universe" value={status?.universe_size ?? '—'}
             sub="NSE/BSE stocks scanned" />
+        </div>
+
+        {/* Stock of the Day banner */}
+        <div className="mb-5">
+          <SotDDashCard sotd={sotd} />
         </div>
 
         {/* Market context row: Sentiment | Global | Economic Events */}

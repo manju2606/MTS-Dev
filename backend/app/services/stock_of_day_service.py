@@ -39,6 +39,15 @@ async def generate_and_save_daily_pick() -> StockOfDay | None:
         return None
 
     cfg = await repo.get_settings()
+    log.info(
+        "sotd.threshold_check",
+        symbol=sotd.symbol,
+        composite_score=sotd.composite_score,
+        threshold=cfg.threshold,
+        passes=sotd.composite_score >= cfg.threshold,
+        auto_trade_enabled=cfg.auto_trade_enabled,
+        will_attempt_trade=cfg.auto_trade_enabled and sotd.composite_score >= cfg.threshold,
+    )
     if cfg.auto_trade_enabled and sotd.composite_score >= cfg.threshold:
         await _auto_place_trade(sotd, cfg)
 
@@ -229,32 +238,60 @@ async def _auto_place_trade(sotd: StockOfDay, cfg) -> None:  # type: ignore[type
     """Place a paper trade for the first active admin user."""
     from app.infra.db.repositories.stock_of_day_repo import StockOfDayRepository
 
+    log.info(
+        "sotd.auto_trade.evaluating",
+        symbol=sotd.symbol,
+        composite_score=sotd.composite_score,
+        threshold=cfg.threshold,
+        score_passes=sotd.composite_score >= cfg.threshold,
+        auto_trade_enabled=cfg.auto_trade_enabled,
+        market_hours_only=cfg.market_hours_only,
+        max_daily_trades=cfg.max_daily_trades,
+    )
+
     # Check market hours
     if cfg.market_hours_only:
         now_ist = datetime.now(IST)
         hm = now_ist.hour * 100 + now_ist.minute
         weekday = now_ist.weekday()  # 0=Mon, 6=Sun
-        if weekday >= 5 or hm < 915 or hm > 1530:
+        day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        market_open = weekday < 5 and 915 <= hm <= 1530
+        if not market_open:
             log.warning(
-                "sotd.auto_trade.market_closed",
-                time=now_ist.isoformat(),
-                hm=hm,
-                weekday=weekday,
+                "sotd.auto_trade.blocked",
+                reason="market_closed",
+                symbol=sotd.symbol,
+                ist_time=now_ist.strftime("%H:%M"),
+                day=day_names[weekday],
+                hhmm=hm,
+                rule="market_hours_only=True requires weekday 9:15–15:30 IST",
             )
             return
+        log.info(
+            "sotd.auto_trade.market_check_passed",
+            ist_time=now_ist.strftime("%H:%M"),
+            day=day_names[weekday],
+        )
 
     # Enforce max daily trades
     today = datetime.now(IST).strftime("%Y-%m-%d")
     repo = StockOfDayRepository()
     trades_today = await repo.count_auto_trades_today(today)
     if trades_today >= cfg.max_daily_trades:
-        log.info(
-            "sotd.auto_trade.daily_limit",
-            limit=cfg.max_daily_trades,
-            today=today,
+        log.warning(
+            "sotd.auto_trade.blocked",
+            reason="daily_limit_reached",
+            symbol=sotd.symbol,
             trades_today=trades_today,
+            limit=cfg.max_daily_trades,
+            rule=f"max_daily_trades={cfg.max_daily_trades} already reached for {today}",
         )
         return
+    log.info(
+        "sotd.auto_trade.daily_check_passed",
+        trades_today=trades_today,
+        limit=cfg.max_daily_trades,
+    )
 
     try:
         from app.core.config import settings

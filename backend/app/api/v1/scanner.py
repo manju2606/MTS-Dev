@@ -12,6 +12,7 @@ from app.api.deps import CurrentUser, MarketDataDep, WatchlistDep, require_role
 from app.core.limiter import limiter
 from app.domain.models.user import UserRole
 from app.domain.models.watchlist import WatchlistItem
+from app.infra.scanner.market_scanner import SCAN_CATALOG, run_market_scan
 from app.infra.scanner.universe import SECTORS
 
 _SYMBOL_SECTOR: dict[str, str] = {
@@ -21,6 +22,28 @@ _SYMBOL_SECTOR: dict[str, str] = {
 router = APIRouter(prefix="/scanner", tags=["scanner"])
 
 _trader_or_admin = Depends(require_role(UserRole.ADMIN, UserRole.TRADER))
+
+
+# ── Market scanner ────────────────────────────────────────────────────────────
+
+@router.get("/scan-catalog")
+async def scan_catalog(current_user: CurrentUser) -> list[dict]:
+    """List all available scan types with metadata."""
+    return SCAN_CATALOG
+
+
+@router.get("/market-scan")
+async def market_scan(
+    current_user: CurrentUser,
+    scan_type: str = Query(..., description="Scan ID from /scan-catalog"),
+    limit: int = Query(default=25, ge=1, le=50),
+) -> dict:
+    """Run a market scan. First call per scan type takes 30–60 s while universe data is fetched;
+    subsequent calls within 5 minutes are served from cache."""
+    try:
+        return await run_market_scan(scan_type, limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 _DEFAULT_SYMBOLS = [
     "RELIANCE.NS",

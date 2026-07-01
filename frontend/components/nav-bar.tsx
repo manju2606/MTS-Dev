@@ -75,7 +75,8 @@ const NAV_GROUPS: NavGroup[] = [
     roles: ['viewer', 'trader', 'admin'],
     items: [
       { href: '/market-pulse', label: 'Market Pulse',  icon: 'activity',  desc: 'Live prices, indices & news' },
-      { href: '/research',     label: 'Research',      icon: 'search',    desc: 'AI-powered stock screener' },
+      { href: '/scanner',      label: 'Scanner',       icon: 'search',    desc: '16 technical & institutional scans' },
+      { href: '/research',     label: 'Research',      icon: 'cpu',       desc: 'AI-powered stock screener' },
       { href: '/ai',           label: 'AI Analysis',   icon: 'sparkles',  desc: 'Signal generation & history' },
       { href: '/ml',           label: 'ML Signals',    icon: 'cpu',       desc: 'Machine learning predictions' },
       { href: '/discovery',    label: 'Discovery',     icon: 'compass',     desc: 'Stock discovery engine' },

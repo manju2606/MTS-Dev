@@ -1433,6 +1433,56 @@ export async function getMarketOverview(token: string): Promise<MarketOverviewDa
   return res.json()
 }
 
+// ── Market Scanner ────────────────────────────────────────────────────────────
+
+export type ScanCatalogItem = {
+  id: string
+  name: string
+  category: string
+  available: boolean
+  desc: string
+}
+
+export type ScanResultItem = {
+  symbol: string
+  name: string
+  sector: string
+  cmp: number
+  change_pct: number
+  volume: number
+  vol_ratio: number
+  rsi: number
+  key_metric: string
+  signal: string
+}
+
+export type ScanResponse = {
+  scan_id: string
+  name: string
+  results: ScanResultItem[]
+  count: number
+  available: boolean
+  note: string | null
+  universe?: number
+  scanned_at: number | null
+  cached: boolean
+}
+
+export async function getScanCatalog(token: string): Promise<ScanCatalogItem[]> {
+  const res = await fetch(`${BASE}/api/v1/scanner/scan-catalog`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+export async function runMarketScan(token: string, scanType: string, limit = 25): Promise<ScanResponse> {
+  const res = await fetch(
+    `${BASE}/api/v1/scanner/market-scan?scan_type=${encodeURIComponent(scanType)}&limit=${limit}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
 export async function getForecastHistory(
   token: string,
   symbol: string,

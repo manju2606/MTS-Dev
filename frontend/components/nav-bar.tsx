@@ -3,29 +3,32 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { addItemToWatchlist, searchStocks } from '@/lib/api'
-import type { StockSearchResult } from '@/lib/api'
+import { addItemToWatchlist, getMe, searchStocks } from '@/lib/api'
+import type { StockSearchResult, User } from '@/lib/api'
 
 const LINK = 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100'
 const ACTIVE = 'font-medium text-zinc-900 dark:text-zinc-50'
 
-const NAV: { href: string; label: string }[] = [
-  { href: '/dashboard', label: 'Dashboard' },
-  { href: '/portfolio', label: 'Portfolio' },
-  { href: '/market-pulse', label: 'Market Pulse' },
-  { href: '/research', label: 'Research' },
-  { href: '/ai', label: 'AI Analysis' },
-  { href: '/ml', label: 'ML Signals' },
-  { href: '/discovery', label: 'Discovery' },
-  { href: '/reports', label: 'Reports' },
-  { href: '/risk', label: 'Risk' },
-  { href: '/backtest', label: 'Backtest' },
-  { href: '/paper', label: 'Paper Trading' },
-  { href: '/live', label: 'Live Trading' },
-  { href: '/broker', label: 'Broker' },
-  { href: '/alerts', label: 'Alerts' },
-  { href: '/admin', label: 'Admin' },
-  { href: '/api-keys', label: 'API Keys' },
+type NavItem = { href: string; label: string; roles: string[] }
+
+// viewer = read-only; trader = paper+live; admin = everything
+const NAV_ALL: NavItem[] = [
+  { href: '/dashboard',    label: 'Dashboard',     roles: ['viewer', 'trader', 'admin'] },
+  { href: '/portfolio',    label: 'Portfolio',     roles: ['viewer', 'trader', 'admin'] },
+  { href: '/market-pulse', label: 'Market Pulse',  roles: ['viewer', 'trader', 'admin'] },
+  { href: '/research',     label: 'Research',      roles: ['viewer', 'trader', 'admin'] },
+  { href: '/ai',           label: 'AI Analysis',   roles: ['viewer', 'trader', 'admin'] },
+  { href: '/ml',           label: 'ML Signals',    roles: ['viewer', 'trader', 'admin'] },
+  { href: '/discovery',    label: 'Discovery',     roles: ['viewer', 'trader', 'admin'] },
+  { href: '/reports',      label: 'Reports',       roles: ['viewer', 'trader', 'admin'] },
+  { href: '/risk',         label: 'Risk',          roles: ['viewer', 'trader', 'admin'] },
+  { href: '/backtest',     label: 'Backtest',      roles: ['viewer', 'trader', 'admin'] },
+  { href: '/alerts',       label: 'Alerts',        roles: ['viewer', 'trader', 'admin'] },
+  { href: '/paper',        label: 'Paper Trading', roles: ['trader', 'admin'] },
+  { href: '/live',         label: 'Live Trading',  roles: ['trader', 'admin'] },
+  { href: '/broker',       label: 'Broker',        roles: ['trader', 'admin'] },
+  { href: '/admin',        label: 'Admin',         roles: ['admin'] },
+  { href: '/api-keys',     label: 'API Keys',      roles: ['admin'] },
 ]
 
 // ── Dark mode ────────────────────────────────────────────────────────────────
@@ -261,11 +264,27 @@ export function NavBar({ active }: { active: string }) {
   const router = useRouter()
   const { dark, toggle } = useDarkMode()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [user, setUser]         = useState<User | null>(null)
+
+  useEffect(() => {
+    const t = localStorage.getItem('mts_token')
+    if (!t) return
+    getMe(t).then(setUser).catch(() => null)
+  }, [])
 
   function signOut() {
     localStorage.removeItem('mts_token')
     router.replace('/login')
   }
+
+  const role = user?.role ?? 'viewer'
+  const NAV = NAV_ALL.filter(n => n.roles.includes(role))
+
+  const displayName = user
+    ? (user.full_name.trim() || user.email.split('@')[0])
+    : null
+
+  const roleLabel = role === 'admin' ? 'Admin' : role === 'trader' ? 'Trader' : 'Viewer'
 
   return (
     <>
@@ -285,10 +304,21 @@ export function NavBar({ active }: { active: string }) {
             </nav>
           </div>
 
-          {/* Right: market hours + search + dark mode + settings + sign out */}
+          {/* Right: market hours + search + user chip + dark mode + settings + sign out */}
           <div className="flex shrink-0 items-center gap-2">
             <MarketHours />
             <StockSearch />
+            {displayName && (
+              <div className="hidden items-center gap-1.5 sm:flex">
+                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-[10px] font-bold text-white">
+                  {displayName[0].toUpperCase()}
+                </div>
+                <div className="hidden flex-col lg:flex">
+                  <span className="text-[11px] font-medium leading-none text-zinc-800 dark:text-zinc-200">{displayName}</span>
+                  <span className="text-[10px] leading-none text-zinc-400">{roleLabel}</span>
+                </div>
+              </div>
+            )}
             <button
               onClick={toggle}
               title={dark ? 'Light mode' : 'Dark mode'}
@@ -325,6 +355,17 @@ export function NavBar({ active }: { active: string }) {
         {/* Mobile drawer */}
         {menuOpen && (
           <div className="border-t border-zinc-100 bg-white px-4 pb-4 pt-2 dark:border-zinc-800 dark:bg-zinc-900 md:hidden">
+            {displayName && (
+              <div className="mb-3 flex items-center gap-2 border-b border-zinc-100 pb-3 dark:border-zinc-800">
+                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-xs font-bold text-white">
+                  {displayName[0].toUpperCase()}
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{displayName}</p>
+                  <p className="text-xs text-zinc-400">{roleLabel}</p>
+                </div>
+              </div>
+            )}
             <nav className="flex flex-col gap-1">
               {NAV.map(({ href, label }) => (
                 <Link

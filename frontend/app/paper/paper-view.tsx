@@ -429,6 +429,7 @@ export default function PaperView() {
                 <thead>
                   <tr className="border-b border-zinc-100 dark:border-zinc-800">
                     <th className={TH}>Symbol</th>
+                    <th className={TH}>Opened</th>
                     <th className={TH}>Signal</th>
                     <th className={TH_R}>Entry</th>
                     <th className={TH_R}>Current</th>
@@ -449,6 +450,17 @@ export default function PaperView() {
                         <td className={TD}>
                           <span className="font-medium text-zinc-900 dark:text-zinc-50">{trade.symbol}</span>
                           <span className="ml-1.5 text-xs text-zinc-400">{trade.exchange}</span>
+                        </td>
+                        <td className={TD}>
+                          {trade.opened_at ? (() => {
+                            const d = new Date(trade.opened_at)
+                            return (
+                              <>
+                                <div className="text-xs text-zinc-700 dark:text-zinc-300">{d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })}</div>
+                                <div className="text-[10px] text-zinc-400">{d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })} IST</div>
+                              </>
+                            )
+                          })() : <span className="text-zinc-400">—</span>}
                         </td>
                         <td className={TD}><SignalBadge signal={trade.signal} /></td>
                         <td className={TD_R}>₹{trade.entry_price.toFixed(2)}</td>
@@ -490,6 +502,7 @@ export default function PaperView() {
                     <th className={TH_R}>Qty</th>
                     <th className={TH_R}>P&amp;L</th>
                     <th className={TH_R}>R:R</th>
+                    <th className={TH_R}>Opened</th>
                     <th className={TH_R}>Closed</th>
                     <th className={TH} />
                   </tr>
@@ -516,12 +529,26 @@ export default function PaperView() {
                           </td>
                           <td className={TD_R}>{trade.risk_reward_ratio.toFixed(2)}</td>
                           <td className={TD_R}>
-                            {trade.closed_at
-                              ? new Date(trade.closed_at).toLocaleString('en-IN', {
-                                  day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-                                  timeZone: 'Asia/Kolkata',
-                                })
-                              : '—'}
+                            {trade.opened_at ? (() => {
+                              const d = new Date(trade.opened_at)
+                              return (
+                                <>
+                                  <div className="text-xs text-zinc-700 dark:text-zinc-300">{d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })}</div>
+                                  <div className="text-[10px] text-zinc-400">{d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })} IST</div>
+                                </>
+                              )
+                            })() : <span className="text-zinc-400">—</span>}
+                          </td>
+                          <td className={TD_R}>
+                            {trade.closed_at ? (() => {
+                              const d = new Date(trade.closed_at)
+                              return (
+                                <>
+                                  <div className="text-xs text-zinc-700 dark:text-zinc-300">{d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })}</div>
+                                  <div className="text-[10px] text-zinc-400">{d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })} IST</div>
+                                </>
+                              )
+                            })() : '—'}
                           </td>
                           <td className="px-3 py-3 text-right">
                             <button
@@ -539,7 +566,7 @@ export default function PaperView() {
 
                         {isJournalOpen && (
                           <tr>
-                            <td colSpan={9} className="p-0">
+                            <td colSpan={10} className="p-0">
                               <div className="border-t border-indigo-100 bg-indigo-50/40 px-4 py-4 dark:border-indigo-900/30 dark:bg-indigo-950/10">
                                 <div className="flex flex-wrap items-start gap-6">
                                   {/* Notes textarea */}

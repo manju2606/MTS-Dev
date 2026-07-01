@@ -303,19 +303,25 @@ function LiveViewInner() {
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b border-zinc-100 dark:border-zinc-800">
-                      {['Symbol', 'Signal', 'Qty', 'Fill Price', 'Status', ''].map(h => (
+                      {['Symbol', 'Signal', 'Qty', 'Fill Price', 'Time', 'Status', ''].map(h => (
                         <th key={h} className="pb-2 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {orders.map(o => (
+                    {orders.map(o => {
+                      const odDt = new Date(o.created_at)
+                      return (
                       <tr key={o.id} className="border-b border-zinc-50 dark:border-zinc-800/50">
                         <td className="py-2 font-mono font-semibold text-zinc-900 dark:text-zinc-50">{o.symbol.replace(/\.(NS|BO)$/, '')}</td>
                         <td className={`py-2 font-bold ${signalCls(o.signal)}`}>{o.signal}</td>
                         <td className="py-2 text-zinc-600 dark:text-zinc-300">{o.quantity}</td>
                         <td className="py-2 font-mono text-zinc-700 dark:text-zinc-300">
                           {o.fill_price ? `₹${o.fill_price.toFixed(2)}` : '—'}
+                        </td>
+                        <td className="py-2">
+                          <div className="text-xs text-zinc-700 dark:text-zinc-300">{odDt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', timeZone: 'Asia/Kolkata' })}</div>
+                          <div className="text-[10px] text-zinc-400">{odDt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })} IST</div>
                         </td>
                         <td className="py-2">
                           <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusCls(o.status)}`}>
@@ -331,7 +337,8 @@ function LiveViewInner() {
                           )}
                         </td>
                       </tr>
-                    ))}
+                      )
+                    })}
                   </tbody>
                 </table>
               )}

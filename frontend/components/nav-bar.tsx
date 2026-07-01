@@ -6,59 +6,106 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { addItemToWatchlist, getMe, searchStocks } from '@/lib/api'
 import type { StockSearchResult, User } from '@/lib/api'
 
-const LINK = 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100'
+// ── Icon primitives ───────────────────────────────────────────────────────────
+
+const ICONS: Record<string, string> = {
+  // Group icons
+  home:      'M3 9l9-7 9 7v11a2 2 0 0 1-2 2h-4v-5h-6v5H5a2 2 0 0 1-2-2z',
+  barChart:  'M12 20V10M6 20V4M18 20v-4',
+  zap:       'M13 2L3 14h9l-1 8 10-12h-9l1-8z',
+  briefcase: 'M20 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2zM16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2',
+  shield:    'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z',
+  // Item icons
+  activity:  'M22 12h-4l-3 9L9 3l-3 9H2',
+  search:    'M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z',
+  sparkles:  'M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z',
+  cpu:       'M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18',
+  compass:   'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 0',
+  fileText:  'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zM14 2v6h6M16 13H8M16 17H8M10 9H8',
+  clipboard: 'M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2M9 2h6a1 1 0 0 1 0 2H9a1 1 0 0 1 0-2z',
+  link:      'M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71',
+  clock:     'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 5v5l3 3',
+  bell:      'M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0',
+  warning:   'M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01',
+  users:     'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm8 4a2 2 0 1 1 0-4 2 2 0 0 1 0 4zM23 21v-2a4 4 0 0 0-3-3.87',
+  key:       'M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4',
+}
+
+function Icon({ name, size = 15 }: { name: string; size?: number }) {
+  return (
+    <svg
+      width={size} height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className="shrink-0"
+    >
+      <path d={ICONS[name] ?? ''} />
+    </svg>
+  )
+}
 
 // ── Nav structure ─────────────────────────────────────────────────────────────
 
-type NavItem  = { href: string; label: string; desc: string }
+type NavItem  = { href: string; label: string; desc: string; icon: string }
 type NavGroup = {
   label: string
+  icon:  string
   roles: string[]
-  href?:  string          // direct link (no dropdown)
+  href?:  string
   items?: NavItem[]
 }
 
 const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Dashboard',
+    icon:  'home',
     href:  '/dashboard',
     roles: ['viewer', 'trader', 'admin'],
   },
   {
     label: 'Markets',
+    icon:  'barChart',
     roles: ['viewer', 'trader', 'admin'],
     items: [
-      { href: '/market-pulse', label: 'Market Pulse',  desc: 'Live prices, indices & news' },
-      { href: '/research',     label: 'Research',      desc: 'AI-powered stock screener' },
-      { href: '/ai',           label: 'AI Analysis',   desc: 'Signal generation & history' },
-      { href: '/ml',           label: 'ML Signals',    desc: 'Machine learning predictions' },
-      { href: '/discovery',    label: 'Discovery',     desc: 'Stock discovery engine' },
-      { href: '/reports',      label: 'Reports',       desc: 'Hourly scan email reports' },
+      { href: '/market-pulse', label: 'Market Pulse',  icon: 'activity',  desc: 'Live prices, indices & news' },
+      { href: '/research',     label: 'Research',      icon: 'search',    desc: 'AI-powered stock screener' },
+      { href: '/ai',           label: 'AI Analysis',   icon: 'sparkles',  desc: 'Signal generation & history' },
+      { href: '/ml',           label: 'ML Signals',    icon: 'cpu',       desc: 'Machine learning predictions' },
+      { href: '/discovery',    label: 'Discovery',     icon: 'compass',   desc: 'Stock discovery engine' },
+      { href: '/reports',      label: 'Reports',       icon: 'fileText',  desc: 'Hourly scan email reports' },
     ],
   },
   {
     label: 'Trading',
+    icon:  'zap',
     roles: ['trader', 'admin'],
     items: [
-      { href: '/paper',    label: 'Paper Trading', desc: 'Simulated trades, zero risk' },
-      { href: '/live',     label: 'Live Trading',  desc: 'Execute real orders' },
-      { href: '/broker',   label: 'Broker',        desc: 'Zerodha / simulated setup' },
-      { href: '/backtest', label: 'Backtest',      desc: 'Test strategies on history' },
-      { href: '/alerts',   label: 'Alerts',        desc: 'Price & signal notifications' },
-      { href: '/risk',     label: 'Risk',          desc: 'Position limits & kill switch' },
+      { href: '/paper',    label: 'Paper Trading', icon: 'clipboard', desc: 'Simulated trades, zero risk' },
+      { href: '/live',     label: 'Live Trading',  icon: 'zap',       desc: 'Execute real orders' },
+      { href: '/broker',   label: 'Broker',        icon: 'link',      desc: 'Zerodha / simulated setup' },
+      { href: '/backtest', label: 'Backtest',      icon: 'clock',     desc: 'Test strategies on history' },
+      { href: '/alerts',   label: 'Alerts',        icon: 'bell',      desc: 'Price & signal notifications' },
+      { href: '/risk',     label: 'Risk',          icon: 'warning',   desc: 'Position limits & kill switch' },
     ],
   },
   {
     label: 'Portfolio',
+    icon:  'briefcase',
     href:  '/portfolio',
     roles: ['viewer', 'trader', 'admin'],
   },
   {
     label: 'Admin',
+    icon:  'shield',
     roles: ['admin'],
     items: [
-      { href: '/admin',    label: 'Admin',    desc: 'User management & system health' },
-      { href: '/api-keys', label: 'API Keys', desc: 'Manage your API credentials' },
+      { href: '/admin',    label: 'Admin',    icon: 'users', desc: 'User management & system health' },
+      { href: '/api-keys', label: 'API Keys', icon: 'key',   desc: 'Manage your API credentials' },
     ],
   },
 ]
@@ -68,9 +115,9 @@ const NAV_GROUPS: NavGroup[] = [
 function useDarkMode() {
   const [dark, setDark] = useState(false)
   useEffect(() => {
-    const saved = localStorage.getItem('mts_theme')
+    const saved       = localStorage.getItem('mts_theme')
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-    const isDark = saved ? saved === 'dark' : prefersDark
+    const isDark      = saved ? saved === 'dark' : prefersDark
     document.documentElement.classList.toggle('dark', isDark)
     const id = setTimeout(() => setDark(isDark), 0)
     return () => clearTimeout(id)
@@ -82,7 +129,6 @@ function useDarkMode() {
     document.documentElement.classList.toggle('dark', next)
     localStorage.setItem('mts_theme', next ? 'dark' : 'light')
   }
-
   return { dark, toggle }
 }
 
@@ -96,45 +142,38 @@ function getMarketState(now: Date): { state: MarketState; nextChange: Date } {
   const day   = ist.getUTCDay()
   const mins  = ist.getUTCHours() * 60 + ist.getUTCMinutes()
 
-  const preOpenStart = 9 * 60
-  const mainOpen     = 9 * 60 + 15
-  const mainClose    = 15 * 60 + 30
-
   if (day === 0 || day === 6) {
-    const daysUntilMon = day === 0 ? 1 : 2
-    const nextMon = new Date(ist)
-    nextMon.setUTCDate(ist.getUTCDate() + daysUntilMon)
-    nextMon.setUTCHours(3, 30, 0, 0)
-    return { state: 'closed', nextChange: new Date(nextMon.getTime()) }
+    const next = new Date(ist)
+    next.setUTCDate(ist.getUTCDate() + (day === 0 ? 1 : 2))
+    next.setUTCHours(3, 30, 0, 0)
+    return { state: 'closed', nextChange: new Date(next.getTime()) }
   }
-  if (mins < preOpenStart) {
+  if (mins < 540) {
     const next = new Date(ist); next.setUTCHours(3, 30, 0, 0)
     return { state: 'closed', nextChange: new Date(next.getTime()) }
   }
-  if (mins < mainOpen) {
+  if (mins < 555) {
     const next = new Date(ist); next.setUTCHours(3, 45, 0, 0)
     return { state: 'preopen', nextChange: new Date(next.getTime()) }
   }
-  if (mins < mainClose) {
+  if (mins < 930) {
     const next = new Date(ist); next.setUTCHours(10, 0, 0, 0)
     return { state: 'open', nextChange: new Date(next.getTime()) }
   }
-  const isFriday = day === 5
   const next = new Date(ist)
-  next.setUTCDate(ist.getUTCDate() + (isFriday ? 3 : 1))
+  next.setUTCDate(ist.getUTCDate() + (day === 5 ? 3 : 1))
   next.setUTCHours(3, 30, 0, 0)
   return { state: 'closed', nextChange: new Date(next.getTime()) }
 }
 
 function formatCountdown(ms: number): string {
   if (ms <= 0) return '0s'
-  const totalSec = Math.floor(ms / 1000)
-  const h = Math.floor(totalSec / 3600)
-  const m = Math.floor((totalSec % 3600) / 60)
-  const s = totalSec % 60
+  const s = Math.floor(ms / 1000)
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
   if (h > 0) return `${h}h ${m}m`
-  if (m > 0) return `${m}m ${s}s`
-  return `${s}s`
+  if (m > 0) return `${m}m ${s % 60}s`
+  return `${s % 60}s`
 }
 
 function MarketHours() {
@@ -169,11 +208,11 @@ function MarketHours() {
 // ── Stock search ──────────────────────────────────────────────────────────────
 
 function StockSearch() {
-  const router = useRouter()
-  const [q, setQ]           = useState('')
+  const router       = useRouter()
+  const [q, setQ]             = useState('')
   const [results, setResults] = useState<StockSearchResult[]>([])
-  const [open, setOpen]     = useState(false)
-  const [added, setAdded]   = useState<Record<string, boolean>>({})
+  const [open, setOpen]       = useState(false)
+  const [added, setAdded]     = useState<Record<string, boolean>>({})
   const debounceRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -197,7 +236,7 @@ function StockSearch() {
 
   async function addToWatchlist(e: React.MouseEvent, r: StockSearchResult) {
     e.stopPropagation()
-    const token = localStorage.getItem('mts_token') ?? ''
+    const token       = localStorage.getItem('mts_token') ?? ''
     const watchlistId = localStorage.getItem('mts_active_watchlist_id') ?? ''
     if (!token || !watchlistId) return
     try {
@@ -217,13 +256,20 @@ function StockSearch() {
 
   return (
     <div ref={containerRef} className="relative">
-      <input
-        value={q}
-        onChange={handleChange}
-        onFocus={() => results.length > 0 && setOpen(true)}
-        placeholder="Search stocks…"
-        className="w-36 rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-1.5 text-xs text-zinc-900 placeholder-zinc-400 focus:border-indigo-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500 sm:w-44"
-      />
+      <div className="relative">
+        <Icon name="search" size={13} />
+        <input
+          value={q}
+          onChange={handleChange}
+          onFocus={() => results.length > 0 && setOpen(true)}
+          placeholder="Search stocks…"
+          className="w-36 rounded-lg border border-zinc-300 bg-zinc-50 py-1.5 pl-7 pr-3 text-xs text-zinc-900 placeholder-zinc-400 focus:border-indigo-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500 sm:w-44"
+          style={{ paddingLeft: '1.75rem' }}
+        />
+        <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400">
+          <Icon name="search" size={13} />
+        </span>
+      </div>
       {open && results.length > 0 && (
         <div className="absolute right-0 top-full z-50 mt-1 w-80 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
           {results.map(r => (
@@ -271,38 +317,57 @@ function GroupDropdown({
     <div className="relative">
       <button
         onClick={onToggle}
-        className={`flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs transition-colors ${
+        className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors ${
           isGroupActive
-            ? 'bg-indigo-50 font-semibold text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300'
+            ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300'
             : 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100'
         }`}
       >
+        <Icon name={group.icon} size={14} />
         {group.label}
         <svg
-          width="10" height="10" viewBox="0 0 10 10" fill="currentColor"
-          className={`transition-transform duration-150 ${isOpen ? 'rotate-180' : ''}`}
+          width="10" height="10" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"
+          className={`opacity-60 transition-transform duration-150 ${isOpen ? 'rotate-180' : ''}`}
         >
-          <path d="M1.5 3.5L5 7l3.5-3.5" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M6 9l6 6 6-6" />
         </svg>
       </button>
 
       {isOpen && group.items && (
-        <div className="absolute left-0 top-full z-50 mt-1.5 w-56 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
-          {group.items.map(item => (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onClose}
-              className={`flex flex-col px-4 py-2.5 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800 ${
-                active === item.label ? 'bg-indigo-50 dark:bg-indigo-950/50' : ''
-              }`}
-            >
-              <span className={`text-xs font-medium ${active === item.label ? 'text-indigo-700 dark:text-indigo-300' : 'text-zinc-800 dark:text-zinc-200'}`}>
-                {item.label}
-              </span>
-              <span className="mt-0.5 text-[10px] text-zinc-400 dark:text-zinc-500">{item.desc}</span>
-            </Link>
-          ))}
+        <div className="absolute left-0 top-full z-50 mt-1.5 w-60 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
+          <div className="px-2 py-2">
+            {group.items.map(item => (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={onClose}
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800 ${
+                  active === item.label ? 'bg-indigo-50 dark:bg-indigo-950/50' : ''
+                }`}
+              >
+                <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
+                  active === item.label
+                    ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900 dark:text-indigo-300'
+                    : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
+                }`}>
+                  <Icon name={item.icon} size={13} />
+                </span>
+                <div className="min-w-0">
+                  <p className={`text-xs font-semibold leading-none ${
+                    active === item.label
+                      ? 'text-indigo-700 dark:text-indigo-300'
+                      : 'text-zinc-800 dark:text-zinc-200'
+                  }`}>
+                    {item.label}
+                  </p>
+                  <p className="mt-0.5 truncate text-[10px] leading-none text-zinc-400 dark:text-zinc-500">
+                    {item.desc}
+                  </p>
+                </div>
+              </Link>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -311,11 +376,13 @@ function GroupDropdown({
 
 // ── NavBar ────────────────────────────────────────────────────────────────────
 
+const LINK = 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100'
+
 export function NavBar({ active }: { active: string }) {
   const router   = useRouter()
   const { dark, toggle } = useDarkMode()
-  const [menuOpen,  setMenuOpen]  = useState(false)
-  const [openGroup, setOpenGroup] = useState<string | null>(null)
+  const [menuOpen,       setMenuOpen]       = useState(false)
+  const [openGroup,      setOpenGroup]      = useState<string | null>(null)
   const [mobileExpanded, setMobileExpanded] = useState<string | null>(null)
   const [user, setUser] = useState<User | null>(null)
   const navRef = useRef<HTMLDivElement>(null)
@@ -326,7 +393,6 @@ export function NavBar({ active }: { active: string }) {
     getMe(t).then(setUser).catch(() => null)
   }, [])
 
-  // Close dropdown when clicking outside the nav
   useEffect(() => {
     function onClick(e: MouseEvent) {
       if (navRef.current && !navRef.current.contains(e.target as Node)) setOpenGroup(null)
@@ -340,43 +406,41 @@ export function NavBar({ active }: { active: string }) {
     router.replace('/login')
   }
 
-  const role   = user?.role ?? 'viewer'
-  const groups = NAV_GROUPS.filter(g => g.roles.includes(role))
-
+  const role        = user?.role ?? 'viewer'
+  const groups      = NAV_GROUPS.filter(g => g.roles.includes(role))
   const displayName = user ? (user.full_name.trim() || user.email.split('@')[0]) : null
   const roleLabel   = role === 'admin' ? 'Admin' : role === 'trader' ? 'Trader' : 'Viewer'
 
   return (
     <>
       <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-2.5">
 
           {/* Left: logo + desktop grouped nav */}
           <div ref={navRef} className="flex min-w-0 items-center gap-2">
-            <Link href="/dashboard" className="mr-2 shrink-0 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-              Manju Trade AI Pro
+            <Link href="/dashboard" className="mr-2 shrink-0 text-sm font-bold text-zinc-900 dark:text-zinc-50">
+              MTS Pro
             </Link>
 
-            <nav className="hidden items-center gap-1 text-xs md:flex">
+            <nav className="hidden items-center gap-0.5 md:flex">
               {groups.map(group => {
-                // Direct link (no dropdown)
                 if (group.href) {
+                  const isActive = active === group.label
                   return (
                     <Link
                       key={group.label}
                       href={group.href}
-                      className={`rounded-lg px-2.5 py-1.5 text-xs transition-colors ${
-                        active === group.label
-                          ? 'bg-indigo-50 font-semibold text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300'
+                      className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                        isActive
+                          ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300'
                           : 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100'
                       }`}
                     >
+                      <Icon name={group.icon} size={14} />
                       {group.label}
                     </Link>
                   )
                 }
-
-                // Dropdown group
                 return (
                   <GroupDropdown
                     key={group.label}
@@ -391,19 +455,19 @@ export function NavBar({ active }: { active: string }) {
             </nav>
           </div>
 
-          {/* Right: market hours + search + user + dark mode + settings + sign out */}
+          {/* Right */}
           <div className="flex shrink-0 items-center gap-2">
             <MarketHours />
             <StockSearch />
 
             {displayName && (
-              <div className="hidden items-center gap-1.5 sm:flex">
-                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-[10px] font-bold text-white">
+              <div className="hidden items-center gap-2 sm:flex">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-[11px] font-bold text-white">
                   {displayName[0].toUpperCase()}
                 </div>
                 <div className="hidden flex-col lg:flex">
-                  <span className="text-[11px] font-medium leading-none text-zinc-800 dark:text-zinc-200">{displayName}</span>
-                  <span className="text-[10px] leading-none text-zinc-400">{roleLabel}</span>
+                  <span className="text-[11px] font-semibold leading-none text-zinc-800 dark:text-zinc-200">{displayName}</span>
+                  <span className="mt-0.5 text-[10px] leading-none text-zinc-400">{roleLabel}</span>
                 </div>
               </div>
             )}
@@ -438,18 +502,18 @@ export function NavBar({ active }: { active: string }) {
         {menuOpen && (
           <div className="border-t border-zinc-100 bg-white px-4 pb-4 pt-2 dark:border-zinc-800 dark:bg-zinc-900 md:hidden">
             {displayName && (
-              <div className="mb-3 flex items-center gap-2 border-b border-zinc-100 pb-3 dark:border-zinc-800">
-                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-xs font-bold text-white">
+              <div className="mb-3 flex items-center gap-2.5 border-b border-zinc-100 pb-3 dark:border-zinc-800">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-600 text-xs font-bold text-white">
                   {displayName[0].toUpperCase()}
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{displayName}</p>
+                  <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">{displayName}</p>
                   <p className="text-xs text-zinc-400">{roleLabel}</p>
                 </div>
               </div>
             )}
 
-            <nav className="flex flex-col gap-1">
+            <nav className="flex flex-col gap-0.5">
               {groups.map(group => {
                 if (group.href) {
                   return (
@@ -457,18 +521,19 @@ export function NavBar({ active }: { active: string }) {
                       key={group.label}
                       href={group.href}
                       onClick={() => setMenuOpen(false)}
-                      className={`rounded-lg px-3 py-2 text-sm font-medium ${
+                      className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium ${
                         active === group.label
                           ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300'
                           : LINK
                       }`}
                     >
+                      <Icon name={group.icon} size={15} />
                       {group.label}
                     </Link>
                   )
                 }
 
-                const isExpanded = mobileExpanded === group.label
+                const isExpanded    = mobileExpanded === group.label
                 const isGroupActive = group.items?.some(i => i.label === active) ?? false
 
                 return (
@@ -481,27 +546,33 @@ export function NavBar({ active }: { active: string }) {
                           : LINK
                       }`}
                     >
-                      {group.label}
+                      <span className="flex items-center gap-2.5">
+                        <Icon name={group.icon} size={15} />
+                        {group.label}
+                      </span>
                       <svg
-                        width="12" height="12" viewBox="0 0 10 10" fill="currentColor"
-                        className={`transition-transform duration-150 ${isExpanded ? 'rotate-180' : ''}`}
+                        width="12" height="12" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"
+                        className={`opacity-50 transition-transform duration-150 ${isExpanded ? 'rotate-180' : ''}`}
                       >
-                        <path d="M1.5 3.5L5 7l3.5-3.5" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M6 9l6 6 6-6" />
                       </svg>
                     </button>
+
                     {isExpanded && group.items && (
-                      <div className="ml-3 mt-0.5 flex flex-col gap-0.5 border-l-2 border-zinc-100 pl-3 dark:border-zinc-800">
+                      <div className="ml-4 mt-0.5 flex flex-col gap-0.5 border-l-2 border-zinc-100 pl-3 dark:border-zinc-800">
                         {group.items.map(item => (
                           <Link
                             key={item.href}
                             href={item.href}
                             onClick={() => setMenuOpen(false)}
-                            className={`rounded-lg px-2 py-1.5 text-sm ${
+                            className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm ${
                               active === item.label
                                 ? 'font-semibold text-indigo-700 dark:text-indigo-300'
                                 : LINK
                             }`}
                           >
+                            <Icon name={item.icon} size={13} />
                             {item.label}
                           </Link>
                         ))}

@@ -57,4 +57,5 @@ ml/artifacts/
 *.pt
 *.onnx
 mlruns/
-scripts/email_preview.html
+backend/scripts/email_preview.html
+backend/*.err

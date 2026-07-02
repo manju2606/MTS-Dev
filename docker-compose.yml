@@ -1,46 +1,14 @@
 services:
-  backend:
-    build: ./backend
-    ports:
-      - "8000:8000"
-    env_file: ./backend/.env
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      mongodb:
-        condition: service_healthy
-    environment:
-      DATABASE_URL: postgresql+asyncpg://mts:mts_password@postgres:5432/mts_dev
-      REDIS_URL: redis://redis:6379
-      MONGODB_URL: mongodb://mongodb:27017
-    restart: unless-stopped
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
-    environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000
-    depends_on:
-      - backend
-    restart: unless-stopped
-
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: mts
-      POSTGRES_PASSWORD: mts_password
-      POSTGRES_DB: mts_dev
-    ports:
-      - "5435:5432"
+      POSTGRES_USER: ${POSTGRES_USER:-mts}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mts_password}
+      POSTGRES_DB: ${POSTGRES_DB:-mts_dev}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U mts -d mts_dev"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mts}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -48,8 +16,6 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6381:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -59,8 +25,6 @@ services:
 
   mongodb:
     image: mongo:7
-    ports:
-      - "27018:27017"
     volumes:
       - mongo_data:/data/db
     healthcheck:
@@ -68,6 +32,31 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      target: prod
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-mts}:${POSTGRES_PASSWORD:-mts_password}@postgres:5432/${POSTGRES_DB:-mts_dev}
+      REDIS_URL: redis://redis:6379
+      MONGODB_URL: mongodb://mongodb:27017
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    depends_on:
+      - backend
     restart: unless-stopped
 
 volumes:

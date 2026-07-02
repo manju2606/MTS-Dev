@@ -10,10 +10,25 @@ AI-powered systematic trading platform for Indian markets (NSE/BSE).
 ## Commands
 
 ```bash
-# Backend — install deps (Python 3.11+)
-cd backend && pip install -e ".[dev]"
+# Docker — dev (hot-reload, DB ports exposed on host)
+make dev              # start dev stack
+make dev-build        # rebuild images then start
+make dev-down         # stop dev stack
 
-# Backend — run dev server
+# Docker — prod simulation (nginx on :80, no exposed DB ports)
+make prod             # start prod stack (detached)
+make prod-build       # rebuild images then start
+make prod-down        # stop prod stack
+
+# Other Docker helpers
+make logs             # tail all container logs
+make ps               # show running containers
+make migrate          # run alembic upgrade head inside container
+make shell-backend    # sh into the backend container
+make shell-db         # psql into the postgres container
+
+# Backend — run locally without Docker (Python 3.11+)
+cd backend && pip install -e ".[dev]"
 cd backend && uvicorn app.main:app --reload
 
 # Backend — tests (integration; requires a real PostgreSQL DB at mts_test)
@@ -29,25 +44,29 @@ cd backend && ruff check . --fix   # auto-fix
 cd backend && alembic revision --autogenerate -m "description"
 cd backend && alembic upgrade head
 
-# Frontend
+# Frontend — run locally without Docker
 cd frontend && npm install
 cd frontend && npm run dev
 cd frontend && npm run build && npm run start
 cd frontend && npm run lint
-
-# Full stack (Docker)
-docker compose up
-docker compose up --build   # rebuild images
-docker compose down -v      # stop + remove volumes
 ```
 
-### Local dev setup (without Docker)
-Copy `.env.example` to `backend/.env`. The example file uses non-default ports to avoid conflicts with local services:
-- PostgreSQL: `localhost:5435`
-- Redis: `localhost:6381`
-- MongoDB: `localhost:27018`
+### Environment setup
 
-Generate `SECRET_KEY` with: `python -c "import secrets; print(secrets.token_hex(32))"`
+Two environments, each with its own compose override and env file:
+
+| Environment | Compose files | Env file | Access |
+|---|---|---|---|
+| Dev | `docker-compose.yml` + `docker-compose.dev.yml` | `backend/.env.dev` | `localhost:3000` (frontend), `localhost:8000` (API) |
+| Prod | `docker-compose.yml` + `docker-compose.prod.yml` | `backend/.env.prod` | `localhost:80` (via nginx) |
+
+**First-time setup:**
+1. Copy `backend/.env.dev.example` → `backend/.env.dev` and set `SECRET_KEY`
+2. Copy `backend/.env.prod.example` → `backend/.env.prod` and set a strong `SECRET_KEY`
+3. Generate a key: `python -c "import secrets; print(secrets.token_hex(32))"`
+
+**Without Docker (local backend):** copy `backend/.env.example` → `backend/.env`.
+- PostgreSQL: `localhost:5435`, Redis: `localhost:6381`, MongoDB: `localhost:27018`
 
 ---
 

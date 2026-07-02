@@ -1,12 +1,15 @@
-FROM python:3.11-slim
-
+FROM python:3.11-slim AS base
 WORKDIR /app
-
-# Install deps first for layer caching
 COPY pyproject.toml .
+
+# Dev: includes test/lint tools, mounts source via volume for hot-reload
+FROM base AS dev
 RUN pip install --no-cache-dir -e ".[dev]"
-
 COPY . .
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"]
 
-# Run Alembic migrations then start server
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+# Prod: lean image, no dev tools, 2 workers
+FROM base AS prod
+RUN pip install --no-cache-dir -e "."
+COPY . .
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2"]

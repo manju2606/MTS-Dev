@@ -1,0 +1,36 @@
+services:
+  postgres:
+    ports:
+      - "5435:5432"
+
+  redis:
+    ports:
+      - "6381:6379"
+
+  mongodb:
+    ports:
+      - "27018:27017"
+
+  backend:
+    build:
+      context: ./backend
+      target: dev
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    env_file: ./backend/.env.dev
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000

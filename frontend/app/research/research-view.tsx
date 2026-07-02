@@ -17,6 +17,10 @@ type IndexMeta = { key: string; label: string; cap: string; count: number }
 
 const UNIVERSE_GROUPS: { group: string; indices: { key: string; label: string }[] }[] = [
   {
+    group: 'All',
+    indices: [{ key: 'nifty_all', label: 'All Segments' }],
+  },
+  {
     group: 'Large Cap',
     indices: [
       { key: 'nifty50',      label: 'NIFTY 50' },

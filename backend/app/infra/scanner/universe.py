@@ -245,10 +245,12 @@ NIFTY_100: list[str]             = _dedup(NIFTY_50 + NIFTY_NEXT_50)
 NIFTY_200: list[str]             = _dedup(NIFTY_100 + NIFTY_MIDCAP_100)
 NIFTY_LARGEMIDCAP_250: list[str] = _dedup(NIFTY_100 + NIFTY_MIDCAP_150)
 NIFTY_500: list[str]             = _dedup(NIFTY_200 + NIFTY_MIDCAP_150 + NIFTY_SMALLCAP_250)
+NIFTY_ALL: list[str]             = _dedup(NIFTY_500 + NIFTY_MICROCAP_250)
 
 # ── Index registry (used by research API & frontend) ──────────────────────────
 
 NIFTY_INDICES: dict[str, dict] = {
+    "nifty_all":           {"label": "All Segments",           "cap": "All",        "symbols": NIFTY_ALL},
     "nifty50":             {"label": "NIFTY 50",              "cap": "Large Cap",  "symbols": NIFTY_50},
     "nifty_next50":        {"label": "NIFTY Next 50",         "cap": "Large Cap",  "symbols": NIFTY_NEXT_50},
     "nifty100":            {"label": "NIFTY 100",             "cap": "Large Cap",  "symbols": NIFTY_100},

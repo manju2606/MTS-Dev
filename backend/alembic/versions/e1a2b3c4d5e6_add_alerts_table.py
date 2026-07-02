@@ -21,7 +21,7 @@ def upgrade() -> None:
         sa.Column('id', postgresql.UUID(as_uuid=True), primary_key=True),
         sa.Column('user_id', postgresql.UUID(as_uuid=True),
                   sa.ForeignKey('users.id', ondelete='CASCADE'),
-                  nullable=False, index=True),
+                  nullable=False),
         sa.Column('symbol', sa.String(50), nullable=False),
         sa.Column('price_target', sa.Float(), nullable=False),
         sa.Column('direction', sa.String(10), nullable=False),

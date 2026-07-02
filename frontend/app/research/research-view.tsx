@@ -8,11 +8,61 @@ import { marketScan, addToWatchlist } from '@/lib/api'
 import type { ScanResult } from '@/lib/api'
 
 type FilterType = 'both' | 'momentum' | 'value'
-type Universe = 'nifty50' | 'nifty100'
 type SortKey = 'signal' | 'price' | 'change_pct' | 'rsi' | 'momentum_score' | 'value_score' | 'combined_score'
 type SortDir = 'asc' | 'desc'
 
 const SIGNAL_RANK: Record<string, number> = { BUY: 3, HOLD: 2, SELL: 1 }
+
+type IndexMeta = { key: string; label: string; cap: string; count: number }
+
+const UNIVERSE_GROUPS: { group: string; indices: { key: string; label: string }[] }[] = [
+  {
+    group: 'Large Cap',
+    indices: [
+      { key: 'nifty50',      label: 'NIFTY 50' },
+      { key: 'nifty_next50', label: 'NIFTY Next 50' },
+      { key: 'nifty100',     label: 'NIFTY 100' },
+    ],
+  },
+  {
+    group: 'Broad Market',
+    indices: [
+      { key: 'nifty200', label: 'NIFTY 200' },
+      { key: 'nifty500', label: 'NIFTY 500' },
+    ],
+  },
+  {
+    group: 'Mid Cap',
+    indices: [
+      { key: 'nifty_midcap50',       label: 'NIFTY Midcap 50' },
+      { key: 'nifty_midcap100',      label: 'NIFTY Midcap 100' },
+      { key: 'nifty_midcap150',      label: 'NIFTY Midcap 150' },
+      { key: 'nifty_largemidcap250', label: 'NIFTY LargeMidcap 250' },
+    ],
+  },
+  {
+    group: 'Small Cap',
+    indices: [
+      { key: 'nifty_smallcap50',  label: 'NIFTY Smallcap 50' },
+      { key: 'nifty_smallcap100', label: 'NIFTY Smallcap 100' },
+      { key: 'nifty_smallcap250', label: 'NIFTY Smallcap 250' },
+    ],
+  },
+  {
+    group: 'Micro Cap',
+    indices: [
+      { key: 'nifty_microcap250', label: 'NIFTY Microcap 250' },
+    ],
+  },
+]
+
+function labelForKey(key: string): string {
+  for (const g of UNIVERSE_GROUPS) {
+    const found = g.indices.find(i => i.key === key)
+    if (found) return found.label
+  }
+  return key
+}
 
 function sortResults(arr: ScanResult[], key: SortKey, dir: SortDir): ScanResult[] {
   return [...arr].sort((a, b) => {
@@ -71,7 +121,8 @@ export default function ResearchView() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<FilterType>('both')
-  const [universe, setUniverse] = useState<Universe>('nifty50')
+  const [universe, setUniverse] = useState('nifty50')
+  const [universeInfo, setUniverseInfo] = useState<Record<string, IndexMeta>>({})
   const [addedSymbols, setAddedSymbols] = useState<Set<string>>(new Set())
   const [authChecked, setAuthChecked] = useState(false)
   const [elapsed, setElapsed] = useState(0)
@@ -82,6 +133,17 @@ export default function ResearchView() {
     const t = localStorage.getItem('mts_token')
     if (!t) { router.replace('/login'); return }
     tokenRef.current = t
+    // Fetch universe metadata (counts) from backend
+    fetch('/api/v1/research/universe', { headers: { Authorization: `Bearer ${t}` } })
+      .then(r => r.json())
+      .then((data: Record<string, { label: string; cap: string; count: number }>) => {
+        const mapped: Record<string, IndexMeta> = {}
+        for (const [key, v] of Object.entries(data)) {
+          mapped[key] = { key, label: v.label, cap: v.cap, count: v.count }
+        }
+        setUniverseInfo(mapped)
+      })
+      .catch(() => {})
     const id = setTimeout(() => setAuthChecked(true), 0)
     return () => clearTimeout(id)
   }, [router])
@@ -122,6 +184,8 @@ export default function ResearchView() {
   const displayed = sortResults(results, sortKey, sortDir)
   const buyCount = results.filter(r => r.signal === 'BUY').length
   const sellCount = results.filter(r => r.signal === 'SELL').length
+  const selectedMeta = universeInfo[universe]
+  const stockCount = selectedMeta?.count ?? null
 
   return (
     <div className="min-h-full bg-zinc-50 dark:bg-zinc-950">
@@ -132,12 +196,13 @@ export default function ResearchView() {
         <div className="mb-6">
           <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Market Research Agent</h1>
           <p className="text-xs text-zinc-400">
-            Scans Nifty 50 / Next 50 universe · scores on momentum (RSI, MACD, SMA trend, volume) and value (52-week position, oversold level)
+            AI-powered scanner across NSE indices · ranked by momentum (RSI, MACD, SMA, volume) and value signals
           </p>
         </div>
 
         {/* Controls */}
         <div className="mb-6 flex flex-wrap items-center gap-3">
+          {/* Filter type */}
           <div className="flex rounded-lg border border-zinc-200 bg-white p-1 dark:border-zinc-700 dark:bg-zinc-900">
             {(['both', 'momentum', 'value'] as FilterType[]).map(f => (
               <button key={f} onClick={() => setFilter(f)}
@@ -147,13 +212,32 @@ export default function ResearchView() {
             ))}
           </div>
 
-          <div className="flex rounded-lg border border-zinc-200 bg-white p-1 dark:border-zinc-700 dark:bg-zinc-900">
-            {(['nifty50', 'nifty100'] as Universe[]).map(u => (
-              <button key={u} onClick={() => setUniverse(u)}
-                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${universe === u ? 'bg-zinc-800 text-white dark:bg-zinc-600' : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'}`}>
-                {u === 'nifty50' ? 'Nifty 50' : 'Nifty 100'}
-              </button>
-            ))}
+          {/* Universe selector */}
+          <div className="flex items-center gap-2">
+            <select
+              value={universe}
+              onChange={e => setUniverse(e.target.value)}
+              className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-medium text-zinc-700 shadow-sm focus:border-indigo-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+            >
+              {UNIVERSE_GROUPS.map(g => (
+                <optgroup key={g.group} label={g.group}>
+                  {g.indices.map(idx => {
+                    const meta = universeInfo[idx.key]
+                    const countLabel = meta ? ` (${meta.count})` : ''
+                    return (
+                      <option key={idx.key} value={idx.key}>
+                        {idx.label}{countLabel}
+                      </option>
+                    )
+                  })}
+                </optgroup>
+              ))}
+            </select>
+            {stockCount !== null && (
+              <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                {stockCount} stocks
+              </span>
+            )}
           </div>
 
           <button onClick={runScan} disabled={loading}
@@ -176,7 +260,7 @@ export default function ResearchView() {
 
         {loading && (
           <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300">
-            Fetching 1 year of data for {universe === 'nifty50' ? '50' : '70'} stocks in parallel and computing technical scores… typically 30–60 seconds.
+            Fetching 1 year of data for {stockCount ? `${stockCount} stocks` : `the ${labelForKey(universe)} universe`} in parallel and computing technical scores… this may take 1–3 minutes for larger indices.
           </div>
         )}
 
@@ -190,7 +274,9 @@ export default function ResearchView() {
 
         {!loading && results.length === 0 && !error && (
           <div className="rounded-xl border border-zinc-200 bg-white px-4 py-16 text-center dark:border-zinc-800 dark:bg-zinc-900">
-            <p className="text-sm text-zinc-500">Click <strong>Scan Market</strong> to scan the Nifty universe for trading opportunities.</p>
+            <p className="text-sm text-zinc-500">
+              Select a Nifty index and click <strong>Scan Market</strong> to find trading opportunities.
+            </p>
             <p className="mt-1 text-xs text-zinc-400">
               Stocks are ranked by a combined score of momentum (60%) and value (40%).
             </p>

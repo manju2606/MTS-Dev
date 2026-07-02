@@ -32,3 +32,25 @@ shell-backend:
 
 shell-db:
 	docker compose exec postgres psql -U mts -d mts_dev
+
+# ── Kubernetes (local) ───────────────────────────────────────────────────────
+.PHONY: k8s-build k8s-up k8s-down k8s-status k8s-logs k8s-migrate
+
+k8s-build:
+	docker build -t mts-backend:latest ./backend
+	docker build -t mts-frontend:latest ./frontend
+
+k8s-up:
+	kubectl apply -k infra/k8s/
+
+k8s-down:
+	kubectl delete -k infra/k8s/
+
+k8s-status:
+	kubectl get pods,svc,ingress -n mts
+
+k8s-logs:
+	kubectl logs -n mts -l app=backend -f
+
+k8s-migrate:
+	kubectl exec -n mts deploy/backend -- alembic upgrade head

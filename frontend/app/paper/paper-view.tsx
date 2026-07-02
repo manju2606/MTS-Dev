@@ -293,7 +293,7 @@ export default function PaperView() {
   function patchDraft(tradeId: string, patch: Partial<JournalDraft>) {
     setJournalDrafts(prev => ({
       ...prev,
-      [tradeId]: { notes: '', rating: 3, tags: '', ...prev[tradeId], ...patch },
+      [tradeId]: { ...{ notes: '', rating: 3, tags: '' }, ...prev[tradeId], ...patch },
     }))
   }
 

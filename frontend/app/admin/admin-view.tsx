@@ -6,11 +6,11 @@ import { NavBar } from '@/components/nav-bar'
 import {
   getAdminStats, listAdminUsers, updateAdminUser, createAdminUser,
   listEmailRecipients, addEmailRecipient, removeEmailRecipient, toggleEmailRecipient,
-  sendReportNow,
+  sendReportNow, getSotDSettings, updateSotDSettings,
 } from '@/lib/api'
-import type { AdminStats, AdminUser, EmailRecipient } from '@/lib/api'
+import type { AdminStats, AdminUser, EmailRecipient, SotDSettings } from '@/lib/api'
 
-type Tab = 'users' | 'email-list'
+type Tab = 'users' | 'email-list' | 'trading-rules'
 
 function SendReportButton({ tokenRef }: { tokenRef: React.RefObject<string> }) {
   const [busy, setBusy] = useState(false)
@@ -216,6 +216,200 @@ function EmailListPanel({ tokenRef }: { tokenRef: React.RefObject<string> }) {
   )
 }
 
+// ── Trading Rules Panel ───────────────────────────────────────────────────────
+
+function TradingRulesPanel({ tokenRef }: { tokenRef: React.RefObject<string> }) {
+  const [cfg, setCfg]     = useState<SotDSettings | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg]       = useState<{ text: string; ok: boolean } | null>(null)
+
+  useEffect(() => {
+    getSotDSettings(tokenRef.current).then(setCfg).catch(() => null)
+  }, [tokenRef])
+
+  async function save() {
+    if (!cfg) return
+    setSaving(true); setMsg(null)
+    try {
+      const saved = await updateSotDSettings(tokenRef.current, cfg)
+      setCfg(saved)
+      setMsg({ text: 'Settings saved.', ok: true })
+    } catch (e) {
+      setMsg({ text: (e as Error).message, ok: false })
+    } finally { setSaving(false) }
+  }
+
+  const inp = 'rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-800 focus:border-indigo-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200'
+
+  if (!cfg) return (
+    <div className="space-y-3">
+      {[1, 2, 3].map(i => <div key={i} className="h-16 animate-pulse rounded-xl bg-zinc-200 dark:bg-zinc-800" />)}
+    </div>
+  )
+
+  return (
+    <div className="space-y-5">
+      {/* Stock of Day auto-trade */}
+      <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+        <h2 className="mb-1 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Stock of Day — Auto-Trade Rules</h2>
+        <p className="mb-5 text-xs text-zinc-400">
+          Controls when the system automatically places a paper trade for the daily AI pick.
+        </p>
+
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {/* Enable toggle */}
+          <div className="rounded-lg border border-zinc-100 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/50">
+            <p className="mb-2 text-xs font-medium text-zinc-500 uppercase tracking-wide">Auto-Trade</p>
+            <label className="flex cursor-pointer items-center justify-between gap-3">
+              <span className="text-sm text-zinc-700 dark:text-zinc-300">Enabled</span>
+              <input
+                type="checkbox"
+                checked={cfg.auto_trade_enabled}
+                onChange={e => setCfg({ ...cfg, auto_trade_enabled: e.target.checked })}
+                className="h-4 w-4 rounded accent-indigo-600"
+              />
+            </label>
+            <p className="mt-2 text-[10px] text-zinc-400">
+              When disabled, no paper trades are placed automatically — picks are still generated.
+            </p>
+          </div>
+
+          {/* Confidence threshold */}
+          <div className="rounded-lg border border-zinc-100 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/50">
+            <p className="mb-2 text-xs font-medium text-zinc-500 uppercase tracking-wide">Confidence Score Threshold</p>
+            <div className="flex items-center gap-3">
+              <input
+                type="number" min={50} max={100} step={1}
+                value={cfg.threshold}
+                onChange={e => setCfg({ ...cfg, threshold: Number(e.target.value) })}
+                className={inp + ' w-24'}
+              />
+              <span className="text-sm text-zinc-500">/ 100</span>
+            </div>
+            <p className="mt-2 text-[10px] text-zinc-400">
+              Trade is placed only if AI composite score ≥ this value. Range: 50–100.
+            </p>
+          </div>
+
+          {/* Max trades per day */}
+          <div className="rounded-lg border border-zinc-100 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/50">
+            <p className="mb-2 text-xs font-medium text-zinc-500 uppercase tracking-wide">Max Trades per Day</p>
+            <input
+              type="number" min={1} max={10} step={1}
+              value={cfg.max_daily_trades}
+              onChange={e => setCfg({ ...cfg, max_daily_trades: Number(e.target.value) })}
+              className={inp + ' w-24'}
+            />
+            <p className="mt-2 text-[10px] text-zinc-400">
+              Maximum auto-trades allowed per calendar day. Range: 1–10.
+            </p>
+          </div>
+
+          {/* Market hours only */}
+          <div className="rounded-lg border border-zinc-100 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/50">
+            <p className="mb-2 text-xs font-medium text-zinc-500 uppercase tracking-wide">Market Hours Only</p>
+            <label className="flex cursor-pointer items-center justify-between gap-3">
+              <span className="text-sm text-zinc-700 dark:text-zinc-300">9:15 – 15:30 IST weekdays</span>
+              <input
+                type="checkbox"
+                checked={cfg.market_hours_only}
+                onChange={e => setCfg({ ...cfg, market_hours_only: e.target.checked })}
+                className="h-4 w-4 rounded accent-indigo-600"
+              />
+            </label>
+            <p className="mt-2 text-[10px] text-zinc-400">
+              When enabled, trades outside NSE trading hours are blocked.
+            </p>
+          </div>
+
+          {/* Paper trade quantity — qty or % of capital */}
+          <div className="col-span-full rounded-lg border border-zinc-100 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/50 sm:col-span-2 lg:col-span-3">
+            <p className="mb-3 text-xs font-medium text-zinc-500 uppercase tracking-wide">Position Size</p>
+
+            {/* Toggle */}
+            <div className="mb-4 inline-flex rounded-lg border border-zinc-200 bg-white p-0.5 dark:border-zinc-700 dark:bg-zinc-900">
+              {(['qty', 'pct'] as const).map(opt => (
+                <button
+                  key={opt}
+                  type="button"
+                  onClick={() => setCfg({ ...cfg, quantity_type: opt })}
+                  className={`rounded-md px-4 py-1.5 text-xs font-semibold transition-colors ${
+                    cfg.quantity_type === opt
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+                  }`}
+                >
+                  {opt === 'qty' ? 'Fixed Qty' : '% of Capital'}
+                </button>
+              ))}
+            </div>
+
+            {cfg.quantity_type === 'qty' ? (
+              <div className="flex items-end gap-6">
+                <div>
+                  <p className="mb-1 text-[10px] text-zinc-400 uppercase">Shares per trade</p>
+                  <input
+                    type="number" min={1} max={10000} step={1}
+                    value={cfg.paper_trade_quantity}
+                    onChange={e => setCfg({ ...cfg, paper_trade_quantity: Number(e.target.value) })}
+                    className={inp + ' w-28'}
+                  />
+                  <p className="mt-1.5 text-[10px] text-zinc-400">Fixed number of shares, 1–10,000.</p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-end gap-6">
+                <div>
+                  <p className="mb-1 text-[10px] text-zinc-400 uppercase">% of capital per trade</p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number" min={0.1} max={100} step={0.1}
+                      value={cfg.paper_trade_quantity}
+                      onChange={e => setCfg({ ...cfg, paper_trade_quantity: Number(e.target.value) })}
+                      className={inp + ' w-24'}
+                    />
+                    <span className="text-sm text-zinc-500">%</span>
+                  </div>
+                  <p className="mt-1.5 text-[10px] text-zinc-400">0.1–100% of the virtual capital below.</p>
+                </div>
+                <div>
+                  <p className="mb-1 text-[10px] text-zinc-400 uppercase">Virtual capital (₹)</p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-zinc-500">₹</span>
+                    <input
+                      type="number" min={1000} max={100000000} step={1000}
+                      value={cfg.paper_capital}
+                      onChange={e => setCfg({ ...cfg, paper_capital: Number(e.target.value) })}
+                      className={inp + ' w-36'}
+                    />
+                  </div>
+                  <p className="mt-1.5 text-[10px] text-zinc-400">
+                    Qty = floor(capital × % ÷ entry price). Min 1 share.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-5 flex items-center gap-4 border-t border-zinc-100 pt-4 dark:border-zinc-800">
+          <button
+            onClick={save} disabled={saving}
+            className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
+          >
+            {saving ? 'Saving…' : 'Save Changes'}
+          </button>
+          {msg && (
+            <p className={`text-xs font-medium ${msg.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'}`}>
+              {msg.ok ? '✓ ' : '✕ '}{msg.text}
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main Admin View ───────────────────────────────────────────────────────────
 
 export default function AdminView() {
@@ -319,6 +513,7 @@ export default function AdminView() {
           {([
             { key: 'users', label: 'User Management' },
             { key: 'email-list', label: 'Email List' },
+            { key: 'trading-rules', label: 'Trading Rules' },
           ] as { key: Tab; label: string }[]).map(({ key, label }) => (
             <button
               key={key}
@@ -397,6 +592,9 @@ export default function AdminView() {
 
         {/* Email List tab */}
         {tab === 'email-list' && <EmailListPanel tokenRef={tokenRef} />}
+
+        {/* Trading Rules tab */}
+        {tab === 'trading-rules' && <TradingRulesPanel tokenRef={tokenRef} />}
       </main>
     </div>
   )

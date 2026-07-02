@@ -1577,6 +1577,8 @@ export type SotDSettings = {
   max_daily_trades: number
   market_hours_only: boolean
   paper_trade_quantity: number
+  quantity_type: 'qty' | 'pct'
+  paper_capital: number
 }
 
 export async function getSotDSettings(token: string): Promise<SotDSettings> {

@@ -324,7 +324,14 @@ async def _auto_place_trade(sotd: StockOfDay, cfg) -> None:  # type: ignore[type
                 await engine.dispose()
                 return
 
-            qty = cfg.paper_trade_quantity if cfg.paper_trade_quantity > 0 else sotd.quantity
+            if cfg.quantity_type == "pct":
+                # qty = floor(capital × pct% / entry_price), minimum 1
+                qty = max(1, int(cfg.paper_capital * cfg.paper_trade_quantity / 100 / sotd.entry_price))
+                log.info("sotd.auto_trade.qty_calc",
+                         mode="pct", pct=cfg.paper_trade_quantity,
+                         capital=cfg.paper_capital, entry=sotd.entry_price, qty=qty)
+            else:
+                qty = max(1, int(cfg.paper_trade_quantity))
             trade = Trade(
                 user_id=admin_orm.id,
                 symbol=sotd.symbol,

@@ -113,6 +113,30 @@ function SignalBadge({ signal }: { signal: 'BUY' | 'SELL' }) {
   )
 }
 
+function TradeTypeBadge({ mode, aiExplanation }: { mode: 'paper' | 'live'; aiExplanation: string | null }) {
+  const isAuto = aiExplanation?.includes('SotD auto-trade') ?? false
+  const modeLabel = mode === 'paper' ? 'Paper' : 'Live'
+  const originLabel = isAuto ? 'Auto' : 'Manual'
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${
+        mode === 'paper'
+          ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300'
+          : 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300'
+      }`}>
+        {modeLabel}
+      </span>
+      <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${
+        isAuto
+          ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+          : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300'
+      }`}>
+        {originLabel}
+      </span>
+    </div>
+  )
+}
+
 const INPUT = 'rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500'
 const TH = 'px-3 py-3 text-left text-xs font-medium text-zinc-500'
 const TH_R = 'px-3 py-3 text-right text-xs font-medium text-zinc-500'
@@ -431,6 +455,7 @@ export default function PaperView() {
                     <th className={TH}>Symbol</th>
                     <th className={TH}>Opened</th>
                     <th className={TH}>Signal</th>
+                    <th className={TH}>Type</th>
                     <th className={TH_R}>Entry</th>
                     <th className={TH_R}>Current</th>
                     <th className={TH_R}>Stop Loss</th>
@@ -463,6 +488,7 @@ export default function PaperView() {
                           })() : <span className="text-zinc-400">—</span>}
                         </td>
                         <td className={TD}><SignalBadge signal={trade.signal} /></td>
+                        <td className={TD}><TradeTypeBadge mode={trade.mode} aiExplanation={trade.ai_explanation} /></td>
                         <td className={TD_R}>₹{trade.entry_price.toFixed(2)}</td>
                         <td className={TD_R}>{current !== undefined ? `₹${current.toFixed(2)}` : '—'}</td>
                         <td className={TD_R}>₹{trade.stop_loss.toFixed(2)}</td>
@@ -497,6 +523,7 @@ export default function PaperView() {
                   <tr className="border-b border-zinc-100 dark:border-zinc-800">
                     <th className={TH}>Symbol</th>
                     <th className={TH}>Signal</th>
+                    <th className={TH}>Type</th>
                     <th className={TH_R}>Entry</th>
                     <th className={TH_R}>Exit</th>
                     <th className={TH_R}>Qty</th>
@@ -519,6 +546,7 @@ export default function PaperView() {
                             <span className="ml-1.5 text-xs text-zinc-400">{trade.exchange}</span>
                           </td>
                           <td className={TD}><SignalBadge signal={trade.signal} /></td>
+                          <td className={TD}><TradeTypeBadge mode={trade.mode} aiExplanation={trade.ai_explanation} /></td>
                           <td className={TD_R}>₹{trade.entry_price.toFixed(2)}</td>
                           <td className={TD_R}>
                             {trade.exit_price !== null ? `₹${trade.exit_price.toFixed(2)}` : '—'}
@@ -566,7 +594,7 @@ export default function PaperView() {
 
                         {isJournalOpen && (
                           <tr>
-                            <td colSpan={10} className="p-0">
+                            <td colSpan={11} className="p-0">
                               <div className="border-t border-indigo-100 bg-indigo-50/40 px-4 py-4 dark:border-indigo-900/30 dark:bg-indigo-950/10">
                                 <div className="flex flex-wrap items-start gap-6">
                                   {/* Notes textarea */}

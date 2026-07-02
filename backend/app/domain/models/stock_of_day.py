@@ -60,4 +60,6 @@ class SotDSettings:
     threshold: float = 85.0           # composite_score must be >= this to auto-trade
     max_daily_trades: int = 1         # hard cap: at most N auto-trades per calendar day
     market_hours_only: bool = True    # reject auto-trade if NSE is not open (9:15–15:30 IST weekdays)
-    paper_trade_quantity: int = 1     # default quantity for auto-placed paper trades
+    paper_trade_quantity: float = 1.0 # qty value — interpretation depends on quantity_type
+    quantity_type: str = "qty"        # "qty" = fixed shares | "pct" = % of paper_capital
+    paper_capital: float = 100000.0   # virtual capital base (INR) used when quantity_type="pct"

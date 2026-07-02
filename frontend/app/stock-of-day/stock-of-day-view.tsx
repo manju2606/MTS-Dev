@@ -4,10 +4,10 @@ import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import { NavBar } from '@/components/nav-bar'
 import {
-  getSotDHistory, getSotDJournal, getSotDToday, getSotDSettings, updateSotDSettings,
+  getSotDHistory, getSotDJournal, getSotDToday,
   triggerSotDGenerate, getQuote,
 } from '@/lib/api'
-import type { SotDJournalEntry, StockOfDay, SotDSettings } from '@/lib/api'
+import type { SotDJournalEntry, StockOfDay } from '@/lib/api'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -390,86 +390,6 @@ function PnlSummary({ history }: { history: StockOfDay[] }) {
   )
 }
 
-// ── Settings panel (admin) ────────────────────────────────────────────────────
-
-function SettingsPanel({ token }: { token: string }) {
-  const [cfg, setCfg]       = useState<SotDSettings | null>(null)
-  const [saving, setSaving] = useState(false)
-  const [msg, setMsg]       = useState('')
-
-  useEffect(() => {
-    getSotDSettings(token).then(setCfg).catch(() => null)
-  }, [token])
-
-  async function save() {
-    if (!cfg) return
-    setSaving(true)
-    setMsg('')
-    try {
-      const saved = await updateSotDSettings(token, cfg)
-      setCfg(saved)
-      setMsg('Settings saved.')
-    } catch (e) {
-      setMsg(`Error: ${(e as Error).message}`)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  if (!cfg) return <div className="h-12 animate-pulse rounded-xl bg-zinc-200 dark:bg-zinc-800" />
-
-  return (
-    <div className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-900">
-      <h3 className="mb-4 text-sm font-bold text-zinc-800 dark:text-zinc-200">⚙ Auto-Trade Rules (Admin)</h3>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <label className="flex items-center justify-between gap-3">
-          <span className="text-xs text-zinc-600 dark:text-zinc-400">Auto-trade enabled</span>
-          <input type="checkbox" checked={cfg.auto_trade_enabled}
-            onChange={e => setCfg({ ...cfg, auto_trade_enabled: e.target.checked })}
-            className="h-4 w-4 rounded" />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-[10px] text-zinc-400 uppercase">Score threshold (50–100)</span>
-          <input type="number" min={50} max={100} step={1} value={cfg.threshold}
-            onChange={e => setCfg({ ...cfg, threshold: Number(e.target.value) })}
-            className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-sm text-zinc-800 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200" />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-[10px] text-zinc-400 uppercase">Max trades per day</span>
-          <input type="number" min={1} max={10} step={1} value={cfg.max_daily_trades}
-            onChange={e => setCfg({ ...cfg, max_daily_trades: Number(e.target.value) })}
-            className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-sm text-zinc-800 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200" />
-        </label>
-        <label className="flex items-center justify-between gap-3">
-          <span className="text-xs text-zinc-600 dark:text-zinc-400">Market hours only (9:15–15:30 IST)</span>
-          <input type="checkbox" checked={cfg.market_hours_only}
-            onChange={e => setCfg({ ...cfg, market_hours_only: e.target.checked })}
-            className="h-4 w-4 rounded" />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-[10px] text-zinc-400 uppercase">Paper trade quantity</span>
-          <input type="number" min={1} max={100} step={1} value={cfg.paper_trade_quantity}
-            onChange={e => setCfg({ ...cfg, paper_trade_quantity: Number(e.target.value) })}
-            className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-sm text-zinc-800 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200" />
-        </label>
-      </div>
-      <div className="mt-4 flex items-center gap-3">
-        <button
-          onClick={save} disabled={saving}
-          className="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
-        >
-          {saving ? 'Saving…' : 'Save'}
-        </button>
-        {msg && <p className={`text-xs ${msg.startsWith('Error') ? 'text-red-500' : 'text-emerald-600'}`}>{msg}</p>}
-      </div>
-      <p className="mt-3 text-[10px] text-zinc-400">
-        Rule 1: Only 1 auto-trade per day (configurable above). &nbsp;
-        Rule 2: Trade placed only when NSE is open 9:15–15:30 IST on weekdays (configurable above).
-      </p>
-    </div>
-  )
-}
-
 // ── Main view ─────────────────────────────────────────────────────────────────
 
 export function StockOfDayView() {
@@ -480,7 +400,6 @@ export function StockOfDayView() {
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [isAdmin, setIsAdmin] = useState(false)
   const tokenRef = useRef('')
 
   async function load() {
@@ -531,10 +450,6 @@ export function StockOfDayView() {
   useEffect(() => {
     const t = localStorage.getItem('mts_token') ?? ''
     tokenRef.current = t
-    // Check if admin
-    import('@/lib/api').then(({ getMe }) => {
-      getMe(t).then(u => setIsAdmin(u.role === 'admin')).catch(() => null)
-    })
     load()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -597,8 +512,6 @@ export function StockOfDayView() {
               <HistoryTable history={history} />
             </div>
 
-            {/* Admin settings */}
-            {isAdmin && <SettingsPanel token={tokenRef.current} />}
           </div>
         )}
       </div>

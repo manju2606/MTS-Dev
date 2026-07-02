@@ -121,7 +121,9 @@ class StockOfDayRepository:
             threshold=float(doc.get("threshold", 85.0)),
             max_daily_trades=int(doc.get("max_daily_trades", 1)),
             market_hours_only=bool(doc.get("market_hours_only", True)),
-            paper_trade_quantity=int(doc.get("paper_trade_quantity", 1)),
+            paper_trade_quantity=float(doc.get("paper_trade_quantity", 1.0)),
+            quantity_type=str(doc.get("quantity_type", "qty")),
+            paper_capital=float(doc.get("paper_capital", 100000.0)),
         )
 
     async def save_settings(self, cfg: SotDSettings) -> SotDSettings:
@@ -133,6 +135,8 @@ class StockOfDayRepository:
                 "max_daily_trades": cfg.max_daily_trades,
                 "market_hours_only": cfg.market_hours_only,
                 "paper_trade_quantity": cfg.paper_trade_quantity,
+                "quantity_type": cfg.quantity_type,
+                "paper_capital": cfg.paper_capital,
                 "updated_at": datetime.utcnow(),
             }},
             upsert=True,

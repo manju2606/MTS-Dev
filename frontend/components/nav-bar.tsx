@@ -85,7 +85,6 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/heatmap',      label: 'Heat Map',      icon: 'squares',    desc: 'NSE-style market heat map' },
       { href: '/forecast',      label: 'Forecast',       icon: 'trendingUp', desc: 'ML price predictions: day, week, month' },
       { href: '/stock-of-day',    label: 'Stock of Day',   icon: 'star',     desc: 'AI top pick · auto paper trade · SL/target tracking' },
-      { href: '/market-sources', label: 'Data Sources',   icon: 'database', desc: 'Live source health & quote comparison' },
       { href: '/reports',        label: 'Reports',        icon: 'fileText', desc: 'Hourly scan email reports' },
     ],
   },
@@ -113,8 +112,9 @@ const NAV_GROUPS: NavGroup[] = [
     icon:  'shield',
     roles: ['admin'],
     items: [
-      { href: '/admin',    label: 'Admin',    icon: 'users', desc: 'User management & system health' },
-      { href: '/api-keys', label: 'API Keys', icon: 'key',   desc: 'Manage your API credentials' },
+      { href: '/admin',          label: 'Admin',        icon: 'users',    desc: 'User management & system health' },
+      { href: '/api-keys',       label: 'API Keys',     icon: 'key',      desc: 'Manage your API credentials' },
+      { href: '/market-sources', label: 'Data Sources', icon: 'database', desc: 'Live source health & quote comparison' },
     ],
   },
 ]

@@ -102,18 +102,23 @@ async def trigger_price_check(_: CurrentUser) -> dict:
     return {"ok": True}
 
 
-@router.get("/settings")
-async def get_settings(_: CurrentUser) -> dict:
-    """Return current SotD auto-trade settings."""
-    repo = StockOfDayRepository()
-    cfg = await repo.get_settings()
+def _settings_dict(cfg) -> dict:  # type: ignore[type-arg]
     return {
         "auto_trade_enabled": cfg.auto_trade_enabled,
         "threshold": cfg.threshold,
         "max_daily_trades": cfg.max_daily_trades,
         "market_hours_only": cfg.market_hours_only,
         "paper_trade_quantity": cfg.paper_trade_quantity,
+        "quantity_type": cfg.quantity_type,
+        "paper_capital": cfg.paper_capital,
     }
+
+
+@router.get("/settings")
+async def get_settings(_: CurrentUser) -> dict:
+    """Return current SotD auto-trade settings."""
+    repo = StockOfDayRepository()
+    return _settings_dict(await repo.get_settings())
 
 
 @router.put("/settings", dependencies=[_admin_only])
@@ -122,22 +127,26 @@ async def update_settings(body: dict, _: CurrentUser) -> dict:
     from app.domain.models.stock_of_day import SotDSettings
     repo = StockOfDayRepository()
     existing = await repo.get_settings()
+    qty_type = str(body.get("quantity_type", existing.quantity_type))
+    if qty_type not in ("qty", "pct"):
+        raise HTTPException(status_code=422, detail="quantity_type must be 'qty' or 'pct'")
     updated = SotDSettings(
         auto_trade_enabled=bool(body.get("auto_trade_enabled", existing.auto_trade_enabled)),
         threshold=float(body.get("threshold", existing.threshold)),
         max_daily_trades=int(body.get("max_daily_trades", existing.max_daily_trades)),
         market_hours_only=bool(body.get("market_hours_only", existing.market_hours_only)),
-        paper_trade_quantity=int(body.get("paper_trade_quantity", existing.paper_trade_quantity)),
+        paper_trade_quantity=float(body.get("paper_trade_quantity", existing.paper_trade_quantity)),
+        quantity_type=qty_type,
+        paper_capital=float(body.get("paper_capital", existing.paper_capital)),
     )
     if not (50 <= updated.threshold <= 100):
         raise HTTPException(status_code=422, detail="threshold must be between 50 and 100")
     if not (1 <= updated.max_daily_trades <= 10):
         raise HTTPException(status_code=422, detail="max_daily_trades must be between 1 and 10")
-    cfg = await repo.save_settings(updated)
-    return {
-        "auto_trade_enabled": cfg.auto_trade_enabled,
-        "threshold": cfg.threshold,
-        "max_daily_trades": cfg.max_daily_trades,
-        "market_hours_only": cfg.market_hours_only,
-        "paper_trade_quantity": cfg.paper_trade_quantity,
-    }
+    if updated.quantity_type == "qty" and not (1 <= updated.paper_trade_quantity <= 10000):
+        raise HTTPException(status_code=422, detail="paper_trade_quantity must be between 1 and 10000 for qty mode")
+    if updated.quantity_type == "pct" and not (0.1 <= updated.paper_trade_quantity <= 100):
+        raise HTTPException(status_code=422, detail="paper_trade_quantity must be between 0.1 and 100 for pct mode")
+    if not (1000 <= updated.paper_capital <= 100_000_000):
+        raise HTTPException(status_code=422, detail="paper_capital must be between ₹1,000 and ₹10,00,00,000")
+    return _settings_dict(await repo.save_settings(updated))

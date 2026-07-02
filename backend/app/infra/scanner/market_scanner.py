@@ -529,8 +529,13 @@ async def scan(
 ) -> list[ScanResult]:
     symbols = universe or UNIVERSE
     loop = asyncio.get_event_loop()
-    tasks = [loop.run_in_executor(None, partial(_fetch_single_sync, s)) for s in symbols]
-    raw = await asyncio.gather(*tasks)
+    sem = asyncio.Semaphore(25)  # max 25 concurrent yfinance calls
+
+    async def _fetch(sym: str) -> ScanResult | None:
+        async with sem:
+            return await loop.run_in_executor(None, partial(_fetch_single_sync, sym))
+
+    raw = await asyncio.gather(*[_fetch(s) for s in symbols])
     results = [r for r in raw if r is not None]
 
     if filter_type == "momentum":

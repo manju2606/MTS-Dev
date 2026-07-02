@@ -8,7 +8,7 @@ data:
   DEBUG: "false"
   ALGORITHM: "HS256"
   ACCESS_TOKEN_EXPIRE_MINUTES: "30"
-  CORS_ORIGINS: '["http://mts.local"]'
+  CORS_ORIGINS: '["http://mts.local","https://occupy-glowworm-laborer.ngrok-free.dev","https://*.ngrok-free.dev","https://*.ngrok-free.app"]'
   MONGODB_DB: "mts_journal"
   POSTGRES_DB: "mts_dev"
   POSTGRES_USER: "mts"

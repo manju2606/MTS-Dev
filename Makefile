@@ -36,9 +36,13 @@ shell-db:
 # ── Kubernetes (local) ───────────────────────────────────────────────────────
 .PHONY: k8s-build k8s-up k8s-down k8s-status k8s-logs k8s-migrate
 
+KIND_CLUSTER ?= retail-dev-eksdemo1
+
 k8s-build:
 	docker build -t mts-backend:latest ./backend
 	docker build -t mts-frontend:latest ./frontend
+	kind load docker-image mts-backend:latest --name $(KIND_CLUSTER)
+	kind load docker-image mts-frontend:latest --name $(KIND_CLUSTER)
 
 k8s-up:
 	kubectl apply -k infra/k8s/

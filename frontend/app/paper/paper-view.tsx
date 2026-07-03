@@ -151,6 +151,8 @@ export default function PaperView() {
   const [user, setUser] = useState<User | null>(null)
   const [trades, setTrades] = useState<Trade[]>([])
   const [prices, setPrices] = useState<Record<string, number>>({})
+  const [pricesUpdatedAt, setPricesUpdatedAt] = useState<Date | null>(null)
+  const [pricesRefreshing, setPricesRefreshing] = useState(false)
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('open')
   const [closing, setClosing] = useState<string | null>(null)
@@ -182,8 +184,9 @@ export default function PaperView() {
   const [sotdSettings, setSotdSettings] = useState<SotDSettings | null>(null)
   const [autoTradeToggling, setAutoTradeToggling] = useState(false)
 
-  const fetchPrices = useCallback(async (openTrades: Trade[]) => {
+  const fetchPrices = useCallback(async (openTrades: Trade[], isManual = false) => {
     if (openTrades.length === 0) return
+    if (isManual) setPricesRefreshing(true)
     const symbols = [...new Set(openTrades.map(t => t.symbol))]
     const results = await Promise.allSettled(symbols.map(s => getQuote(tokenRef.current, s)))
     setPrices(prev => {
@@ -191,6 +194,8 @@ export default function PaperView() {
       results.forEach((r, i) => { if (r.status === 'fulfilled') next[symbols[i]] = r.value.price })
       return next
     })
+    setPricesUpdatedAt(new Date())
+    if (isManual) setPricesRefreshing(false)
   }, [])
 
   const fetchTrades = useCallback(async () => {
@@ -226,7 +231,7 @@ export default function PaperView() {
   useEffect(() => {
     const open = trades.filter(t => t.status === 'open')
     if (open.length === 0) return
-    const id = setInterval(() => fetchPrices(open), 30000)
+    const id = setInterval(() => fetchPrices(open), 15000)
     return () => clearInterval(id)
   }, [trades, fetchPrices])
 
@@ -496,20 +501,38 @@ export default function PaperView() {
 
         {/* Trade list */}
         <section>
-          <div className="mb-4 flex items-center gap-1">
-            {(['open', 'closed'] as Tab[]).map(t => (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-colors ${
-                  tab === t
-                    ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50'
-                    : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'
-                }`}
-              >
-                {t === 'open' ? `Open (${openTrades.length})` : `Closed (${closedTrades.length})`}
-              </button>
-            ))}
+          <div className="mb-4 flex items-center justify-between">
+            <div className="flex items-center gap-1">
+              {(['open', 'closed'] as Tab[]).map(t => (
+                <button
+                  key={t}
+                  onClick={() => setTab(t)}
+                  className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-colors ${
+                    tab === t
+                      ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50'
+                      : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'
+                  }`}
+                >
+                  {t === 'open' ? `Open (${openTrades.length})` : `Closed (${closedTrades.length})`}
+                </button>
+              ))}
+            </div>
+            {tab === 'open' && openTrades.length > 0 && (
+              <div className="flex items-center gap-2">
+                {pricesUpdatedAt && (
+                  <span className="text-[11px] text-zinc-400 dark:text-zinc-500">
+                    Prices updated {Math.round((Date.now() - pricesUpdatedAt.getTime()) / 1000)}s ago · Yahoo Finance (~2–5 min delay)
+                  </span>
+                )}
+                <button
+                  onClick={() => fetchPrices(openTrades, true)}
+                  disabled={pricesRefreshing}
+                  className="rounded-md bg-white border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                >
+                  {pricesRefreshing ? '↻ …' : '↻ Refresh'}
+                </button>
+              </div>
+            )}
           </div>
 
           {shown.length === 0 ? (

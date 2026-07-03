@@ -48,6 +48,11 @@ class SourceHealth:
         self.last_error = error[:200]
 
 
+# ── Per-symbol quote cache (60 s TTL) ────────────────────────────────────────
+
+_QUOTE_CACHE: dict[str, tuple[float, Quote]] = {}  # symbol → (fetched_at, quote)
+_QUOTE_TTL = 60.0  # seconds
+
 _HEALTH: dict[str, SourceHealth] = {}
 
 
@@ -94,6 +99,11 @@ class CompositeMarketDataClient(MarketDataClient):
         self._sources = _build_priority(priority)
 
     async def get_quote(self, symbol: str) -> Quote:
+        now = time.monotonic()
+        cached = _QUOTE_CACHE.get(symbol)
+        if cached and (now - cached[0]) < _QUOTE_TTL:
+            return cached[1]
+
         last_exc: Exception = RuntimeError("No market data sources available")
 
         for name, client in self._sources:
@@ -106,11 +116,18 @@ class CompositeMarketDataClient(MarketDataClient):
                 quote = await client.get_quote(symbol)
                 if quote.price > 0:
                     health.record_success()
+                    _QUOTE_CACHE[symbol] = (now, quote)
                     if name != self._sources[0][0]:
                         log.info("composite.fallback.used", source=name, symbol=symbol)
                     return quote
-                raise ValueError("Returned zero price")
+                last_exc = ValueError("Returned zero price")
+            except ValueError as exc:
+                # Symbol not found / no data for this symbol — skip source but
+                # do NOT penalise source health (the source is up, just missing symbol).
+                last_exc = exc
+                log.debug("composite.source.no_data", source=name, symbol=symbol, error=str(exc))
             except Exception as exc:
+                # Infrastructure failure — penalise health so the source backs off.
                 health.record_failure(str(exc))
                 last_exc = exc
                 log.warning(

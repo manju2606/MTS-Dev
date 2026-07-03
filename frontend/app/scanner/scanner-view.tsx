@@ -8,8 +8,9 @@ import {
   getScanCatalog, runMarketScan,
   listWatchlists, createWatchlist, deleteWatchlist,
   getWatchlistItems, addItemToWatchlist, removeFromWatchlist,
+  searchStocks,
 } from '@/lib/api'
-import type { ScanCatalogItem, ScanResponse, ScanResultItem, Watchlist, WatchlistItem } from '@/lib/api'
+import type { ScanCatalogItem, ScanResponse, ScanResultItem, Watchlist, WatchlistItem, StockSearchResult } from '@/lib/api'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -285,15 +286,18 @@ function ResultRow({ r }: { r: ScanResultItem }) {
 // ── Watchlists panel ──────────────────────────────────────────────────────────
 
 function WatchlistsPanel({ token }: { token: string }) {
-  const [watchlists, setWatchlists] = useState<Watchlist[]>([])
-  const [activeWl, setActiveWl]     = useState<string | null>(null)
-  const [items, setItems]           = useState<WatchlistItem[]>([])
-  const [newName, setNewName]       = useState('')
-  const [addSymbol, setAddSymbol]   = useState('')
-  const [creating, setCreating]     = useState(false)
-  const [adding, setAdding]         = useState(false)
-  const [error, setError]           = useState('')
-  const [loading, setLoading]       = useState(true)
+  const [watchlists, setWatchlists]   = useState<Watchlist[]>([])
+  const [activeWl, setActiveWl]       = useState<string | null>(null)
+  const [items, setItems]             = useState<WatchlistItem[]>([])
+  const [newName, setNewName]         = useState('')
+  const [query, setQuery]             = useState('')
+  const [suggestions, setSuggestions] = useState<StockSearchResult[]>([])
+  const [selectedSymbol, setSelectedSymbol] = useState('')
+  const [creating, setCreating]       = useState(false)
+  const [adding, setAdding]           = useState(false)
+  const [error, setError]             = useState('')
+  const [loading, setLoading]         = useState(true)
+  const searchRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     listWatchlists(token).then(wls => {
@@ -322,16 +326,33 @@ function WatchlistsPanel({ token }: { token: string }) {
     }
   }
 
+  function handleQueryChange(val: string) {
+    setQuery(val)
+    setSelectedSymbol('')
+    if (searchRef.current) clearTimeout(searchRef.current)
+    if (val.trim().length < 2) { setSuggestions([]); return }
+    searchRef.current = setTimeout(() => {
+      searchStocks(token, val).then(setSuggestions)
+    }, 250)
+  }
+
+  function handleSelect(r: StockSearchResult) {
+    setSelectedSymbol(r.symbol)
+    setQuery(`${r.symbol.replace('.NS','').replace('.BO','')} — ${r.name}`)
+    setSuggestions([])
+  }
+
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault()
-    if (!addSymbol.trim() || !activeWl) return
+    const sym = selectedSymbol || query.trim().toUpperCase()
+    if (!sym || !activeWl) return
     setAdding(true)
     setError('')
     try {
-      const sym = addSymbol.trim().toUpperCase()
       const item = await addItemToWatchlist(token, activeWl, sym)
       setItems(prev => [...prev, item])
-      setAddSymbol('')
+      setQuery('')
+      setSelectedSymbol('')
     } catch {
       setError('Symbol not found or already in watchlist')
     } finally {
@@ -414,16 +435,40 @@ function WatchlistsPanel({ token }: { token: string }) {
           <>
             {/* Add symbol bar */}
             <div className="shrink-0 border-b border-zinc-100 bg-zinc-50 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950">
-              <form onSubmit={handleAdd} className="flex items-center gap-2">
-                <input
-                  value={addSymbol}
-                  onChange={e => setAddSymbol(e.target.value)}
-                  placeholder="Add symbol (e.g. INFY or INFY.NS)…"
-                  className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
-                />
+              <form onSubmit={handleAdd} className="relative flex items-center gap-2">
+                <div className="relative min-w-0 flex-1">
+                  <input
+                    value={query}
+                    onChange={e => handleQueryChange(e.target.value)}
+                    placeholder="Search symbol (e.g. INFY, Reliance…)"
+                    autoComplete="off"
+                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+                  />
+                  {suggestions.length > 0 && (
+                    <ul className="absolute left-0 top-full z-50 mt-1 w-full rounded-lg border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+                      {suggestions.map(r => (
+                        <li key={r.symbol}>
+                          <button
+                            type="button"
+                            onClick={() => handleSelect(r)}
+                            className="flex w-full items-center justify-between px-3 py-2 text-left text-xs hover:bg-indigo-50 dark:hover:bg-indigo-950/40"
+                          >
+                            <span className="font-semibold text-zinc-900 dark:text-zinc-100">
+                              {r.symbol.replace('.NS','').replace('.BO','')}
+                            </span>
+                            <span className="ml-2 truncate text-zinc-400">{r.name}</span>
+                            <span className="ml-2 shrink-0 rounded bg-zinc-100 px-1.5 py-0.5 text-[9px] text-zinc-500 dark:bg-zinc-800">
+                              {r.exchange}
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
                 <button
                   type="submit"
-                  disabled={adding || !addSymbol.trim()}
+                  disabled={adding || (!selectedSymbol && query.trim().length < 2)}
                   className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
                 >
                   {adding ? 'Adding…' : 'Add'}

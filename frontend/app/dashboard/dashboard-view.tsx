@@ -6,11 +6,11 @@ import Link from 'next/link'
 import { NavBar } from '@/components/nav-bar'
 import {
   getMe, getTopPicks, getDiscoveryStatus, listTrades, listAlerts, getQuote, getMarketOverview,
-  getSotDToday,
+  getSotDToday, listWatchlists, addItemToWatchlist,
 } from '@/lib/api'
 import type {
   User, StockScore, DiscoveryStatus, Trade, AlertRule,
-  IndexQuote, EconomicEvent, MarketOverviewData, StockOfDay,
+  IndexQuote, EconomicEvent, MarketOverviewData, StockOfDay, Watchlist,
 } from '@/lib/api'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -385,9 +385,89 @@ function SortTh({ label, k, sortKey, sortDir, onSort }: {
   )
 }
 
+// ── Add to watchlist dropdown ─────────────────────────────────────────────────
+
+function AddToWatchlistBtn({ symbol, token, watchlists }: {
+  symbol: string
+  token: string
+  watchlists: Watchlist[]
+}) {
+  const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState({ top: 0, left: 0 })
+  const [adding, setAdding] = useState(false)
+  const [added, setAdded] = useState(false)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const dropRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function close(e: MouseEvent) {
+      const t = e.target as Node
+      if (!btnRef.current?.contains(t) && !dropRef.current?.contains(t)) setOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [open])
+
+  if (watchlists.length === 0) return null
+
+  function handleOpen() {
+    if (btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect()
+      setPos({ top: r.bottom + 4, left: r.left })
+    }
+    setOpen(o => !o)
+  }
+
+  async function add(wlId: string) {
+    setAdding(true)
+    setOpen(false)
+    try {
+      await addItemToWatchlist(token, wlId, symbol)
+      setAdded(true)
+      setTimeout(() => setAdded(false), 2000)
+    } catch { /* already in watchlist — ignore */ }
+    setAdding(false)
+  }
+
+  return (
+    <>
+      <button ref={btnRef} onClick={handleOpen} disabled={adding}
+        title="Add to watchlist"
+        className={`text-[10px] font-semibold whitespace-nowrap transition-colors ${
+          added
+            ? 'text-emerald-600 dark:text-emerald-400'
+            : 'text-violet-500 hover:text-violet-700 dark:hover:text-violet-300'
+        }`}>
+        {added ? '✓ Added' : adding ? '…' : '+ WL'}
+      </button>
+      {open && (
+        <div ref={dropRef}
+          style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999 }}
+          className="min-w-[140px] rounded-lg border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+          <p className="border-b border-zinc-100 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-zinc-400 dark:border-zinc-800">
+            Add to watchlist
+          </p>
+          {watchlists.map(wl => (
+            <button key={wl.id} onClick={() => add(wl.id)}
+              className="block w-full px-3 py-1.5 text-left text-xs text-zinc-700 hover:bg-indigo-50 hover:text-indigo-700 dark:text-zinc-300 dark:hover:bg-indigo-950/30">
+              {wl.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </>
+  )
+}
+
 // ── Stock of the Day compact card ─────────────────────────────────────────────
 
-function SotDDashCard({ sotd }: { sotd: StockOfDay | null }) {
+function SotDDashCard({ sotd, ltp, token, watchlists }: {
+  sotd: StockOfDay | null
+  ltp?: number | null
+  token?: string
+  watchlists?: Watchlist[]
+}) {
   if (!sotd) {
     return (
       <div className="flex items-center justify-between rounded-xl border border-dashed border-zinc-300 bg-white px-4 py-3 dark:border-zinc-700 dark:bg-zinc-900">
@@ -412,6 +492,7 @@ function SotDDashCard({ sotd }: { sotd: StockOfDay | null }) {
     WATCHING: 'text-amber-600', TRADING: 'text-blue-600 animate-pulse',
     TARGET_HIT: 'text-emerald-600', STOP_HIT: 'text-red-600', EXPIRED: 'text-zinc-500',
   }
+  const ltpDiff = ltp != null ? (((ltp - sotd.entry_price) / sotd.entry_price) * 100) : null
 
   return (
     <div className="flex flex-wrap items-center gap-4 rounded-xl border border-indigo-100 bg-gradient-to-r from-indigo-50 to-violet-50 px-4 py-3 dark:border-indigo-900/50 dark:from-indigo-950/30 dark:to-violet-950/20">
@@ -423,7 +504,25 @@ function SotDDashCard({ sotd }: { sotd: StockOfDay | null }) {
         </div>
       </div>
       <div className="flex flex-wrap gap-4 text-xs">
-        <div><p className="text-[9px] text-zinc-400">Entry</p><p className="font-mono font-semibold">₹{sotd.entry_price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p></div>
+        <div>
+          <p className="text-[9px] text-zinc-400">Entry</p>
+          <p className="font-mono font-semibold">₹{sotd.entry_price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+        </div>
+        <div>
+          <p className="text-[9px] text-zinc-400">LTP</p>
+          {ltp != null ? (
+            <p className="font-mono font-semibold">
+              ₹{ltp.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              {ltpDiff != null && (
+                <span className={`ml-1 text-[10px] font-medium ${ltpDiff >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                  ({ltpDiff >= 0 ? '+' : ''}{ltpDiff.toFixed(1)}%)
+                </span>
+              )}
+            </p>
+          ) : (
+            <p className="font-mono text-zinc-300 dark:text-zinc-600">—</p>
+          )}
+        </div>
         <div><p className="text-[9px] text-zinc-400">SL</p><p className="font-mono font-semibold text-red-600 dark:text-red-400">₹{sotd.stop_loss.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p></div>
         <div><p className="text-[9px] text-zinc-400">Target</p><p className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">₹{sotd.target.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p></div>
         <div><p className="text-[9px] text-zinc-400">Confidence Score</p><p className="font-bold text-indigo-600">{Math.round(sotd.composite_score)}</p></div>
@@ -432,9 +531,14 @@ function SotDDashCard({ sotd }: { sotd: StockOfDay | null }) {
           <div><p className="text-[9px] text-zinc-400">P&L</p><p className={`font-bold font-mono ${pnlColor}`}>{pnl >= 0 ? '+' : ''}{pnl.toFixed(2)}%</p></div>
         )}
       </div>
-      <Link href="/stock-of-day" className="ml-auto shrink-0 rounded-lg bg-indigo-600 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-indigo-700">
-        Details →
-      </Link>
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        {token && watchlists && watchlists.length > 0 && (
+          <AddToWatchlistBtn symbol={sotd.symbol} token={token} watchlists={watchlists} />
+        )}
+        <Link href="/stock-of-day" className="rounded-lg bg-indigo-600 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-indigo-700">
+          Details →
+        </Link>
+      </div>
     </div>
   )
 }
@@ -456,6 +560,8 @@ export default function DashboardView() {
   const [sortDir, setSortDir]   = useState<SortDir>('desc')
   const [sigFilter, setSigFilter] = useState<string>('All')
   const [ltps, setLtps]         = useState<Record<string, number>>({})
+  const [watchlists, setWatchlists] = useState<Watchlist[]>([])
+  const [sotdLtp, setSotdLtp]   = useState<number | null>(null)
 
   const CACHE_KEY = 'mts_dashboard_cache'
 
@@ -472,13 +578,13 @@ export default function DashboardView() {
   }, [])
 
   const load = useCallback(async (token: string) => {
-    const [me, p, s, t, a, mkt, sotdRes] = await Promise.all([
+    // Critical data first — renders SotD, picks, trades without waiting for market-overview
+    const [me, p, s, t, a, sotdRes] = await Promise.all([
       getMe(token),
       getTopPicks(token, 50, undefined, 0),
       getDiscoveryStatus(token),
       listTrades(token, 'open').catch(() => [] as Trade[]),
       listAlerts(token).catch(() => [] as AlertRule[]),
-      getMarketOverview(token).catch(() => null),
       getSotDToday(token).catch(() => null),
     ])
     const openTrades = (t as Trade[]).filter((tr: Trade) => tr.status === 'open')
@@ -488,20 +594,23 @@ export default function DashboardView() {
     setStatus(s)
     setTrades(openTrades)
     setAlerts(activeAlerts)
-    if (mkt) setMarket(mkt)
     if (sotdRes !== null) setSotd(sotdRes?.data ?? null)
 
-    // Persist fresh data to cache
     try {
       localStorage.setItem(CACHE_KEY, JSON.stringify({
-        picks: p,
-        status: s,
-        market: mkt,
-        sotd: sotdRes?.data ?? null,
-        trades: openTrades,
-        alerts: activeAlerts,
+        picks: p, status: s, sotd: sotdRes?.data ?? null,
+        trades: openTrades, alerts: activeAlerts,
       }))
-    } catch { /* storage full — ignore */ }
+    } catch { /* storage full */ }
+
+    // Market overview is slow (live Yahoo Finance fetch) — run independently
+    getMarketOverview(token).then(mkt => {
+      setMarket(mkt)
+      try {
+        const raw = localStorage.getItem(CACHE_KEY)
+        if (raw) localStorage.setItem(CACHE_KEY, JSON.stringify({ ...JSON.parse(raw), market: mkt }))
+      } catch {}
+    }).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -529,6 +638,19 @@ export default function DashboardView() {
       try { const q = await getQuote(token, r.symbol); prices[r.symbol] = q.price } catch { /* skip */ }
     })).then(() => setLtps({ ...prices }))
   }, [picks])
+
+  useEffect(() => {
+    const t = localStorage.getItem('mts_token')
+    if (!t) return
+    listWatchlists(t).then(setWatchlists).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (!sotd) return
+    const t = tokenRef.current
+    if (!t) return
+    getQuote(t, sotd.symbol).then(q => setSotdLtp(q.price)).catch(() => {})
+  }, [sotd])
 
   function handleSort(key: SortKey) {
     if (sortKey === key) setSortDir(d => d === 'desc' ? 'asc' : 'desc')
@@ -591,7 +713,7 @@ export default function DashboardView() {
 
         {/* Stock of the Day banner */}
         <div className="mb-5">
-          <SotDDashCard sotd={sotd} />
+          <SotDDashCard sotd={sotd} ltp={sotdLtp} token={tokenRef.current} watchlists={watchlists} />
         </div>
 
         {/* Market context row: Sentiment | Global | Economic Events */}
@@ -706,12 +828,15 @@ export default function DashboardView() {
                             </td>
                             <td className="px-3 py-2 text-xs text-zinc-400">{s.holding_period}</td>
                             <td className="px-3 py-2">
-                              {!['NEUTRAL', 'SELL', 'STRONG_SELL'].includes(s.signal) && (
-                                <Link href={`/paper?symbol=${encodeURIComponent(s.symbol)}&signal=${s.signal.replace('STRONG_', '')}`}
-                                  className="text-[10px] font-semibold text-indigo-500 hover:text-indigo-700 whitespace-nowrap">
-                                  Trade →
-                                </Link>
-                              )}
+                              <div className="flex flex-col gap-1">
+                                {!['NEUTRAL', 'SELL', 'STRONG_SELL'].includes(s.signal) && (
+                                  <Link href={`/paper?symbol=${encodeURIComponent(s.symbol)}&signal=${s.signal.replace('STRONG_', '')}`}
+                                    className="text-[10px] font-semibold text-indigo-500 hover:text-indigo-700 whitespace-nowrap">
+                                    Trade →
+                                  </Link>
+                                )}
+                                <AddToWatchlistBtn symbol={s.symbol} token={tokenRef.current} watchlists={watchlists} />
+                              </div>
                             </td>
                           </tr>
                         )

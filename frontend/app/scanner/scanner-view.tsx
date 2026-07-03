@@ -4,8 +4,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { NavBar } from '@/components/nav-bar'
-import { getScanCatalog, runMarketScan } from '@/lib/api'
-import type { ScanCatalogItem, ScanResponse, ScanResultItem } from '@/lib/api'
+import {
+  getScanCatalog, runMarketScan,
+  listWatchlists, createWatchlist, deleteWatchlist,
+  getWatchlistItems, addItemToWatchlist, removeFromWatchlist,
+} from '@/lib/api'
+import type { ScanCatalogItem, ScanResponse, ScanResultItem, Watchlist, WatchlistItem } from '@/lib/api'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -168,9 +172,6 @@ function ResultsPanel({
           <p className="mt-2 text-xs text-amber-700 dark:text-amber-400 max-w-xs">
             {response.note}
           </p>
-          <p className="mt-3 text-[10px] text-amber-600 dark:text-amber-500">
-            Integration with NSE data APIs planned for Phase 2
-          </p>
         </div>
       </div>
     )
@@ -179,69 +180,44 @@ function ResultsPanel({
   if (rows.length === 0) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
-        <p className="text-sm font-semibold text-zinc-600 dark:text-zinc-400">
-          No stocks matched this scan
-        </p>
-        <p className="text-xs text-zinc-400">
-          Scanned {response.universe ?? 70} stocks · Try again after market hours for fresh data
-        </p>
+        <p className="text-sm font-semibold text-zinc-500">No stocks matched this scan</p>
+        <p className="text-xs text-zinc-400">Try a different scan type or check back during market hours</p>
       </div>
+    )
+  }
+
+  function Th({ label, k }: { label: string; k: SortKey }) {
+    const active = sortKey === k
+    return (
+      <th onClick={() => handleSort(k)}
+        className="cursor-pointer select-none px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wide text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200">
+        {label} {active ? (sortDir === 'desc' ? '↓' : '↑') : ''}
+      </th>
     )
   }
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      {/* Header bar */}
-      <div className="flex items-center justify-between border-b border-zinc-100 px-5 py-3 dark:border-zinc-800">
-        <div>
-          <h2 className="text-sm font-bold text-zinc-900 dark:text-zinc-50">{response.name}</h2>
-          <p className="text-[11px] text-zinc-400">
-            {rows.length} stock{rows.length !== 1 ? 's' : ''} matched
-            {response.universe && ` · ${response.universe} scanned`}
-            {response.cached && (
-              <span className="ml-2 rounded bg-zinc-100 px-1.5 py-0.5 text-[9px] font-semibold text-zinc-500 dark:bg-zinc-800">
-                CACHED
-              </span>
-            )}
-          </p>
-        </div>
-        <div className="text-[11px] text-zinc-400">
-          Sorted by <span className="font-medium text-zinc-600 dark:text-zinc-300">{sortKey.replace('_', ' ')}</span>
-        </div>
+      <div className="shrink-0 border-b border-zinc-100 bg-zinc-50 px-4 py-2 text-[11px] text-zinc-400 dark:border-zinc-800 dark:bg-zinc-950">
+        {response.count} result{response.count !== 1 ? 's' : ''} · {response.universe} scanned
+        {response.cached && <span className="ml-2 text-indigo-400">· cached</span>}
       </div>
-
-      {/* Table */}
       <div className="flex-1 overflow-auto">
-        <table className="w-full text-sm">
-          <thead className="sticky top-0 z-10 bg-zinc-50 dark:bg-zinc-900">
-            <tr className="border-b border-zinc-200 dark:border-zinc-700">
-              <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400">#</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400">Symbol / Company</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400">Sector</th>
-              {(['cmp', 'change_pct', 'volume', 'vol_ratio', 'rsi'] as SortKey[]).map(k => (
-                <th key={k}
-                  onClick={() => handleSort(k)}
-                  className={`cursor-pointer select-none px-4 py-3 text-right text-xs font-medium hover:text-zinc-700 dark:hover:text-zinc-200 ${
-                    sortKey === k ? 'text-indigo-600 dark:text-indigo-400' : 'text-zinc-400'
-                  }`}
-                >
-                  {k === 'cmp' ? 'CMP ₹'
-                    : k === 'change_pct' ? 'Chg %'
-                    : k === 'vol_ratio' ? 'Vol Ratio'
-                    : k === 'volume' ? 'Volume'
-                    : 'RSI'}
-                  {sortKey === k ? (sortDir === 'desc' ? ' ▼' : ' ▲') : ' ⇅'}
-                </th>
-              ))}
-              <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400">Key Signal</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400">Signal</th>
-              <th className="px-4 py-3" />
+        <table className="w-full border-collapse text-sm">
+          <thead className="sticky top-0 bg-zinc-50 dark:bg-zinc-900">
+            <tr className="border-b border-zinc-100 dark:border-zinc-800">
+              <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wide text-zinc-400">Symbol</th>
+              <Th label="Price" k="cmp" />
+              <Th label="Chg %" k="change_pct" />
+              <Th label="Volume" k="volume" />
+              <Th label="Vol ×" k="vol_ratio" />
+              <Th label="RSI" k="rsi" />
+              <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wide text-zinc-400">Signal</th>
+              <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wide text-zinc-400">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, i) => (
-              <ScanRow key={r.symbol} rank={i + 1} item={r} />
-            ))}
+            {rows.map(r => <ResultRow key={r.symbol} r={r} />)}
           </tbody>
         </table>
       </div>
@@ -249,53 +225,35 @@ function ResultsPanel({
   )
 }
 
-function ScanRow({ rank, item: r }: { rank: number; item: ScanResultItem }) {
-  const sym = r.symbol.replace(/\.(NS|BO)$/, '')
-  const chgColor = r.change_pct >= 0
-    ? 'text-emerald-600 dark:text-emerald-400'
-    : 'text-red-500 dark:text-red-400'
+function ResultRow({ r }: { r: ScanResultItem }) {
+  const sym = r.symbol.replace('.NS', '').replace('.BO', '')
+  const chgPos = r.change_pct >= 0
 
   return (
-    <tr className={`border-b border-zinc-50 dark:border-zinc-800/50 hover:bg-zinc-50 dark:hover:bg-zinc-800/30 ${rank % 2 === 0 ? 'bg-zinc-50/30 dark:bg-zinc-800/10' : ''}`}>
-      <td className="px-4 py-3 text-xs text-zinc-400">{rank}</td>
-
+    <tr className="border-b border-zinc-50 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/40">
       <td className="px-4 py-3">
-        <p className="text-xs font-bold text-zinc-900 dark:text-zinc-50">{sym}</p>
-        <p className="max-w-[160px] truncate text-[10px] text-zinc-400">{r.name}</p>
+        <div className="font-semibold text-zinc-900 dark:text-zinc-50">{sym}</div>
+        <div className="text-[10px] text-zinc-400">{r.sector}</div>
       </td>
 
-      <td className="px-4 py-3">
-        <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
-          {r.sector}
-        </span>
-      </td>
-
-      <td className="px-4 py-3 text-right font-mono text-xs font-semibold text-zinc-800 dark:text-zinc-200">
+      <td className="px-4 py-3 font-mono text-xs text-zinc-700 dark:text-zinc-200">
         ₹{fmt(r.cmp)}
       </td>
 
-      <td className={`px-4 py-3 text-right text-xs font-semibold ${chgColor}`}>
-        {r.change_pct >= 0 ? '+' : ''}{r.change_pct.toFixed(2)}%
+      <td className={`px-4 py-3 font-mono text-xs font-semibold ${chgPos ? 'text-emerald-600' : 'text-red-500'}`}>
+        {chgPos ? '+' : ''}{r.change_pct.toFixed(2)}%
       </td>
 
-      <td className="px-4 py-3 text-right text-xs text-zinc-500 dark:text-zinc-400">
+      <td className="px-4 py-3 text-xs text-zinc-500 dark:text-zinc-400">
         {fmtVol(r.volume)}
       </td>
 
-      <td className="px-4 py-3 text-right text-xs">
-        <span className={`font-semibold ${r.vol_ratio >= 2 ? 'text-indigo-600 dark:text-indigo-400' : 'text-zinc-500 dark:text-zinc-400'}`}>
-          {r.vol_ratio.toFixed(1)}×
-        </span>
+      <td className="px-4 py-3 text-xs text-zinc-500 dark:text-zinc-400">
+        {r.vol_ratio.toFixed(2)}×
       </td>
 
-      <td className="px-4 py-3 text-right text-xs">
-        <span className={
-          r.rsi <= 35 ? 'font-semibold text-emerald-600 dark:text-emerald-400'
-          : r.rsi >= 65 ? 'font-semibold text-red-500 dark:text-red-400'
-          : 'text-zinc-500 dark:text-zinc-400'
-        }>
-          {r.rsi.toFixed(0)}
-        </span>
+      <td className="px-4 py-3 text-xs text-zinc-500 dark:text-zinc-400">
+        {r.rsi ? r.rsi.toFixed(1) : '—'}
       </td>
 
       <td className="px-4 py-3 text-xs text-zinc-600 dark:text-zinc-300">
@@ -324,17 +282,231 @@ function ScanRow({ rank, item: r }: { rank: number; item: ScanResultItem }) {
   )
 }
 
+// ── Watchlists panel ──────────────────────────────────────────────────────────
+
+function WatchlistsPanel({ token }: { token: string }) {
+  const [watchlists, setWatchlists] = useState<Watchlist[]>([])
+  const [activeWl, setActiveWl]     = useState<string | null>(null)
+  const [items, setItems]           = useState<WatchlistItem[]>([])
+  const [newName, setNewName]       = useState('')
+  const [addSymbol, setAddSymbol]   = useState('')
+  const [creating, setCreating]     = useState(false)
+  const [adding, setAdding]         = useState(false)
+  const [error, setError]           = useState('')
+  const [loading, setLoading]       = useState(true)
+
+  useEffect(() => {
+    listWatchlists(token).then(wls => {
+      setWatchlists(wls)
+      if (wls.length > 0) setActiveWl(wls[0].id.toString())
+      setLoading(false)
+    })
+  }, [token])
+
+  useEffect(() => {
+    if (!activeWl) return
+    getWatchlistItems(token, activeWl).then(setItems)
+  }, [token, activeWl])
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault()
+    if (!newName.trim()) return
+    setCreating(true)
+    try {
+      const wl = await createWatchlist(token, newName.trim())
+      setWatchlists(prev => [...prev, wl])
+      setActiveWl(wl.id.toString())
+      setNewName('')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  async function handleAdd(e: React.FormEvent) {
+    e.preventDefault()
+    if (!addSymbol.trim() || !activeWl) return
+    setAdding(true)
+    setError('')
+    try {
+      const sym = addSymbol.trim().toUpperCase()
+      const item = await addItemToWatchlist(token, activeWl, sym)
+      setItems(prev => [...prev, item])
+      setAddSymbol('')
+    } catch {
+      setError('Symbol not found or already in watchlist')
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  async function handleRemove(symbol: string) {
+    if (!activeWl) return
+    await removeFromWatchlist(token, symbol)
+    setItems(prev => prev.filter(i => i.symbol !== symbol))
+  }
+
+  async function handleDeleteWl(id: string) {
+    await deleteWatchlist(token, id)
+    const updated = watchlists.filter(w => w.id.toString() !== id)
+    setWatchlists(updated)
+    if (activeWl === id) setActiveWl(updated[0]?.id.toString() ?? null)
+  }
+
+  if (loading) {
+    return <div className="flex flex-1 items-center justify-center text-sm text-zinc-400">Loading watchlists…</div>
+  }
+
+  return (
+    <div className="flex flex-1 overflow-hidden">
+      {/* Watchlist list sidebar */}
+      <aside className="w-56 shrink-0 overflow-y-auto border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="p-3">
+          <p className="mb-2 px-2 text-[10px] font-bold uppercase tracking-widest text-zinc-400">My Watchlists</p>
+          {watchlists.length === 0 && (
+            <p className="px-2 text-xs text-zinc-400">No watchlists yet</p>
+          )}
+          {watchlists.map(wl => (
+            <div key={wl.id.toString()}
+              className={`group flex items-center justify-between rounded-lg px-3 py-2 text-xs cursor-pointer transition-colors ${
+                activeWl === wl.id.toString()
+                  ? 'bg-indigo-600 text-white'
+                  : 'text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'
+              }`}
+              onClick={() => setActiveWl(wl.id.toString())}
+            >
+              <span className="truncate font-medium">{wl.name}</span>
+              <button
+                onClick={e => { e.stopPropagation(); handleDeleteWl(wl.id.toString()) }}
+                className="ml-1 shrink-0 opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-red-500"
+                title="Delete watchlist"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+
+          {/* Create watchlist */}
+          <form onSubmit={handleCreate} className="mt-3 flex gap-1">
+            <input
+              value={newName}
+              onChange={e => setNewName(e.target.value)}
+              placeholder="New watchlist…"
+              className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-xs text-zinc-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+            />
+            <button
+              type="submit"
+              disabled={creating || !newName.trim()}
+              className="rounded-lg bg-indigo-600 px-2 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+            >
+              +
+            </button>
+          </form>
+        </div>
+      </aside>
+
+      {/* Watchlist items */}
+      <main className="flex flex-1 flex-col overflow-hidden bg-white dark:bg-zinc-900">
+        {!activeWl ? (
+          <div className="flex flex-1 items-center justify-center text-sm text-zinc-400">
+            Create a watchlist to get started
+          </div>
+        ) : (
+          <>
+            {/* Add symbol bar */}
+            <div className="shrink-0 border-b border-zinc-100 bg-zinc-50 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950">
+              <form onSubmit={handleAdd} className="flex items-center gap-2">
+                <input
+                  value={addSymbol}
+                  onChange={e => setAddSymbol(e.target.value)}
+                  placeholder="Add symbol (e.g. INFY or INFY.NS)…"
+                  className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+                />
+                <button
+                  type="submit"
+                  disabled={adding || !addSymbol.trim()}
+                  className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {adding ? 'Adding…' : 'Add'}
+                </button>
+                {error && <span className="text-xs text-red-500">{error}</span>}
+              </form>
+            </div>
+
+            {/* Items table */}
+            {items.length === 0 ? (
+              <div className="flex flex-1 items-center justify-center text-sm text-zinc-400">
+                No stocks in this watchlist yet
+              </div>
+            ) : (
+              <div className="flex-1 overflow-auto">
+                <table className="w-full border-collapse text-sm">
+                  <thead className="sticky top-0 bg-zinc-50 dark:bg-zinc-900">
+                    <tr className="border-b border-zinc-100 dark:border-zinc-800">
+                      <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wide text-zinc-400">Symbol</th>
+                      <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wide text-zinc-400">Exchange</th>
+                      <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wide text-zinc-400">Added</th>
+                      <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wide text-zinc-400">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map(item => {
+                      const sym = item.symbol.replace('.NS', '').replace('.BO', '')
+                      return (
+                        <tr key={item.symbol} className="border-b border-zinc-50 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/40">
+                          <td className="px-4 py-3">
+                            <span className="font-semibold text-zinc-900 dark:text-zinc-50">{sym}</span>
+                          </td>
+                          <td className="px-4 py-3 text-xs text-zinc-500">{item.exchange}</td>
+                          <td className="px-4 py-3 text-xs text-zinc-400">
+                            {item.added_at ? new Date(item.added_at).toLocaleDateString('en-IN') : '—'}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex gap-3">
+                              <Link href={`/forecast?symbol=${sym}`}
+                                className="text-[10px] font-semibold text-indigo-500 hover:text-indigo-700">
+                                Forecast →
+                              </Link>
+                              <Link href={`/paper?symbol=${item.symbol}&signal=BUY`}
+                                className="text-[10px] font-semibold text-emerald-600 hover:text-emerald-800 dark:text-emerald-400">
+                                Trade →
+                              </Link>
+                              <button
+                                onClick={() => handleRemove(item.symbol)}
+                                className="text-[10px] font-semibold text-red-400 hover:text-red-600"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+                <div className="px-4 py-2 text-[11px] text-zinc-400 border-t border-zinc-100 dark:border-zinc-800">
+                  {items.length} stocks
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </main>
+    </div>
+  )
+}
+
 // ── Main view ─────────────────────────────────────────────────────────────────
 
 export function ScannerView() {
   const router = useRouter()
   const tokenRef = useRef('')
 
-  const [catalog, setCatalog]   = useState<ScanCatalogItem[]>([])
-  const [activeScan, setActive] = useState<string>('')
-  const [response, setResponse] = useState<ScanResponse | null>(null)
-  const [loading, setLoading]   = useState(false)
-  const [elapsed, setElapsed]   = useState(0)
+  const [tab, setTab]            = useState<'scanner' | 'watchlists'>('scanner')
+  const [catalog, setCatalog]    = useState<ScanCatalogItem[]>([])
+  const [activeScan, setActive]  = useState<string>('')
+  const [response, setResponse]  = useState<ScanResponse | null>(null)
+  const [loading, setLoading]    = useState(false)
+  const [elapsed, setElapsed]    = useState(0)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
@@ -369,51 +541,64 @@ export function ScannerView() {
 
   const activeMeta = catalog.find(c => c.id === activeScan)
 
+  const TAB_CLS = (t: typeof tab) =>
+    `px-4 py-2 text-xs font-semibold border-b-2 transition-colors ${
+      tab === t
+        ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 dark:border-indigo-400'
+        : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'
+    }`
+
   return (
     <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-zinc-950">
       <NavBar active="Markets" />
 
       {/* Top bar */}
-      <div className="shrink-0 border-b border-zinc-200 bg-white px-6 py-3 dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="flex items-center justify-between">
+      <div className="shrink-0 border-b border-zinc-200 bg-white px-6 dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="flex items-center justify-between py-3">
           <div>
             <h1 className="text-sm font-bold text-zinc-900 dark:text-zinc-50">Market Scanner</h1>
             <p className="text-[11px] text-zinc-400">
-              Technical scans across {' '}
-              <span className="font-semibold text-zinc-600 dark:text-zinc-300">
-                Nifty 50 + Next 50
-              </span>
+              Technical scans across{' '}
+              <span className="font-semibold text-zinc-600 dark:text-zinc-300">Nifty 50 + Next 50</span>
               {' '}universe · Powered by yfinance · Data may lag by 1 day
             </p>
           </div>
-          {activeMeta && !loading && response && (
+          {tab === 'scanner' && activeMeta && !loading && response && (
             <button onClick={() => runScan(activeScan)}
               className="rounded-lg border border-indigo-300 px-3 py-1.5 text-xs font-semibold text-indigo-600 hover:bg-indigo-50 dark:border-indigo-700 dark:text-indigo-400 dark:hover:bg-indigo-950/30">
               ↺ Refresh
             </button>
           )}
         </div>
+        {/* Tabs */}
+        <div className="flex gap-1 -mb-px">
+          <button className={TAB_CLS('scanner')} onClick={() => setTab('scanner')}>Scanner</button>
+          <button className={TAB_CLS('watchlists')} onClick={() => setTab('watchlists')}>Watchlists</button>
+        </div>
       </div>
 
       {/* Body */}
       <div className="flex min-h-0 flex-1">
-        {catalog.length > 0 && (
-          <Sidebar catalog={catalog} active={activeScan} onSelect={runScan} />
+        {tab === 'scanner' ? (
+          <>
+            {catalog.length > 0 ? (
+              <Sidebar catalog={catalog} active={activeScan} onSelect={runScan} />
+            ) : (
+              <aside className="w-60 shrink-0 border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+                <div className="p-4 space-y-2">
+                  {Array.from({ length: 12 }).map((_, i) => (
+                    <div key={i} className="h-7 animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" />
+                  ))}
+                </div>
+              </aside>
+            )}
+            <main className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white dark:bg-zinc-900">
+              <ResultsPanel response={response} loading={loading} elapsed={elapsed} />
+            </main>
+          </>
+        ) : (
+          <WatchlistsPanel token={tokenRef.current} />
         )}
-
-        {catalog.length === 0 && (
-          <aside className="w-60 shrink-0 border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-            <div className="p-4 space-y-2">
-              {Array.from({ length: 12 }).map((_, i) => (
-                <div key={i} className="h-7 animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" />
-              ))}
-            </div>
-          </aside>
-        )}
-
-        <main className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white dark:bg-zinc-900">
-          <ResultsPanel response={response} loading={loading} elapsed={elapsed} />
-        </main>
       </div>
     </div>
   )

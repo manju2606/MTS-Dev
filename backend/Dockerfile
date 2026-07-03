@@ -8,8 +8,8 @@ RUN pip install --no-cache-dir -e ".[dev]"
 COPY . .
 CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"]
 
-# Prod: lean image, no dev tools, 2 workers
+# Prod: lean image, no dev tools, 1 worker (K8s memory limit is 512Mi)
 FROM base AS prod
 RUN pip install --no-cache-dir -e "."
 COPY . .
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2"]
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1"]

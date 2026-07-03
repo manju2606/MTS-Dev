@@ -323,12 +323,24 @@ function EconomicEventsCard({ events }: { events: EconomicEvent[] }) {
 
 // ── Stat card ─────────────────────────────────────────────────────────────────
 
-function StatCard({ label, value, sub, accent }: { label: string; value: string | number; sub?: string; accent?: string }) {
-  return (
-    <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+function StatCard({ label, value, sub, accent, href }: { label: string; value: string | number; sub?: string; accent?: string; href?: string }) {
+  const inner = (
+    <>
       <p className="text-xs text-zinc-400">{label}</p>
       <p className={`mt-1 text-2xl font-bold ${accent ?? 'text-zinc-900 dark:text-zinc-50'}`}>{value}</p>
       {sub && <p className="mt-0.5 text-[11px] text-zinc-400">{sub}</p>}
+    </>
+  )
+  if (href) {
+    return (
+      <Link href={href} className="block rounded-xl border border-zinc-200 bg-white p-4 transition-colors hover:border-indigo-300 hover:bg-indigo-50/40 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-indigo-700 dark:hover:bg-indigo-950/20">
+        {inner}
+      </Link>
+    )
+  }
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+      {inner}
     </div>
   )
 }
@@ -703,7 +715,8 @@ export default function DashboardView() {
             accent="text-indigo-600 dark:text-indigo-400" />
           <StatCard label="Open Positions" value={trades.length}
             sub="paper trades"
-            accent={trades.length > 0 ? 'text-emerald-600 dark:text-emerald-400' : undefined} />
+            accent={trades.length > 0 ? 'text-emerald-600 dark:text-emerald-400' : undefined}
+            href="/paper" />
           <StatCard label="Active Alerts" value={alerts.length}
             sub="price alerts"
             accent={alerts.length > 0 ? 'text-amber-600 dark:text-amber-400' : undefined} />

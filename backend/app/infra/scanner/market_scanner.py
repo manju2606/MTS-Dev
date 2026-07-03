@@ -46,7 +46,7 @@ UNIVERSE = NIFTY_50 + NIFTY_NEXT_50_SAMPLE
 
 SCAN_CATALOG: list[dict] = [
     # Volume & Breakout
-    {"id": "high_volume_breakout", "name": "High Volume Breakout",       "category": "Volume & Breakout", "available": True,  "desc": "Volume > 2× average with positive price move"},
+    {"id": "high_volume_breakout", "name": "High Volume Breakout",       "category": "Volume & Breakout", "available": True,  "desc": "Volume > 1.5× average with positive price move"},
     {"id": "price_breakout",       "name": "Price Breakout",             "category": "Volume & Breakout", "available": True,  "desc": "Price within 2% of 52-week high"},
     {"id": "vwap_breakout",        "name": "VWAP Breakout",              "category": "Volume & Breakout", "available": True,  "desc": "Close above intraday VWAP approximation"},
     # Price Action
@@ -271,7 +271,7 @@ def _apply_filter(rows: list[dict], scan_id: str, nifty_ret20: float) -> list[di
         d = dict(d)  # shallow copy so we can mutate
         match scan_id:
             case "high_volume_breakout":
-                if d["vol_ratio"] >= 2.0 and d["change_pct"] > 0:
+                if d["vol_ratio"] >= 1.5 and d["change_pct"] > 0:
                     d["key_metric"] = f"Vol {d['vol_ratio']:.1f}× avg"
                     d["signal"] = "BUY"
                     out.append(d)

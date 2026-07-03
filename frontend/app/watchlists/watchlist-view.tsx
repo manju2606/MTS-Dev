@@ -276,7 +276,10 @@ function WatchlistsPanel({ token }: { token: string }) {
               <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
                 <div className="h-10 w-10 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
                 <p className="text-sm text-zinc-500">Fetching market data for {items.length} stocks…</p>
-                <p className="text-xs text-zinc-400">First load takes ~15 seconds for large watchlists</p>
+                <p className="text-xs text-zinc-400">
+                  First load downloads 1 year of data from yfinance — takes 30–90s for large watchlists.
+                  Subsequent loads are instant (5-min cache).
+                </p>
               </div>
             ) : (
               <div className="flex-1 overflow-auto">

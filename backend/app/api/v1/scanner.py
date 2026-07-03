@@ -171,7 +171,31 @@ async def get_quote(
 @router.get("/watchlists")
 async def list_watchlists(current_user: CurrentUser, repo: WatchlistDep) -> list[dict]:
     wls = await repo.list_watchlists(current_user.id)
+
+    # Collect all symbols while the DB session is still open, then warm the
+    # per-symbol quote cache in a background task so the first /quotes call
+    # hits cache rather than blocking on a live yfinance download.
+    all_symbols: list[str] = []
+    for wl in wls:
+        try:
+            items = await repo.list_items(wl.id, current_user.id)
+            all_symbols.extend(i.symbol for i in items)
+        except Exception:
+            pass
+    unique = list(dict.fromkeys(all_symbols))  # deduplicate, preserve order
+    if unique:
+        asyncio.create_task(_prewarm_quote_cache(unique))
+
     return [asdict(wl) for wl in wls]
+
+
+async def _prewarm_quote_cache(symbols: list[str]) -> None:
+    """Background task: populate per-symbol quote cache for all watchlist symbols."""
+    from app.infra.market.enriched_quote import fetch_enriched_quotes
+    try:
+        await fetch_enriched_quotes(symbols)
+    except Exception:
+        pass
 
 
 @router.post("/watchlists", status_code=status.HTTP_201_CREATED, dependencies=[_trader_or_admin])

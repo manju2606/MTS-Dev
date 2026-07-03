@@ -250,8 +250,9 @@ def _bb(closes, period: int = 20) -> tuple[float, float, float]:
 
 # ── Batch fetch ───────────────────────────────────────────────────────────────
 
-_cache: dict[str, tuple[float, list[dict]]] = {}
-_TTL = 60.0
+# Per-symbol cache: key → (fetched_at, result_dict)
+_symbol_cache: dict[str, tuple[float, dict]] = {}
+_TTL = 300.0  # 5 minutes — enough for one trading session refresh cycle
 
 
 def _fetch_sync(symbols: list[str]) -> list[dict]:
@@ -383,16 +384,33 @@ def _fetch_sync(symbols: list[str]) -> list[dict]:
 
 
 async def fetch_enriched_quotes(symbols: list[str]) -> list[dict]:
-    """Async wrapper around the blocking yfinance fetch, with 60s cache."""
+    """Return enriched quotes for symbols, per-symbol cached for 5 minutes.
+
+    Cached symbols are returned instantly; only stale/missing ones are
+    batch-downloaded from yfinance in one call, minimising network round-trips
+    and allowing cross-watchlist symbol reuse.
+    """
     if not symbols:
         return []
-    key = ",".join(sorted(symbols))
+
     now = time.monotonic()
-    if key in _cache:
-        ts, data = _cache[key]
-        if now - ts < _TTL:
-            return data
-    loop = asyncio.get_running_loop()
-    data = await loop.run_in_executor(None, _fetch_sync, symbols)
-    _cache[key] = (now, data)
-    return data
+    result_map: dict[str, dict] = {}
+    missing: list[str] = []
+
+    for sym in symbols:
+        entry = _symbol_cache.get(sym)
+        if entry and (now - entry[0]) < _TTL:
+            result_map[sym] = entry[1]
+        else:
+            missing.append(sym)
+
+    if missing:
+        loop = asyncio.get_running_loop()
+        fresh = await loop.run_in_executor(None, _fetch_sync, missing)
+        for item in fresh:
+            sym = item["symbol"]
+            result_map[sym] = item
+            if not item.get("error"):
+                _symbol_cache[sym] = (now, item)
+
+    return [result_map.get(s, {"symbol": s, "error": "Not found"}) for s in symbols]

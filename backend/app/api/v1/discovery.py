@@ -1,5 +1,6 @@
 """Discovery engine API — top picks, news, stock history, status, manual scan."""
 
+import time
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
@@ -19,6 +20,10 @@ from app.infra.scanner.universe import SYMBOL_SECTOR
 router = APIRouter(prefix="/discovery", tags=["discovery"])
 
 _VALID_SIGNALS = {"STRONG_BUY", "BUY", "WATCH", "NEUTRAL", "SELL", "STRONG_SELL"}
+
+# In-memory cache for top-picks (key → (result, expiry_ts))
+_picks_cache: dict[str, tuple[list[dict], float]] = {}
+_PICKS_TTL = 60.0  # seconds
 
 
 def _serialize_score(s: StockScore) -> dict:
@@ -45,6 +50,11 @@ def _serialize_score(s: StockScore) -> dict:
     }
 
 
+def invalidate_picks_cache() -> None:
+    """Call this after a scan completes so the next request re-fetches from DB."""
+    _picks_cache.clear()
+
+
 @router.get("/top-picks")
 async def top_picks(
     current_user: CurrentUser,
@@ -57,13 +67,21 @@ async def top_picks(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"signal must be one of {sorted(_VALID_SIGNALS)} or BUY/SELL",
         )
+    cache_key = f"{limit}:{signal}:{min_score}"
+    cached, expiry = _picks_cache.get(cache_key, (None, 0.0))
+    if cached is not None and time.monotonic() < expiry:
+        return cached
+
     repo = DiscoveryRepository()
     picks = await repo.get_top_picks(
         limit=limit,
         signal_filter=signal,
         min_score=min_score,
     )
-    return [_serialize_score(s) for s in picks]
+    result = [_serialize_score(s) for s in picks]
+    if result:
+        _picks_cache[cache_key] = (result, time.monotonic() + _PICKS_TTL)
+    return result
 
 
 @router.get("/scores/{symbol}")

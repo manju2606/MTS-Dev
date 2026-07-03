@@ -141,6 +141,8 @@ async def run_full_scan() -> None:
         _last_scan_at = datetime.now(timezone.utc).replace(tzinfo=None)
         _last_scan_count = len(valid)
         log.info("scheduler.scan.done", scored=len(valid), skipped=len(NSE_UNIVERSE) - len(valid))
+        from app.api.v1.discovery import invalidate_picks_cache
+        invalidate_picks_cache()
     except Exception as exc:
         log.error("scheduler.scan.error", error=str(exc))
     finally:

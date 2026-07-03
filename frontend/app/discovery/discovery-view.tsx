@@ -147,6 +147,7 @@ function ExpandedRow({ s, onClose }: { s: StockScore; onClose: () => void }) {
 export default function DiscoveryView() {
   const router = useRouter()
   const tokenRef = useRef('')
+  const hasPicksRef = useRef(false)
   const [user, setUser] = useState<User | null>(null)
   const [status, setStatus] = useState<DiscoveryStatus | null>(null)
   // null = not yet loaded (show skeleton); [] = loaded but empty
@@ -167,15 +168,16 @@ export default function DiscoveryView() {
     if (!t) { router.replace('/login'); return }
     tokenRef.current = t
 
-    const cached = localStorage.getItem('mts_discovery_cache')
-    if (cached) {
-      try {
-        const c = JSON.parse(cached)
-        if (c.picks) setPicks(c.picks)
+    // Show cached data immediately so the page is never blank
+    try {
+      const raw = localStorage.getItem('mts_discovery_cache')
+      if (raw) {
+        const c = JSON.parse(raw)
+        if (c.picks?.length) { setPicks(c.picks); hasPicksRef.current = true }
         if (c.status) setStatus(c.status)
         if (c.user) setUser(c.user)
-      } catch { /* ignore */ }
-    }
+      }
+    } catch { /* ignore */ }
 
     async function load() {
       try {
@@ -184,9 +186,17 @@ export default function DiscoveryView() {
           getTopPicks(t!, 50, undefined, 0),
           getDiscoveryStatus(t!),
         ])
-        setUser(u); setPicks(p); setStatus(s)
-        localStorage.setItem('mts_discovery_cache', JSON.stringify({ user: u, picks: p, status: s }))
-      } catch { setError('Failed to load. Run a scan first.') }
+        setUser(u)
+        setStatus(s)
+        // Only replace picks if backend returned data; otherwise keep showing cache
+        if (p.length > 0) {
+          setPicks(p)
+          hasPicksRef.current = true
+          localStorage.setItem('mts_discovery_cache', JSON.stringify({ user: u, picks: p, status: s }))
+        } else if (!hasPicksRef.current) {
+          setPicks([])
+        }
+      } catch { if (!hasPicksRef.current) setError('Failed to load. Run a scan first.') }
     }
 
     load()

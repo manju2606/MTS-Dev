@@ -36,6 +36,27 @@ function MaDot({ above }: { above: boolean | null }) {
   return <span className={above ? 'text-emerald-500' : 'text-red-500'}>{above ? '▲' : '▼'}</span>
 }
 
+const AVATAR_COLORS = [
+  'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300',
+  'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300',
+  'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300',
+  'bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-300',
+  'bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300',
+  'bg-sky-100 text-sky-700 dark:bg-sky-900/50 dark:text-sky-300',
+  'bg-teal-100 text-teal-700 dark:bg-teal-900/50 dark:text-teal-300',
+  'bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300',
+]
+
+function SymbolAvatar({ symbol }: { symbol: string }) {
+  const letters = symbol.replace('.NS', '').replace('.BO', '').slice(0, 2).toUpperCase()
+  const idx = letters.charCodeAt(0) % AVATAR_COLORS.length
+  return (
+    <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold ${AVATAR_COLORS[idx]}`}>
+      {letters}
+    </span>
+  )
+}
+
 function WatchlistsPanel({ token }: { token: string }) {
   const [watchlists, setWatchlists]   = useState<Watchlist[]>([])
   const [activeWl, setActiveWl]       = useState<string | null>(null)
@@ -342,7 +363,12 @@ function WatchlistsPanel({ token }: { token: string }) {
                       return (
                         <tr key={item.symbol}
                           className="border-b border-zinc-50 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/40">
-                          <td className="px-3 py-2 font-semibold text-zinc-900 dark:text-zinc-50 whitespace-nowrap">{sym}</td>
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            <div className="flex items-center gap-2">
+                              <SymbolAvatar symbol={item.symbol} />
+                              <span className="font-semibold text-zinc-900 dark:text-zinc-50">{sym}</span>
+                            </div>
+                          </td>
                           <td className="px-3 py-2 max-w-[140px] truncate text-zinc-600 dark:text-zinc-300 whitespace-nowrap" title={q?.company_name ?? sym}>
                             {q?.company_name ?? '—'}
                           </td>

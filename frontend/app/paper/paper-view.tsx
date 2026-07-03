@@ -698,14 +698,18 @@ export default function PaperView() {
 
                     {/* Detail grid */}
                     <div className="mt-4 grid grid-cols-3 gap-x-4 gap-y-2 border-t border-zinc-100 pt-3 text-xs dark:border-zinc-800 sm:grid-cols-6">
-                      {[
-                        { label: 'Entry', value: `₹${trade.entry_price.toFixed(2)}` },
-                        { label: 'Current', value: current !== undefined ? `₹${current.toFixed(2)}` : '—', highlight: up },
-                        { label: 'Stop Loss', value: `₹${trade.stop_loss.toFixed(2)}`, red: true },
-                        { label: 'Target', value: `₹${trade.target.toFixed(2)}`, green: true },
-                        { label: 'Qty', value: trade.quantity },
-                        { label: 'R:R', value: trade.risk_reward_ratio.toFixed(2) },
-                      ].map(({ label, value, highlight, red, green }) => (
+                      {(() => {
+                        const slPct = ((trade.stop_loss - trade.entry_price) / trade.entry_price * 100)
+                        const tgtPct = ((trade.target - trade.entry_price) / trade.entry_price * 100)
+                        return [
+                          { label: 'Entry', value: `₹${trade.entry_price.toFixed(2)}` },
+                          { label: 'Current', value: current !== undefined ? `₹${current.toFixed(2)}` : '—', highlight: up },
+                          { label: 'Stop Loss', value: `₹${trade.stop_loss.toFixed(2)}`, sub: `${slPct.toFixed(1)}%`, red: true },
+                          { label: 'Target', value: `₹${trade.target.toFixed(2)}`, sub: `+${tgtPct.toFixed(1)}%`, green: true },
+                          { label: 'Qty', value: trade.quantity },
+                          { label: 'R:R', value: trade.risk_reward_ratio.toFixed(2) },
+                        ]
+                      })().map(({ label, value, sub, highlight, red, green }) => (
                         <div key={label}>
                           <p className="text-zinc-400">{label}</p>
                           <p className={`font-semibold font-mono ${
@@ -715,6 +719,9 @@ export default function PaperView() {
                             highlight === false ? 'text-red-500 dark:text-red-400' :
                             'text-zinc-800 dark:text-zinc-200'
                           }`}>{value}</p>
+                          {sub && (
+                            <p className={`text-[10px] font-mono ${red ? 'text-red-400' : 'text-emerald-500'}`}>{sub}</p>
+                          )}
                         </div>
                       ))}
                     </div>

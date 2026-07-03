@@ -241,6 +241,23 @@ async def list_watchlist_items(
     return [asdict(item) for item in items]
 
 
+@router.get("/watchlists/{watchlist_id}/quotes")
+async def get_watchlist_quotes(
+    watchlist_id: UUID, current_user: CurrentUser, repo: WatchlistDep
+) -> list[dict]:
+    """Return enriched market data for all symbols in a watchlist (cached 60s)."""
+    from app.infra.market.enriched_quote import fetch_enriched_quotes
+
+    wl = await repo.get_watchlist(watchlist_id, current_user.id)
+    if not wl:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Watchlist not found")
+    items = await repo.list_items(watchlist_id, current_user.id)
+    symbols = [item.symbol for item in items]
+    if not symbols:
+        return []
+    return await fetch_enriched_quotes(symbols)
+
+
 @router.post(
     "/watchlists/{watchlist_id}/items",
     status_code=status.HTTP_201_CREATED,

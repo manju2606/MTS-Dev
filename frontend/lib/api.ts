@@ -331,6 +331,60 @@ export async function deleteWatchlist(token: string, id: string): Promise<void> 
   }
 }
 
+export type WatchlistQuote = {
+  symbol: string
+  display_symbol: string
+  company_name: string
+  exchange: string
+  sector: string
+  market_cap_category: string
+  index_membership: string[]
+  // Price action
+  ltp: number
+  prev_close: number
+  change: number
+  change_pct: number
+  open: number
+  day_high: number
+  day_low: number
+  vwap: number
+  atp: number
+  // Volume
+  volume: number
+  avg_volume: number
+  vol_ratio: number
+  // 52W
+  week52_high: number
+  week52_low: number
+  pct_from_52w_high: number
+  pct_from_52w_low: number
+  // Trend / MA
+  sma20: number
+  sma50: number
+  sma200: number
+  above_sma20: boolean | null
+  above_sma50: boolean | null
+  above_sma200: boolean | null
+  trend: 'BULLISH' | 'BEARISH' | 'MIXED'
+  // Technical
+  rsi: number
+  macd: number
+  macd_signal: number
+  macd_hist: number
+  bb_upper: number
+  bb_mid: number
+  bb_lower: number
+  error: string | null
+}
+
+export async function getWatchlistQuotes(token: string, watchlistId: string): Promise<WatchlistQuote[]> {
+  const res = await fetch(`${BASE}/api/v1/scanner/watchlists/${watchlistId}/quotes`, {
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error('Failed to fetch watchlist quotes')
+  return res.json()
+}
+
 export async function getWatchlistItems(token: string, watchlistId: string): Promise<WatchlistItem[]> {
   const res = await fetch(`${BASE}/api/v1/scanner/watchlists/${watchlistId}/items`, {
     headers: authHeaders(token),

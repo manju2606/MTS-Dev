@@ -7,10 +7,10 @@ import { NavBar } from '@/components/nav-bar'
 import {
   getScanCatalog, runMarketScan,
   listWatchlists, createWatchlist, deleteWatchlist,
-  getWatchlistItems, addItemToWatchlist, removeFromWatchlist,
-  searchStocks,
+  getWatchlistItems, addItemToWatchlist, removeItemFromWatchlist,
+  searchStocks, getWatchlistQuotes,
 } from '@/lib/api'
-import type { ScanCatalogItem, ScanResponse, ScanResultItem, Watchlist, WatchlistItem, StockSearchResult } from '@/lib/api'
+import type { ScanCatalogItem, ScanResponse, ScanResultItem, Watchlist, WatchlistItem, StockSearchResult, WatchlistQuote } from '@/lib/api'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -285,17 +285,35 @@ function ResultRow({ r }: { r: ScanResultItem }) {
 
 // ── Watchlists panel ──────────────────────────────────────────────────────────
 
+const TREND_CLS: Record<string, string> = {
+  BULLISH: 'text-emerald-600 dark:text-emerald-400',
+  BEARISH: 'text-red-500 dark:text-red-400',
+  MIXED:   'text-amber-500 dark:text-amber-400',
+}
+
+function MaDot({ above }: { above: boolean | null }) {
+  if (above === null) return <span className="text-zinc-300">·</span>
+  return <span className={above ? 'text-emerald-500' : 'text-red-500'}>{above ? '▲' : '▼'}</span>
+}
+
+function fmtINR(n: number) {
+  return `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
 function WatchlistsPanel({ token }: { token: string }) {
   const [watchlists, setWatchlists]   = useState<Watchlist[]>([])
   const [activeWl, setActiveWl]       = useState<string | null>(null)
   const [items, setItems]             = useState<WatchlistItem[]>([])
+  const [quotes, setQuotes]           = useState<WatchlistQuote[]>([])
+  const [quotesLoading, setQLoading]  = useState(false)
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [newName, setNewName]         = useState('')
   const [query, setQuery]             = useState('')
   const [suggestions, setSuggestions] = useState<StockSearchResult[]>([])
   const [selectedSymbol, setSelectedSymbol] = useState('')
   const [creating, setCreating]       = useState(false)
   const [adding, setAdding]           = useState(false)
-  const [error, setError]             = useState('')
+  const [addError, setAddError]       = useState('')
   const [loading, setLoading]         = useState(true)
   const searchRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -309,8 +327,29 @@ function WatchlistsPanel({ token }: { token: string }) {
 
   useEffect(() => {
     if (!activeWl) return
+    setQuotes([])
     getWatchlistItems(token, activeWl).then(setItems)
   }, [token, activeWl])
+
+  useEffect(() => {
+    if (!activeWl || items.length === 0) return
+    loadQuotes()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items])
+
+  async function loadQuotes() {
+    if (!activeWl) return
+    setQLoading(true)
+    try {
+      const q = await getWatchlistQuotes(token, activeWl)
+      setQuotes(q)
+      setLastUpdated(new Date())
+    } catch {
+      // ignore, keep previous quotes
+    } finally {
+      setQLoading(false)
+    }
+  }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
@@ -347,14 +386,14 @@ function WatchlistsPanel({ token }: { token: string }) {
     const sym = selectedSymbol || query.trim().toUpperCase()
     if (!sym || !activeWl) return
     setAdding(true)
-    setError('')
+    setAddError('')
     try {
       const item = await addItemToWatchlist(token, activeWl, sym)
       setItems(prev => [...prev, item])
       setQuery('')
       setSelectedSymbol('')
     } catch {
-      setError('Symbol not found or already in watchlist')
+      setAddError('Symbol not found or already in watchlist')
     } finally {
       setAdding(false)
     }
@@ -362,8 +401,9 @@ function WatchlistsPanel({ token }: { token: string }) {
 
   async function handleRemove(symbol: string) {
     if (!activeWl) return
-    await removeFromWatchlist(token, symbol)
+    await removeItemFromWatchlist(token, activeWl, symbol)
     setItems(prev => prev.filter(i => i.symbol !== symbol))
+    setQuotes(prev => prev.filter(q => q.symbol !== symbol))
   }
 
   async function handleDeleteWl(id: string) {
@@ -377,10 +417,13 @@ function WatchlistsPanel({ token }: { token: string }) {
     return <div className="flex flex-1 items-center justify-center text-sm text-zinc-400">Loading watchlists…</div>
   }
 
+  // Map symbol → quote for quick lookup
+  const quoteMap = new Map(quotes.map(q => [q.symbol, q]))
+
   return (
     <div className="flex flex-1 overflow-hidden">
-      {/* Watchlist list sidebar */}
-      <aside className="w-56 shrink-0 overflow-y-auto border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+      {/* Sidebar */}
+      <aside className="w-52 shrink-0 overflow-y-auto border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         <div className="p-3">
           <p className="mb-2 px-2 text-[10px] font-bold uppercase tracking-widest text-zinc-400">My Watchlists</p>
           {watchlists.length === 0 && (
@@ -400,13 +443,9 @@ function WatchlistsPanel({ token }: { token: string }) {
                 onClick={e => { e.stopPropagation(); handleDeleteWl(wl.id.toString()) }}
                 className="ml-1 shrink-0 opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-red-500"
                 title="Delete watchlist"
-              >
-                ×
-              </button>
+              >×</button>
             </div>
           ))}
-
-          {/* Create watchlist */}
           <form onSubmit={handleCreate} className="mt-3 flex gap-1">
             <input
               value={newName}
@@ -414,26 +453,19 @@ function WatchlistsPanel({ token }: { token: string }) {
               placeholder="New watchlist…"
               className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-xs text-zinc-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
             />
-            <button
-              type="submit"
-              disabled={creating || !newName.trim()}
-              className="rounded-lg bg-indigo-600 px-2 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
-            >
-              +
-            </button>
+            <button type="submit" disabled={creating || !newName.trim()}
+              className="rounded-lg bg-indigo-600 px-2 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">+</button>
           </form>
         </div>
       </aside>
 
-      {/* Watchlist items */}
+      {/* Main content */}
       <main className="flex flex-1 flex-col overflow-hidden bg-white dark:bg-zinc-900">
         {!activeWl ? (
-          <div className="flex flex-1 items-center justify-center text-sm text-zinc-400">
-            Create a watchlist to get started
-          </div>
+          <div className="flex flex-1 items-center justify-center text-sm text-zinc-400">Create a watchlist to get started</div>
         ) : (
           <>
-            {/* Add symbol bar */}
+            {/* Toolbar */}
             <div className="shrink-0 border-b border-zinc-100 bg-zinc-50 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950">
               <form onSubmit={handleAdd} className="relative flex items-center gap-2">
                 <div className="relative min-w-0 flex-1">
@@ -448,65 +480,274 @@ function WatchlistsPanel({ token }: { token: string }) {
                     <ul className="absolute left-0 top-full z-50 mt-1 w-full rounded-lg border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
                       {suggestions.map(r => (
                         <li key={r.symbol}>
-                          <button
-                            type="button"
-                            onClick={() => handleSelect(r)}
-                            className="flex w-full items-center justify-between px-3 py-2 text-left text-xs hover:bg-indigo-50 dark:hover:bg-indigo-950/40"
-                          >
+                          <button type="button" onClick={() => handleSelect(r)}
+                            className="flex w-full items-center justify-between px-3 py-2 text-left text-xs hover:bg-indigo-50 dark:hover:bg-indigo-950/40">
                             <span className="font-semibold text-zinc-900 dark:text-zinc-100">
                               {r.symbol.replace('.NS','').replace('.BO','')}
                             </span>
                             <span className="ml-2 truncate text-zinc-400">{r.name}</span>
-                            <span className="ml-2 shrink-0 rounded bg-zinc-100 px-1.5 py-0.5 text-[9px] text-zinc-500 dark:bg-zinc-800">
-                              {r.exchange}
-                            </span>
+                            <span className="ml-2 shrink-0 rounded bg-zinc-100 px-1.5 py-0.5 text-[9px] text-zinc-500 dark:bg-zinc-800">{r.exchange}</span>
                           </button>
                         </li>
                       ))}
                     </ul>
                   )}
                 </div>
-                <button
-                  type="submit"
-                  disabled={adding || (!selectedSymbol && query.trim().length < 2)}
-                  className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
-                >
+                <button type="submit" disabled={adding || (!selectedSymbol && query.trim().length < 2)}
+                  className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
                   {adding ? 'Adding…' : 'Add'}
                 </button>
-                {error && <span className="text-xs text-red-500">{error}</span>}
+                <button type="button" onClick={loadQuotes} disabled={quotesLoading}
+                  className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-600 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                  {quotesLoading ? 'Refreshing…' : '↻ Refresh'}
+                </button>
+                {addError && <span className="text-xs text-red-500">{addError}</span>}
+                {lastUpdated && !quotesLoading && (
+                  <span className="text-[10px] text-zinc-400">
+                    Updated {lastUpdated.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  </span>
+                )}
               </form>
             </div>
 
-            {/* Items table */}
+            {/* Table */}
             {items.length === 0 ? (
-              <div className="flex flex-1 items-center justify-center text-sm text-zinc-400">
-                No stocks in this watchlist yet
+              <div className="flex flex-1 items-center justify-center text-sm text-zinc-400">No stocks in this watchlist yet</div>
+            ) : quotesLoading && quotes.length === 0 ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
+                <div className="h-10 w-10 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
+                <p className="text-sm text-zinc-500">Fetching market data for {items.length} stocks…</p>
+                <p className="text-xs text-zinc-400">First load takes ~15 seconds for large watchlists</p>
               </div>
             ) : (
               <div className="flex-1 overflow-auto">
-                <table className="w-full border-collapse text-sm">
-                  <thead className="sticky top-0 bg-zinc-50 dark:bg-zinc-900">
-                    <tr className="border-b border-zinc-100 dark:border-zinc-800">
-                      <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wide text-zinc-400">Symbol</th>
-                      <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wide text-zinc-400">Exchange</th>
-                      <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wide text-zinc-400">Added</th>
-                      <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wide text-zinc-400">Actions</th>
+                <table className="min-w-max border-collapse text-[11px]">
+                  <thead className="sticky top-0 z-10">
+                    {/* Group header row */}
+                    <tr className="bg-zinc-100 dark:bg-zinc-800">
+                      <th colSpan={6} className="border-b border-r border-zinc-200 px-3 py-1 text-left text-[9px] font-bold uppercase tracking-widest text-zinc-500 dark:border-zinc-700">
+                        Identity
+                      </th>
+                      <th colSpan={5} className="border-b border-r border-zinc-200 px-3 py-1 text-left text-[9px] font-bold uppercase tracking-widest text-indigo-500">
+                        Price Action
+                      </th>
+                      <th colSpan={4} className="border-b border-r border-zinc-200 px-3 py-1 text-left text-[9px] font-bold uppercase tracking-widest text-blue-500">
+                        Intraday
+                      </th>
+                      <th colSpan={3} className="border-b border-r border-zinc-200 px-3 py-1 text-left text-[9px] font-bold uppercase tracking-widest text-violet-500">
+                        Volume Analysis
+                      </th>
+                      <th colSpan={4} className="border-b border-r border-zinc-200 px-3 py-1 text-left text-[9px] font-bold uppercase tracking-widest text-amber-500">
+                        52-Week Range
+                      </th>
+                      <th colSpan={4} className="border-b border-r border-zinc-200 px-3 py-1 text-left text-[9px] font-bold uppercase tracking-widest text-emerald-600">
+                        Trend Analysis
+                      </th>
+                      <th colSpan={4} className="border-b border-r border-zinc-200 px-3 py-1 text-left text-[9px] font-bold uppercase tracking-widest text-rose-500">
+                        Technical Indicators
+                      </th>
+                      <th className="border-b border-zinc-200 px-3 py-1 text-[9px] font-bold uppercase tracking-widest text-zinc-400">Actions</th>
+                    </tr>
+                    {/* Column header row */}
+                    <tr className="bg-zinc-50 dark:bg-zinc-900">
+                      {/* Identity */}
+                      <th className="border-b border-zinc-200 px-3 py-2 text-left font-bold text-zinc-500 dark:border-zinc-700 whitespace-nowrap">Symbol</th>
+                      <th className="border-b border-zinc-200 px-3 py-2 text-left font-bold text-zinc-500 whitespace-nowrap">Company</th>
+                      <th className="border-b border-zinc-200 px-3 py-2 text-left font-bold text-zinc-500 whitespace-nowrap">Exch</th>
+                      <th className="border-b border-zinc-200 px-3 py-2 text-left font-bold text-zinc-500 whitespace-nowrap">Sector</th>
+                      <th className="border-b border-zinc-200 px-3 py-2 text-left font-bold text-zinc-500 whitespace-nowrap">Cap</th>
+                      <th className="border-b border-r border-zinc-200 px-3 py-2 text-left font-bold text-zinc-500 whitespace-nowrap">Index</th>
+                      {/* Price action */}
+                      <th className="border-b border-zinc-200 px-3 py-2 text-right font-bold text-zinc-500 whitespace-nowrap">LTP</th>
+                      <th className="border-b border-zinc-200 px-3 py-2 text-right font-bold text-zinc-500 whitespace-nowrap">Prev Close</th>
+                      <th className="border-b border-zinc-200 px-3 py-2 text-right font-bold text-zinc-500 whitespace-nowrap">Chg ₹</th>
+                      <th className="border-b border-zinc-200 px-3 py-2 text-right font-bold text-zinc-500 whitespace-nowrap">Chg %</th>
+                      <th className="border-b border-r border-zinc-200 px-3 py-2 text-right font-bold text-zinc-500 whitespace-nowrap">Open</th>
+                      {/* Intraday */}
+                      <th className="border-b border-zinc-200 px-3 py-2 text-right font-bold text-zinc-500 whitespace-nowrap">Day High</th>
+                      <th className="border-b border-zinc-200 px-3 py-2 text-right font-bold text-zinc-500 whitespace-nowrap">Day Low</th>
+                      <th className="border-b border-zinc-200 px-3 py-2 text-right font-bold text-zinc-500 whitespace-nowrap">VWAP</th>
+                      <th className="border-b border-r border-zinc-200 px-3 py-2 text-right font-bold text-zinc-500 whitespace-nowrap">ATP</th>
+                      {/* Volume */}
+                      <th className="border-b border-zinc-200 px-3 py-2 text-right font-bold text-zinc-500 whitespace-nowrap">Volume</th>
+                      <th className="border-b border-zinc-200 px-3 py-2 text-right font-bold text-zinc-500 whitespace-nowrap">Avg Vol</th>
+                      <th className="border-b border-r border-zinc-200 px-3 py-2 text-right font-bold text-zinc-500 whitespace-nowrap">Vol ×</th>
+                      {/* 52W */}
+                      <th className="border-b border-zinc-200 px-3 py-2 text-right font-bold text-zinc-500 whitespace-nowrap">52W H</th>
+                      <th className="border-b border-zinc-200 px-3 py-2 text-right font-bold text-zinc-500 whitespace-nowrap">52W L</th>
+                      <th className="border-b border-zinc-200 px-3 py-2 text-right font-bold text-zinc-500 whitespace-nowrap">% from H</th>
+                      <th className="border-b border-r border-zinc-200 px-3 py-2 text-right font-bold text-zinc-500 whitespace-nowrap">% from L</th>
+                      {/* Trend */}
+                      <th className="border-b border-zinc-200 px-3 py-2 text-right font-bold text-zinc-500 whitespace-nowrap">SMA20</th>
+                      <th className="border-b border-zinc-200 px-3 py-2 text-right font-bold text-zinc-500 whitespace-nowrap">SMA50</th>
+                      <th className="border-b border-zinc-200 px-3 py-2 text-right font-bold text-zinc-500 whitespace-nowrap">SMA200</th>
+                      <th className="border-b border-r border-zinc-200 px-3 py-2 text-left font-bold text-zinc-500 whitespace-nowrap">Trend</th>
+                      {/* Technical */}
+                      <th className="border-b border-zinc-200 px-3 py-2 text-right font-bold text-zinc-500 whitespace-nowrap">RSI</th>
+                      <th className="border-b border-zinc-200 px-3 py-2 text-right font-bold text-zinc-500 whitespace-nowrap">MACD</th>
+                      <th className="border-b border-zinc-200 px-3 py-2 text-right font-bold text-zinc-500 whitespace-nowrap">Signal</th>
+                      <th className="border-b border-r border-zinc-200 px-3 py-2 text-right font-bold text-zinc-500 whitespace-nowrap">BB%</th>
+                      {/* Actions */}
+                      <th className="border-b border-zinc-200 px-3 py-2 text-left font-bold text-zinc-500 whitespace-nowrap">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {items.map(item => {
+                      const q = quoteMap.get(item.symbol)
                       const sym = item.symbol.replace('.NS', '').replace('.BO', '')
+                      const pos = q ? q.change_pct >= 0 : null
+
+                      // BB% = (LTP - BB_lower) / (BB_upper - BB_lower) * 100
+                      const bbRange = q ? (q.bb_upper - q.bb_lower) : 0
+                      const bbPct = q && bbRange > 0
+                        ? Math.round((q.ltp - q.bb_lower) / bbRange * 100)
+                        : null
+
                       return (
-                        <tr key={item.symbol} className="border-b border-zinc-50 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/40">
-                          <td className="px-4 py-3">
-                            <span className="font-semibold text-zinc-900 dark:text-zinc-50">{sym}</span>
+                        <tr key={item.symbol}
+                          className="border-b border-zinc-50 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/40">
+                          {/* Identity */}
+                          <td className="px-3 py-2 font-semibold text-zinc-900 dark:text-zinc-50 whitespace-nowrap">
+                            {sym}
                           </td>
-                          <td className="px-4 py-3 text-xs text-zinc-500">{item.exchange}</td>
-                          <td className="px-4 py-3 text-xs text-zinc-400">
-                            {item.added_at ? new Date(item.added_at).toLocaleDateString('en-IN') : '—'}
+                          <td className="px-3 py-2 max-w-[140px] truncate text-zinc-600 dark:text-zinc-300 whitespace-nowrap" title={q?.company_name ?? sym}>
+                            {q?.company_name ?? '—'}
                           </td>
-                          <td className="px-4 py-3">
-                            <div className="flex gap-3">
+                          <td className="px-3 py-2 text-zinc-400 whitespace-nowrap">
+                            {q?.exchange ?? item.exchange}
+                          </td>
+                          <td className="px-3 py-2 text-zinc-500 whitespace-nowrap">
+                            {q?.sector ?? '—'}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            {q?.market_cap_category === 'Large' && (
+                              <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[9px] font-semibold text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">Large</span>
+                            )}
+                            {q?.market_cap_category === 'Mid' && (
+                              <span className="rounded bg-violet-50 px-1.5 py-0.5 text-[9px] font-semibold text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">Mid</span>
+                            )}
+                            {q?.market_cap_category === 'Small' && (
+                              <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">Small</span>
+                            )}
+                            {(!q || q.market_cap_category === '—') && <span className="text-zinc-300">—</span>}
+                          </td>
+                          <td className="border-r border-zinc-100 px-3 py-2 dark:border-zinc-800 whitespace-nowrap">
+                            <div className="flex flex-wrap gap-0.5">
+                              {(q?.index_membership ?? ['—']).filter(i => i !== '—').map(idx => (
+                                <span key={idx} className="rounded bg-zinc-100 px-1 py-0.5 text-[8px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                                  {idx.replace('Nifty ', 'N').replace('Next ', 'Nx').replace('Midcap ', 'M').replace('Smallcap ', 'S').replace('Bank ', 'Bk')}
+                                </span>
+                              ))}
+                              {(!q || q.index_membership.every(i => i === '—')) && <span className="text-zinc-300">—</span>}
+                            </div>
+                          </td>
+
+                          {/* Price action */}
+                          {q && !q.error ? (
+                            <>
+                              <td className="px-3 py-2 text-right font-mono font-semibold text-zinc-900 dark:text-zinc-50 whitespace-nowrap">
+                                {fmtINR(q.ltp)}
+                              </td>
+                              <td className="px-3 py-2 text-right font-mono text-zinc-500 whitespace-nowrap">
+                                {fmtINR(q.prev_close)}
+                              </td>
+                              <td className={`px-3 py-2 text-right font-mono font-semibold whitespace-nowrap ${pos ? 'text-emerald-600' : 'text-red-500'}`}>
+                                {q.change >= 0 ? '+' : ''}{fmt(q.change)}
+                              </td>
+                              <td className={`px-3 py-2 text-right font-mono font-semibold whitespace-nowrap ${pos ? 'text-emerald-600' : 'text-red-500'}`}>
+                                {q.change_pct >= 0 ? '+' : ''}{q.change_pct.toFixed(2)}%
+                              </td>
+                              <td className="border-r border-zinc-100 px-3 py-2 text-right font-mono text-zinc-500 dark:border-zinc-800 whitespace-nowrap">
+                                {fmtINR(q.open)}
+                              </td>
+                              {/* Intraday */}
+                              <td className="px-3 py-2 text-right font-mono text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                                {fmtINR(q.day_high)}
+                              </td>
+                              <td className="px-3 py-2 text-right font-mono text-red-500 dark:text-red-400 whitespace-nowrap">
+                                {fmtINR(q.day_low)}
+                              </td>
+                              <td className="px-3 py-2 text-right font-mono text-indigo-600 dark:text-indigo-400 whitespace-nowrap">
+                                {fmtINR(q.vwap)}
+                              </td>
+                              <td className="border-r border-zinc-100 px-3 py-2 text-right font-mono text-zinc-500 dark:border-zinc-800 whitespace-nowrap">
+                                {fmtINR(q.atp)}
+                              </td>
+                              {/* Volume */}
+                              <td className="px-3 py-2 text-right text-zinc-600 dark:text-zinc-300 whitespace-nowrap">
+                                {fmtVol(q.volume)}
+                              </td>
+                              <td className="px-3 py-2 text-right text-zinc-400 whitespace-nowrap">
+                                {fmtVol(q.avg_volume)}
+                              </td>
+                              <td className={`border-r border-zinc-100 px-3 py-2 text-right font-mono font-semibold dark:border-zinc-800 whitespace-nowrap ${
+                                q.vol_ratio >= 2 ? 'text-rose-600' : q.vol_ratio >= 1.5 ? 'text-amber-500' : 'text-zinc-500'
+                              }`}>
+                                {q.vol_ratio.toFixed(2)}×
+                              </td>
+                              {/* 52W */}
+                              <td className="px-3 py-2 text-right font-mono text-zinc-500 whitespace-nowrap">
+                                {fmtINR(q.week52_high)}
+                              </td>
+                              <td className="px-3 py-2 text-right font-mono text-zinc-500 whitespace-nowrap">
+                                {fmtINR(q.week52_low)}
+                              </td>
+                              <td className={`px-3 py-2 text-right font-mono font-semibold whitespace-nowrap ${
+                                q.pct_from_52w_high >= -5 ? 'text-emerald-600' : q.pct_from_52w_high >= -15 ? 'text-amber-500' : 'text-red-500'
+                              }`}>
+                                {q.pct_from_52w_high.toFixed(1)}%
+                              </td>
+                              <td className={`border-r border-zinc-100 px-3 py-2 text-right font-mono font-semibold dark:border-zinc-800 whitespace-nowrap ${
+                                q.pct_from_52w_low >= 50 ? 'text-emerald-600' : 'text-zinc-500'
+                              }`}>
+                                +{q.pct_from_52w_low.toFixed(1)}%
+                              </td>
+                              {/* Trend */}
+                              <td className="px-3 py-2 text-right font-mono text-zinc-500 whitespace-nowrap">
+                                <span title={`SMA20: ${fmtINR(q.sma20)}`}>
+                                  <MaDot above={q.above_sma20} /> {fmtINR(q.sma20)}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 text-right font-mono text-zinc-500 whitespace-nowrap">
+                                <span title={`SMA50: ${fmtINR(q.sma50)}`}>
+                                  <MaDot above={q.above_sma50} /> {fmtINR(q.sma50)}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 text-right font-mono text-zinc-500 whitespace-nowrap">
+                                <span title={`SMA200: ${fmtINR(q.sma200)}`}>
+                                  <MaDot above={q.above_sma200} /> {fmtINR(q.sma200)}
+                                </span>
+                              </td>
+                              <td className={`border-r border-zinc-100 px-3 py-2 font-semibold dark:border-zinc-800 whitespace-nowrap ${TREND_CLS[q.trend]}`}>
+                                {q.trend}
+                              </td>
+                              {/* Technical */}
+                              <td className={`px-3 py-2 text-right font-mono font-semibold whitespace-nowrap ${
+                                q.rsi >= 70 ? 'text-red-500' : q.rsi <= 30 ? 'text-emerald-600' : 'text-zinc-500'
+                              }`}>
+                                {q.rsi.toFixed(1)}
+                              </td>
+                              <td className={`px-3 py-2 text-right font-mono whitespace-nowrap ${q.macd >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                                {q.macd.toFixed(2)}
+                              </td>
+                              <td className="px-3 py-2 text-right font-mono text-zinc-400 whitespace-nowrap">
+                                {q.macd_signal.toFixed(2)}
+                              </td>
+                              <td className={`border-r border-zinc-100 px-3 py-2 text-right font-mono font-semibold dark:border-zinc-800 whitespace-nowrap ${
+                                bbPct !== null && bbPct >= 80 ? 'text-red-500' : bbPct !== null && bbPct <= 20 ? 'text-emerald-600' : 'text-zinc-500'
+                              }`}>
+                                {bbPct !== null ? `${bbPct}%` : '—'}
+                              </td>
+                            </>
+                          ) : (
+                            <td colSpan={22} className="px-3 py-2 text-zinc-300 dark:text-zinc-600">
+                              {quotesLoading ? 'Loading…' : (q?.error ?? 'No data')}
+                            </td>
+                          )}
+
+                          {/* Actions */}
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            <div className="flex items-center gap-2">
                               <Link href={`/forecast?symbol=${sym}`}
                                 className="text-[10px] font-semibold text-indigo-500 hover:text-indigo-700">
                                 Forecast →
@@ -515,11 +756,9 @@ function WatchlistsPanel({ token }: { token: string }) {
                                 className="text-[10px] font-semibold text-emerald-600 hover:text-emerald-800 dark:text-emerald-400">
                                 Trade →
                               </Link>
-                              <button
-                                onClick={() => handleRemove(item.symbol)}
-                                className="text-[10px] font-semibold text-red-400 hover:text-red-600"
-                              >
-                                Remove
+                              <button onClick={() => handleRemove(item.symbol)}
+                                className="text-[10px] font-semibold text-red-400 hover:text-red-600">
+                                ✕
                               </button>
                             </div>
                           </td>
@@ -528,8 +767,8 @@ function WatchlistsPanel({ token }: { token: string }) {
                     })}
                   </tbody>
                 </table>
-                <div className="px-4 py-2 text-[11px] text-zinc-400 border-t border-zinc-100 dark:border-zinc-800">
-                  {items.length} stocks
+                <div className="border-t border-zinc-100 px-4 py-2 text-[10px] text-zinc-400 dark:border-zinc-800">
+                  {items.length} stocks · VWAP/ATP = (H+L+C)/3 and (O+H+L+C)/4 approximations · Data via yfinance · Cached 60s
                 </div>
               </div>
             )}

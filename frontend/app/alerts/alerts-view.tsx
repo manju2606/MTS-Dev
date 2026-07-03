@@ -168,15 +168,33 @@ export default function AlertsView() {
     const t = localStorage.getItem('mts_token')
     if (!t) { router.replace('/login'); return }
     tokenRef.current = t
-    listAlerts(t)
-      .then(a => setAlerts(a))
-      .catch(() => setAlerts([]))
-    listPositionAlerts(t)
-      .then(p => setPosAlerts(p))
-      .catch(() => setPosAlerts([]))
+
+    // Show cached alerts immediately
+    const cached = localStorage.getItem('mts_alerts_cache')
+    if (cached) {
+      try {
+        const c = JSON.parse(cached)
+        if (c.alerts) setAlerts(c.alerts)
+        if (c.posAlerts) setPosAlerts(c.posAlerts)
+      } catch { /* ignore */ }
+    }
+
+    async function loadAlerts() {
+      const [a, p] = await Promise.all([
+        listAlerts(t!).catch(() => [] as AlertRule[]),
+        listPositionAlerts(t!).catch(() => [] as PositionAlert[]),
+      ])
+      setAlerts(a)
+      setPosAlerts(p)
+      localStorage.setItem('mts_alerts_cache', JSON.stringify({ alerts: a, posAlerts: p }))
+    }
+
+    loadAlerts()
+    const id = setInterval(loadAlerts, 5000)
+    return () => clearInterval(id)
   }, [router])
 
-  // Refresh live prices for active alerts every 30 s
+  // Refresh live prices for active alerts every 5s
   useEffect(() => {
     if (!alerts) return
     const active = alerts.filter(a => !a.triggered)
@@ -195,7 +213,7 @@ export default function AlertsView() {
     }
 
     refresh()
-    const id = setInterval(refresh, 30_000)
+    const id = setInterval(refresh, 5000)
     return () => clearInterval(id)
   }, [alerts])
 

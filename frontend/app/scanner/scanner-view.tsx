@@ -325,29 +325,50 @@ function WatchlistsPanel({ token }: { token: string }) {
     })
   }, [token])
 
+  const refreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const hasDataRef = useRef(false)
+
   useEffect(() => {
     if (!activeWl) return
-    setQuotes([])
+    const cacheKey = `mts_wl_quotes_${activeWl}`
+    const cached = localStorage.getItem(cacheKey)
+    if (cached) {
+      try {
+        setQuotes(JSON.parse(cached))
+        hasDataRef.current = true
+      } catch { /* ignore */ }
+    } else {
+      setQuotes([])
+      hasDataRef.current = false
+    }
     getWatchlistItems(token, activeWl).then(setItems)
   }, [token, activeWl])
 
   useEffect(() => {
     if (!activeWl || items.length === 0) return
     loadQuotes()
+    if (refreshIntervalRef.current) clearInterval(refreshIntervalRef.current)
+    refreshIntervalRef.current = setInterval(loadQuotes, 5000)
+    return () => {
+      if (refreshIntervalRef.current) clearInterval(refreshIntervalRef.current)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items])
 
   async function loadQuotes() {
     if (!activeWl) return
-    setQLoading(true)
+    const showSpinner = !hasDataRef.current
+    if (showSpinner) setQLoading(true)
     try {
       const q = await getWatchlistQuotes(token, activeWl)
       setQuotes(q)
       setLastUpdated(new Date())
+      hasDataRef.current = true
+      localStorage.setItem(`mts_wl_quotes_${activeWl}`, JSON.stringify(q))
     } catch {
-      // ignore, keep previous quotes
+      // keep previous quotes
     } finally {
-      setQLoading(false)
+      if (showSpinner) setQLoading(false)
     }
   }
 
@@ -502,9 +523,12 @@ function WatchlistsPanel({ token }: { token: string }) {
                   {quotesLoading ? 'Refreshing…' : '↻ Refresh'}
                 </button>
                 {addError && <span className="text-xs text-red-500">{addError}</span>}
-                {lastUpdated && !quotesLoading && (
-                  <span className="text-[10px] text-zinc-400">
-                    Updated {lastUpdated.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                {lastUpdated && (
+                  <span className="flex items-center gap-1 text-[10px] text-zinc-400">
+                    {!quotesLoading && (
+                      <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" title="Auto-refreshing every 5s" />
+                    )}
+                    {quotesLoading ? 'Refreshing…' : `Updated ${lastUpdated.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`}
                   </span>
                 )}
               </form>
@@ -629,7 +653,7 @@ function WatchlistsPanel({ token }: { token: string }) {
                             {q?.market_cap_category === 'Small' && (
                               <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">Small</span>
                             )}
-                            {(!q || q.market_cap_category === '—') && <span className="text-zinc-300">—</span>}
+                            {(!q || !q.market_cap_category || q.market_cap_category === '—') && <span className="text-zinc-300">—</span>}
                           </td>
                           <td className="border-r border-zinc-100 px-3 py-2 dark:border-zinc-800 whitespace-nowrap">
                             <div className="flex flex-wrap gap-0.5">
@@ -638,7 +662,7 @@ function WatchlistsPanel({ token }: { token: string }) {
                                   {idx.replace('Nifty ', 'N').replace('Next ', 'Nx').replace('Midcap ', 'M').replace('Smallcap ', 'S').replace('Bank ', 'Bk')}
                                 </span>
                               ))}
-                              {(!q || q.index_membership.every(i => i === '—')) && <span className="text-zinc-300">—</span>}
+                              {(!q || !q.index_membership || q.index_membership.every(i => i === '—')) && <span className="text-zinc-300">—</span>}
                             </div>
                           </td>
 
@@ -768,7 +792,7 @@ function WatchlistsPanel({ token }: { token: string }) {
                   </tbody>
                 </table>
                 <div className="border-t border-zinc-100 px-4 py-2 text-[10px] text-zinc-400 dark:border-zinc-800">
-                  {items.length} stocks · VWAP/ATP = (H+L+C)/3 and (O+H+L+C)/4 approximations · Data via yfinance · Cached 60s
+                  {items.length} stocks · Auto-refreshes every 5s · VWAP/ATP = (H+L+C)/3 and (O+H+L+C)/4 approx · Data via yfinance · Server cache 60s
                 </div>
               </div>
             )}

@@ -131,10 +131,23 @@ export default function PortfolioView() {
     const t = localStorage.getItem('mts_token')
     if (!t) { router.replace('/login'); return }
     tokenRef.current = t
-    getPortfolio(t).then(setData).catch(() => {
-      localStorage.removeItem('mts_token')
-      router.replace('/login')
-    }).finally(() => setLoading(false))
+
+    const cached = localStorage.getItem('mts_portfolio_cache')
+    if (cached) {
+      try { setData(JSON.parse(cached)); setLoading(false) } catch { /* ignore */ }
+    }
+
+    async function load() {
+      const d = await getPortfolio(t!).catch(() => null)
+      if (!d) { localStorage.removeItem('mts_token'); router.replace('/login'); return }
+      setData(d)
+      setLoading(false)
+      localStorage.setItem('mts_portfolio_cache', JSON.stringify(d))
+    }
+
+    load()
+    const id = setInterval(load, 5000)
+    return () => clearInterval(id)
   }, [router])
 
   if (loading || !data) {

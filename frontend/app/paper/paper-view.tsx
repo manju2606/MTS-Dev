@@ -200,9 +200,17 @@ export default function PaperView() {
     if (!t) { router.replace('/login'); return }
     tokenRef.current = t
     getMe(t).then(setUser).catch(() => {})
+
+    // Show cached trades immediately
+    const cached = localStorage.getItem('mts_paper_trades_cache')
+    if (cached) {
+      try { setTrades(JSON.parse(cached)); setLoading(false) } catch { /* ignore */ }
+    }
+
     listTrades(t)
       .then(async (all) => {
         setTrades(all)
+        localStorage.setItem('mts_paper_trades_cache', JSON.stringify(all))
         await fetchPrices(all.filter(tr => tr.status === 'open'))
       })
       .catch(() => { localStorage.removeItem('mts_token'); router.replace('/login') })
@@ -212,7 +220,7 @@ export default function PaperView() {
   useEffect(() => {
     const open = trades.filter(t => t.status === 'open')
     if (open.length === 0) return
-    const id = setInterval(() => fetchPrices(open), 30_000)
+    const id = setInterval(() => fetchPrices(open), 5000)
     return () => clearInterval(id)
   }, [trades, fetchPrices])
 

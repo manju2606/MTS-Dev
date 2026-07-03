@@ -166,17 +166,32 @@ export default function DiscoveryView() {
     const t = localStorage.getItem('mts_token')
     if (!t) { router.replace('/login'); return }
     tokenRef.current = t
-    Promise.all([
-      getMe(t),
-      getTopPicks(t, 50, undefined, 0),
-      getDiscoveryStatus(t),
-    ])
-      .then(([u, p, s]) => {
-        setUser(u)
-        setPicks(p)
-        setStatus(s)
-      })
-      .catch(() => setError('Failed to load. Run a scan first.'))
+
+    const cached = localStorage.getItem('mts_discovery_cache')
+    if (cached) {
+      try {
+        const c = JSON.parse(cached)
+        if (c.picks) setPicks(c.picks)
+        if (c.status) setStatus(c.status)
+        if (c.user) setUser(c.user)
+      } catch { /* ignore */ }
+    }
+
+    async function load() {
+      try {
+        const [u, p, s] = await Promise.all([
+          getMe(t!),
+          getTopPicks(t!, 50, undefined, 0),
+          getDiscoveryStatus(t!),
+        ])
+        setUser(u); setPicks(p); setStatus(s)
+        localStorage.setItem('mts_discovery_cache', JSON.stringify({ user: u, picks: p, status: s }))
+      } catch { setError('Failed to load. Run a scan first.') }
+    }
+
+    load()
+    const id = setInterval(load, 5000)
+    return () => clearInterval(id)
   }, [router])
 
   useEffect(() => {

@@ -260,7 +260,7 @@ def _fetch_sync(symbols: list[str]) -> list[dict]:
     tickers_str = " ".join(symbols)
     try:
         df = yf.download(
-            tickers_str, period="6mo", interval="1d",
+            tickers_str, period="1y", interval="1d",
             progress=False, auto_adjust=True, group_by="ticker",
         )
     except Exception:

@@ -190,7 +190,7 @@ export default function DiscoveryView() {
     }
 
     load()
-    const id = setInterval(load, 5000)
+    const id = setInterval(load, 30000)
     return () => clearInterval(id)
   }, [router])
 

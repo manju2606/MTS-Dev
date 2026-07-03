@@ -516,8 +516,8 @@ export default function DashboardView() {
     const run = async () => { try { await load(t) } catch { router.replace('/login') } }
     void run()
 
-    // Auto-refresh every 5 seconds
-    const id = setInterval(() => { void load(t) }, 5000)
+    
+    const id = setInterval(() => { void load(t) }, 30000)
     return () => clearInterval(id)
   }, [router, load, applyCache])
 

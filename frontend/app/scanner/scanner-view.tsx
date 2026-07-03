@@ -348,7 +348,7 @@ function WatchlistsPanel({ token }: { token: string }) {
     if (!activeWl || items.length === 0) return
     loadQuotes()
     if (refreshIntervalRef.current) clearInterval(refreshIntervalRef.current)
-    refreshIntervalRef.current = setInterval(loadQuotes, 5000)
+    refreshIntervalRef.current = setInterval(loadQuotes, 30000)
     return () => {
       if (refreshIntervalRef.current) clearInterval(refreshIntervalRef.current)
     }
@@ -526,7 +526,7 @@ function WatchlistsPanel({ token }: { token: string }) {
                 {lastUpdated && (
                   <span className="flex items-center gap-1 text-[10px] text-zinc-400">
                     {!quotesLoading && (
-                      <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" title="Auto-refreshing every 5s" />
+                      <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" title="Auto-refreshing every 30s" />
                     )}
                     {quotesLoading ? 'Refreshing…' : `Updated ${lastUpdated.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`}
                   </span>
@@ -792,7 +792,7 @@ function WatchlistsPanel({ token }: { token: string }) {
                   </tbody>
                 </table>
                 <div className="border-t border-zinc-100 px-4 py-2 text-[10px] text-zinc-400 dark:border-zinc-800">
-                  {items.length} stocks · Auto-refreshes every 5s · VWAP/ATP = (H+L+C)/3 and (O+H+L+C)/4 approx · Data via yfinance · Server cache 60s
+                  {items.length} stocks · Auto-refreshes every 30s · VWAP/ATP = (H+L+C)/3 and (O+H+L+C)/4 approx · Data via yfinance · Server cache 60s
                 </div>
               </div>
             )}

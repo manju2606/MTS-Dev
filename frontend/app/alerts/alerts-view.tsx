@@ -190,11 +190,11 @@ export default function AlertsView() {
     }
 
     loadAlerts()
-    const id = setInterval(loadAlerts, 5000)
+    const id = setInterval(loadAlerts, 30000)
     return () => clearInterval(id)
   }, [router])
 
-  // Refresh live prices for active alerts every 5s
+  
   useEffect(() => {
     if (!alerts) return
     const active = alerts.filter(a => !a.triggered)
@@ -213,7 +213,7 @@ export default function AlertsView() {
     }
 
     refresh()
-    const id = setInterval(refresh, 5000)
+    const id = setInterval(refresh, 30000)
     return () => clearInterval(id)
   }, [alerts])
 

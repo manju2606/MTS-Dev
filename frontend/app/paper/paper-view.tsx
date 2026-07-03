@@ -220,7 +220,7 @@ export default function PaperView() {
   useEffect(() => {
     const open = trades.filter(t => t.status === 'open')
     if (open.length === 0) return
-    const id = setInterval(() => fetchPrices(open), 5000)
+    const id = setInterval(() => fetchPrices(open), 30000)
     return () => clearInterval(id)
   }, [trades, fetchPrices])
 

@@ -52,6 +52,7 @@ async def generate_and_save_daily_pick() -> StockOfDay | None:
         await _auto_place_trade(sotd, cfg)
 
     await repo.save(sotd)
+    await _add_to_sotd_watchlist(sotd)
 
     await repo.add_journal_entry(today, "PICK_GENERATED", {
         "symbol": sotd.symbol,
@@ -398,6 +399,63 @@ async def _close_paper_trade(trade_id: str, exit_price: float) -> None:
         log.info("sotd.paper_trade.closed", trade_id=trade_id, exit_price=exit_price)
     except Exception as exc:
         log.error("sotd.paper_trade.close_error", error=str(exc))
+
+
+# ── SotD watchlist ───────────────────────────────────────────────────────────
+
+async def _add_to_sotd_watchlist(sotd: StockOfDay) -> None:
+    """Ensure a 'Stock of the Day' watchlist exists for every admin user
+    and add today's pick to it (skip if already present)."""
+    try:
+        from uuid import uuid4 as _uuid4
+        from app.core.config import settings
+        from app.infra.db.models import UserORM
+        from sqlalchemy import select, text
+        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+        engine = create_async_engine(settings.DATABASE_URL)
+        Session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+        async with Session() as session:
+            result = await session.execute(
+                select(UserORM).where(UserORM.is_active.is_(True))
+            )
+            users = result.scalars().all()
+
+            for user in users:
+                uid = str(user.id)
+
+                # Find or create the "Stock of the Day" watchlist
+                wl_row = await session.execute(
+                    text("SELECT id FROM watchlists WHERE user_id = :uid AND name = 'Stock of the Day' LIMIT 1"),
+                    {"uid": uid},
+                )
+                wl = wl_row.fetchone()
+                if wl is None:
+                    wl_id = str(_uuid4())
+                    await session.execute(
+                        text("INSERT INTO watchlists (id, user_id, name, created_at) VALUES (:id, :uid, 'Stock of the Day', NOW())"),
+                        {"id": wl_id, "uid": uid},
+                    )
+                else:
+                    wl_id = str(wl[0])
+
+                # Add the symbol (skip if already there)
+                await session.execute(
+                    text("""
+                        INSERT INTO watchlist_items (id, user_id, watchlist_id, symbol, exchange, added_at)
+                        VALUES (:id, :uid, :wlid, :sym, 'NSE', NOW())
+                        ON CONFLICT DO NOTHING
+                    """),
+                    {"id": str(_uuid4()), "uid": uid, "wlid": wl_id, "sym": sotd.symbol},
+                )
+
+            await session.commit()
+
+        await engine.dispose()
+        log.info("sotd.watchlist.updated", symbol=sotd.symbol)
+    except Exception as exc:
+        log.warning("sotd.watchlist.error", error=str(exc))
 
 
 # ── Email notifications ───────────────────────────────────────────────────────

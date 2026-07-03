@@ -563,72 +563,184 @@ export default function PaperView() {
               </p>
             </div>
           ) : tab === 'open' ? (
-            <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-zinc-100 dark:border-zinc-800">
-                    <th className={TH}>Symbol</th>
-                    <th className={TH}>Opened</th>
-                    <th className={TH}>Signal</th>
-                    <th className={TH}>Type</th>
-                    <th className={TH_R}>Entry</th>
-                    <th className={TH_R}>Current</th>
-                    <th className={TH_R}>Stop Loss</th>
-                    <th className={TH_R}>Target</th>
-                    <th className={TH_R}>Qty</th>
-                    <th className={TH_R}>Live P&amp;L</th>
-                    <th className={TH_R}>R:R</th>
-                    <th className={TH} />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                  {shown.map(trade => {
-                    const current = prices[trade.symbol]
-                    const pnl = current !== undefined ? livePnl(trade, current) : null
-                    return (
-                      <tr key={trade.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
-                        <td className={TD}>
-                          <span className="font-medium text-zinc-900 dark:text-zinc-50">{trade.symbol}</span>
-                          <span className="ml-1.5 text-xs text-zinc-400">{trade.exchange}</span>
-                        </td>
-                        <td className={TD}>
-                          {trade.opened_at ? (() => {
-                            const d = parseUTC(trade.opened_at)
-                            return (
-                              <>
-                                <div className="text-xs text-zinc-700 dark:text-zinc-300">{d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })}</div>
-                                <div className="text-[10px] text-zinc-400">{d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })} IST</div>
-                              </>
-                            )
-                          })() : <span className="text-zinc-400">—</span>}
-                        </td>
-                        <td className={TD}><SignalBadge signal={trade.signal} /></td>
-                        <td className={TD}><TradeTypeBadge mode={trade.mode} aiExplanation={trade.ai_explanation} /></td>
-                        <td className={TD_R}>₹{trade.entry_price.toFixed(2)}</td>
-                        <td className={TD_R}>{current !== undefined ? `₹${current.toFixed(2)}` : '—'}</td>
-                        <td className={TD_R}>₹{trade.stop_loss.toFixed(2)}</td>
-                        <td className={TD_R}>₹{trade.target.toFixed(2)}</td>
-                        <td className={TD_R}>{trade.quantity}</td>
-                        <td className="px-3 py-3 text-right">
-                          {pnl !== null ? <PnlCell value={pnl} /> : <span className="text-zinc-400">—</span>}
-                        </td>
-                        <td className={TD_R}>{trade.risk_reward_ratio.toFixed(2)}</td>
-                        <td className="px-3 py-3 text-right">
-                          {user?.role !== 'viewer' && (
-                            <button
-                              onClick={() => handleClose(trade.id)}
-                              disabled={closing === trade.id}
-                              className="rounded-md bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600"
-                            >
-                              {closing === trade.id ? '…' : 'Close'}
-                            </button>
+            <div className="space-y-3">
+              {/* Summary strip */}
+              {(() => {
+                const totalPnl = openTrades.reduce((sum, t) => {
+                  const cur = prices[t.symbol]
+                  return cur !== undefined ? sum + livePnl(t, cur) : sum
+                }, 0)
+                const totalValue = openTrades.reduce((sum, t) => sum + t.entry_price * t.quantity, 0)
+                const pnlPct = totalValue > 0 ? (totalPnl / totalValue) * 100 : 0
+                const winners = openTrades.filter(t => {
+                  const cur = prices[t.symbol]; return cur !== undefined && livePnl(t, cur) > 0
+                }).length
+                const up = totalPnl >= 0
+                return (
+                  <div className="flex flex-wrap gap-4 rounded-xl border border-zinc-200 bg-white px-5 py-3.5 dark:border-zinc-800 dark:bg-zinc-900">
+                    <div>
+                      <p className="text-[11px] text-zinc-400">Total Unrealized P&L</p>
+                      <p className={`text-lg font-bold font-mono ${up ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                        {up ? '+' : ''}₹{totalPnl.toFixed(2)}&nbsp;
+                        <span className="text-sm font-semibold">({up ? '+' : ''}{pnlPct.toFixed(2)}%)</span>
+                      </p>
+                    </div>
+                    <div className="w-px self-stretch bg-zinc-100 dark:bg-zinc-800" />
+                    <div>
+                      <p className="text-[11px] text-zinc-400">Position Value</p>
+                      <p className="text-lg font-bold text-zinc-900 dark:text-zinc-50 font-mono">₹{totalValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
+                    </div>
+                    <div className="w-px self-stretch bg-zinc-100 dark:bg-zinc-800" />
+                    <div>
+                      <p className="text-[11px] text-zinc-400">Positions</p>
+                      <p className="text-lg font-bold text-zinc-900 dark:text-zinc-50">{openTrades.length} open &nbsp;<span className="text-sm font-medium text-emerald-600">{winners}W</span> / <span className="text-sm font-medium text-red-500">{openTrades.length - winners}L</span></p>
+                    </div>
+                  </div>
+                )
+              })()}
+
+              {/* Position cards */}
+              {shown.map(trade => {
+                const current = prices[trade.symbol]
+                const pnl = current !== undefined ? livePnl(trade, current) : null
+                const pnlPct = (pnl !== null && trade.entry_price > 0)
+                  ? (trade.signal === 'BUY'
+                      ? (current! - trade.entry_price) / trade.entry_price * 100
+                      : (trade.entry_price - current!) / trade.entry_price * 100)
+                  : null
+                const up = pnl !== null ? pnl >= 0 : null
+
+                // Price progress bar: position of current between SL and target
+                const barPct = (current !== undefined)
+                  ? Math.min(100, Math.max(0,
+                      (current - trade.stop_loss) / (trade.target - trade.stop_loss) * 100
+                    ))
+                  : null
+
+                // Holding duration
+                const holdingStr = trade.opened_at ? (() => {
+                  const ms = Date.now() - parseUTC(trade.opened_at).getTime()
+                  const mins = Math.floor(ms / 60000)
+                  if (mins < 60) return `${mins}m`
+                  const hrs = Math.floor(mins / 60)
+                  if (hrs < 24) return `${hrs}h ${mins % 60}m`
+                  return `${Math.floor(hrs / 24)}d ${hrs % 24}h`
+                })() : null
+
+                const slDist = current !== undefined
+                  ? Math.abs(current - trade.stop_loss) / current * 100 : null
+                const tgtDist = current !== undefined
+                  ? Math.abs(trade.target - current) / current * 100 : null
+
+                return (
+                  <div key={trade.id} className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+                    {/* Header row */}
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg font-bold text-zinc-900 dark:text-zinc-50">{trade.symbol.replace('.NS','').replace('.BO','')}</span>
+                            <span className="text-xs text-zinc-400">{trade.exchange}</span>
+                            <SignalBadge signal={trade.signal} />
+                            <TradeTypeBadge mode={trade.mode} aiExplanation={trade.ai_explanation} />
+                          </div>
+                          {trade.opened_at && (
+                            <p className="mt-0.5 text-[11px] text-zinc-400">
+                              Opened {parseUTC(trade.opened_at).toLocaleDateString('en-IN', { day:'2-digit', month:'short', timeZone:'Asia/Kolkata' })} {parseUTC(trade.opened_at).toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit', timeZone:'Asia/Kolkata' })} IST
+                              {holdingStr && <span className="ml-1.5 rounded bg-zinc-100 px-1.5 py-0.5 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">{holdingStr} ago</span>}
+                            </p>
                           )}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+                        </div>
+                      </div>
+
+                      {/* Live P&L */}
+                      <div className="text-right">
+                        {pnl !== null ? (
+                          <>
+                            <p className={`text-xl font-bold font-mono ${up ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                              {up ? '+' : ''}₹{pnl.toFixed(2)}
+                            </p>
+                            {pnlPct !== null && (
+                              <p className={`text-sm font-semibold font-mono ${up ? 'text-emerald-500' : 'text-red-400'}`}>
+                                {up ? '+' : ''}{pnlPct.toFixed(2)}%
+                              </p>
+                            )}
+                          </>
+                        ) : (
+                          <p className="text-lg font-bold text-zinc-400">—</p>
+                        )}
+                        <p className="mt-0.5 text-[10px] text-zinc-400">Live P&L</p>
+                      </div>
+                    </div>
+
+                    {/* Price progress bar */}
+                    {barPct !== null && (
+                      <div className="mt-4">
+                        <div className="mb-1 flex justify-between text-[10px] text-zinc-400">
+                          <span>SL ₹{trade.stop_loss.toFixed(2)}</span>
+                          <span className="font-medium text-zinc-600 dark:text-zinc-300">
+                            CMP ₹{current!.toFixed(2)}
+                          </span>
+                          <span>Target ₹{trade.target.toFixed(2)}</span>
+                        </div>
+                        <div className="relative h-2 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+                          <div className="h-full rounded-full bg-gradient-to-r from-red-400 via-amber-400 to-emerald-500"
+                            style={{ width: `${barPct}%` }} />
+                          <div className="absolute top-1/2 -translate-y-1/2 h-3 w-1 rounded-sm bg-zinc-700 dark:bg-zinc-200"
+                            style={{ left: `calc(${barPct}% - 2px)` }} />
+                        </div>
+                        <div className="mt-1.5 flex justify-between text-[10px]">
+                          <span className="text-red-400">Risk {slDist !== null ? `-${slDist.toFixed(1)}%` : ''}</span>
+                          <span className="text-emerald-500">Reward {tgtDist !== null ? `+${tgtDist.toFixed(1)}%` : ''}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Detail grid */}
+                    <div className="mt-4 grid grid-cols-3 gap-x-4 gap-y-2 border-t border-zinc-100 pt-3 text-xs dark:border-zinc-800 sm:grid-cols-6">
+                      {[
+                        { label: 'Entry', value: `₹${trade.entry_price.toFixed(2)}` },
+                        { label: 'Current', value: current !== undefined ? `₹${current.toFixed(2)}` : '—', highlight: up },
+                        { label: 'Stop Loss', value: `₹${trade.stop_loss.toFixed(2)}`, red: true },
+                        { label: 'Target', value: `₹${trade.target.toFixed(2)}`, green: true },
+                        { label: 'Qty', value: trade.quantity },
+                        { label: 'R:R', value: trade.risk_reward_ratio.toFixed(2) },
+                      ].map(({ label, value, highlight, red, green }) => (
+                        <div key={label}>
+                          <p className="text-zinc-400">{label}</p>
+                          <p className={`font-semibold font-mono ${
+                            red ? 'text-red-500 dark:text-red-400' :
+                            green ? 'text-emerald-600 dark:text-emerald-400' :
+                            highlight === true ? 'text-emerald-600 dark:text-emerald-400' :
+                            highlight === false ? 'text-red-500 dark:text-red-400' :
+                            'text-zinc-800 dark:text-zinc-200'
+                          }`}>{value}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* AI explanation */}
+                    {trade.ai_explanation && (
+                      <p className="mt-3 rounded-lg bg-indigo-50 px-3 py-2 text-[11px] text-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-300">
+                        {trade.ai_explanation}
+                      </p>
+                    )}
+
+                    {/* Close button */}
+                    {user?.role !== 'viewer' && (
+                      <div className="mt-4 flex justify-end">
+                        <button
+                          onClick={() => handleClose(trade.id)}
+                          disabled={closing === trade.id}
+                          className="rounded-lg bg-red-50 px-4 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/30"
+                        >
+                          {closing === trade.id ? 'Closing…' : 'Close Position'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           ) : (
             // Closed trades with inline journal panel

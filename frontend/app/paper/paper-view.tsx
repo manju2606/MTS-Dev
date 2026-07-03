@@ -86,6 +86,12 @@ function SymbolSearch({
 type Tab = 'open' | 'closed'
 type JournalDraft = { notes: string; rating: number; tags: string }
 
+// DB timestamps are stored as UTC without 'Z' suffix — append it so JS
+// parses them as UTC rather than local time.
+function parseUTC(ts: string): Date {
+  return new Date(ts.endsWith('Z') || ts.includes('+') ? ts : ts + 'Z')
+}
+
 function livePnl(trade: Trade, currentPrice: number): number {
   return trade.signal === 'BUY'
     ? (currentPrice - trade.entry_price) * trade.quantity
@@ -587,7 +593,7 @@ export default function PaperView() {
                         </td>
                         <td className={TD}>
                           {trade.opened_at ? (() => {
-                            const d = new Date(trade.opened_at)
+                            const d = parseUTC(trade.opened_at)
                             return (
                               <>
                                 <div className="text-xs text-zinc-700 dark:text-zinc-300">{d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })}</div>
@@ -653,7 +659,7 @@ export default function PaperView() {
                             <span className="font-medium text-zinc-900 dark:text-zinc-50">{trade.symbol}</span>
                             <span className="ml-1.5 text-xs text-zinc-400">{trade.exchange}</span>
                             {trade.opened_at && (() => {
-                              const d = new Date(trade.opened_at)
+                              const d = parseUTC(trade.opened_at)
                               return (
                                 <div className="mt-0.5 text-[10px] text-zinc-400">
                                   Opened: {d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })} {d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })} IST
@@ -674,7 +680,7 @@ export default function PaperView() {
                           <td className={TD_R}>{trade.risk_reward_ratio.toFixed(2)}</td>
                           <td className={TD_R}>
                             {trade.closed_at ? (() => {
-                              const d = new Date(trade.closed_at)
+                              const d = parseUTC(trade.closed_at)
                               return (
                                 <>
                                   <div className="text-xs text-zinc-700 dark:text-zinc-300">{d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })}</div>

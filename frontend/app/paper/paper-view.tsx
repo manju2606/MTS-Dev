@@ -92,13 +92,28 @@ function livePnl(trade: Trade, currentPrice: number): number {
     : (trade.entry_price - currentPrice) * trade.quantity
 }
 
-function PnlCell({ value }: { value: number }) {
+function PnlCell({ value, pct }: { value: number; pct?: number | null }) {
   const up = value >= 0
   return (
-    <span className={`font-mono ${up ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
-      {up ? '+' : ''}₹{value.toFixed(2)}
-    </span>
+    <div className="inline-flex flex-col items-end">
+      <span className={`font-mono text-sm ${up ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+        {up ? '+' : ''}₹{value.toFixed(2)}
+      </span>
+      {pct != null && (
+        <span className={`font-mono text-[10px] ${up ? 'text-emerald-500 dark:text-emerald-500' : 'text-red-400 dark:text-red-500'}`}>
+          {up ? '+' : ''}{pct.toFixed(2)}%
+        </span>
+      )}
+    </div>
   )
+}
+
+function calcPnlPct(trade: Trade): number | null {
+  if (trade.exit_price == null || trade.entry_price === 0) return null
+  const diff = trade.signal === 'BUY'
+    ? (trade.exit_price - trade.entry_price) / trade.entry_price * 100
+    : (trade.entry_price - trade.exit_price) / trade.entry_price * 100
+  return Math.round(diff * 100) / 100
 }
 
 function SignalBadge({ signal }: { signal: 'BUY' | 'SELL' }) {
@@ -647,7 +662,7 @@ export default function PaperView() {
                           </td>
                           <td className={TD_R}>{trade.quantity}</td>
                           <td className="px-3 py-3 text-right">
-                            {trade.pnl !== null ? <PnlCell value={trade.pnl} /> : <span className="text-zinc-400">—</span>}
+                            {trade.pnl !== null ? <PnlCell value={trade.pnl} pct={calcPnlPct(trade)} /> : <span className="text-zinc-400">—</span>}
                           </td>
                           <td className={TD_R}>{trade.risk_reward_ratio.toFixed(2)}</td>
                           <td className={TD_R}>

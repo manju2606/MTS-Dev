@@ -356,28 +356,28 @@ export default function ReportsView() {
     const t = localStorage.getItem('mts_token')
     if (!t) { router.replace('/login'); return }
     tokenRef.current = t
-    const id = setTimeout(() => fetchPage(t, 0, '', '', true), 0)
+    const id = setTimeout(() => fetchPage(t, 0, '', '', true).catch(() => setReports([])), 0)
     return () => clearTimeout(id)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router])
 
   function applyFilter() {
     setSkip(0)
-    fetchPage(tokenRef.current, 0, fromDate, toDate, true)
+    fetchPage(tokenRef.current, 0, fromDate, toDate, true).catch(() => setReports([]))
   }
 
   function clearFilter() {
     setFromDate('')
     setToDate('')
     setSkip(0)
-    fetchPage(tokenRef.current, 0, '', '', true)
+    fetchPage(tokenRef.current, 0, '', '', true).catch(() => setReports([]))
   }
 
   async function loadMore() {
     setLoadingMore(true)
     const newSkip = skip + PAGE
     setSkip(newSkip)
-    await fetchPage(tokenRef.current, newSkip, fromDate, toDate, false)
+    await fetchPage(tokenRef.current, newSkip, fromDate, toDate, false).catch(() => {})
     setLoadingMore(false)
   }
 

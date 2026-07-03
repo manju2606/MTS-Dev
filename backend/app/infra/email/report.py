@@ -254,13 +254,16 @@ async def send_daily_report() -> None:
         picks = await repo.get_top_picks(limit=20, min_score=50)
         scanned = await repo.count_latest_scan()
 
+        # Persist snapshot first so the Reports page always has data
+        # regardless of whether email delivery succeeds.
+        await repo.save_report(picks, scanned)
+
         subject = f"📈 Daily Picks — {date.today().strftime('%d %b %Y')} | {len(picks)} actionable stocks"
         html = build_report_html(picks, scanned)
 
         for to in recipients:
             await send_email(to=to, subject=subject, html=html)
 
-        await repo.save_report(picks, scanned)
         safe = subject.encode("ascii", errors="replace").decode("ascii")
         log.info("daily_report.sent", to=recipients, picks=len(picks), subject=safe)
     except Exception as exc:

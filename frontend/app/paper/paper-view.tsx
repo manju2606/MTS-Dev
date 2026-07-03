@@ -5,9 +5,9 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { NavBar } from '@/components/nav-bar'
 import {
   closeTrade, getJournalEntry, getMe, getQuote,
-  listTrades, placeTrade, saveJournalEntry, searchStocks,
+  getSotDSettings, listTrades, placeTrade, saveJournalEntry, searchStocks, updateSotDSettings,
 } from '@/lib/api'
-import type { JournalEntry, PlaceTradeBody, StockSearchResult, Trade, User } from '@/lib/api'
+import type { JournalEntry, PlaceTradeBody, SotDSettings, StockSearchResult, Trade, User } from '@/lib/api'
 
 // ── Symbol search dropdown ────────────────────────────────────────────────────
 
@@ -178,6 +178,10 @@ export default function PaperView() {
   const [formLoading, setFormLoading] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
+  // Auto-trading toggle
+  const [sotdSettings, setSotdSettings] = useState<SotDSettings | null>(null)
+  const [autoTradeToggling, setAutoTradeToggling] = useState(false)
+
   const fetchPrices = useCallback(async (openTrades: Trade[]) => {
     if (openTrades.length === 0) return
     const symbols = [...new Set(openTrades.map(t => t.symbol))]
@@ -206,6 +210,8 @@ export default function PaperView() {
     if (cached) {
       try { setTrades(JSON.parse(cached)); setLoading(false) } catch { /* ignore */ }
     }
+
+    getSotDSettings(t).then(setSotdSettings).catch(() => {})
 
     listTrades(t)
       .then(async (all) => {
@@ -305,6 +311,18 @@ export default function PaperView() {
     }))
   }
 
+  async function toggleAutoTrade() {
+    if (!sotdSettings || autoTradeToggling) return
+    setAutoTradeToggling(true)
+    const next = { ...sotdSettings, auto_trade_enabled: !sotdSettings.auto_trade_enabled }
+    try {
+      const saved = await updateSotDSettings(tokenRef.current, next)
+      setSotdSettings(saved)
+    } catch { /* leave unchanged on error */ } finally {
+      setAutoTradeToggling(false)
+    }
+  }
+
   const openTrades = trades.filter(t => t.status === 'open')
   const closedTrades = trades.filter(t => t.status === 'closed')
   const shown = tab === 'open' ? openTrades : closedTrades
@@ -322,6 +340,51 @@ export default function PaperView() {
       <NavBar active="Paper Trading" />
 
       <main className="mx-auto max-w-5xl px-4 py-8 space-y-8">
+
+        {/* Auto-trading toggle */}
+        {sotdSettings !== null && (
+          <div className={`flex items-center justify-between rounded-xl border px-5 py-4 transition-colors ${
+            sotdSettings.auto_trade_enabled
+              ? 'border-emerald-300 bg-emerald-50 dark:border-emerald-700 dark:bg-emerald-950/30'
+              : 'border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900'
+          }`}>
+            <div className="flex items-center gap-3">
+              {sotdSettings.auto_trade_enabled && (
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                </span>
+              )}
+              <div>
+                <p className={`text-sm font-semibold ${
+                  sotdSettings.auto_trade_enabled
+                    ? 'text-emerald-800 dark:text-emerald-300'
+                    : 'text-zinc-700 dark:text-zinc-300'
+                }`}>
+                  Auto Trading — {sotdSettings.auto_trade_enabled ? 'ON' : 'OFF'}
+                </p>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                  {sotdSettings.auto_trade_enabled
+                    ? `Stock of the Day trades placed automatically (confidence ≥ ${sotdSettings.threshold}%)`
+                    : 'Automatic placement of Stock of the Day trades is disabled'}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={toggleAutoTrade}
+              disabled={autoTradeToggling}
+              className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${
+                sotdSettings.auto_trade_enabled ? 'bg-emerald-500' : 'bg-zinc-300 dark:bg-zinc-600'
+              }`}
+              role="switch"
+              aria-checked={sotdSettings.auto_trade_enabled}
+            >
+              <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ${
+                sotdSettings.auto_trade_enabled ? 'translate-x-5' : 'translate-x-0'
+              }`} />
+            </button>
+          </div>
+        )}
 
         {/* Place trade form — hidden for viewers */}
         {user?.role === 'viewer' ? (

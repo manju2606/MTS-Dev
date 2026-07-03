@@ -1,6 +1,7 @@
 import hashlib
 import secrets
-from uuid import UUID
+import structlog
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
@@ -47,6 +48,7 @@ async def register(body: RegisterRequest, db: DBSession) -> dict:
         full_name=body.full_name,
     )
     created = await repo.create(user)
+    await _seed_default_watchlists(db, created.id)
     return {"id": str(created.id), "email": created.email}
 
 
@@ -223,3 +225,53 @@ async def reset_password(body: ResetPasswordRequest, db: DBSession) -> dict:
     user.hashed_password = hash_password(body.new_password)
     await repo.update(user)
     return {"message": "Password reset successfully"}
+
+
+# ── Default watchlist seeding ─────────────────────────────────────────────────
+
+_NIFTY_50 = [
+    "RELIANCE.NS","TCS.NS","HDFCBANK.NS","INFY.NS","ICICIBANK.NS",
+    "HINDUNILVR.NS","ITC.NS","SBIN.NS","BHARTIARTL.NS","KOTAKBANK.NS",
+    "LT.NS","AXISBANK.NS","ASIANPAINT.NS","MARUTI.NS","NESTLEIND.NS",
+    "TITAN.NS","SUNPHARMA.NS","BAJFINANCE.NS","WIPRO.NS","HCLTECH.NS",
+    "ULTRACEMCO.NS","BAJAJFINSV.NS","TECHM.NS","ONGC.NS","POWERGRID.NS",
+    "NTPC.NS","COALINDIA.NS","TATAMOTORS.NS","TATASTEEL.NS","JSWSTEEL.NS",
+    "ADANIENT.NS","ADANIPORTS.NS","DIVISLAB.NS","CIPLA.NS","DRREDDY.NS",
+    "EICHERMOT.NS","GRASIM.NS","HEROMOTOCO.NS","HINDALCO.NS","INDUSINDBK.NS",
+    "BRITANNIA.NS","APOLLOHOSP.NS","BPCL.NS","TATACONSUM.NS","SBILIFE.NS",
+    "HDFCLIFE.NS","BAJAJ-AUTO.NS","UPL.NS","VEDL.NS","M&M.NS",
+]
+
+_log = structlog.get_logger()
+
+
+async def _seed_default_watchlists(db, user_id: UUID) -> None:
+    """Create Nifty 50 and Stock of the Day watchlists for a new user."""
+    from sqlalchemy import text
+    try:
+        uid = str(user_id)
+        # Nifty 50
+        wl_id = str(uuid4())
+        await db.execute(
+            text("INSERT INTO watchlists (id, user_id, name, created_at) VALUES (:id, :uid, 'Nifty 50', NOW()) ON CONFLICT ON CONSTRAINT uq_watchlist_user_name DO NOTHING"),
+            {"id": wl_id, "uid": uid},
+        )
+        # Re-fetch id in case of conflict
+        row = await db.execute(
+            text("SELECT id FROM watchlists WHERE user_id=:uid AND name='Nifty 50'"),
+            {"uid": uid},
+        )
+        wl_id = str(row.scalar())
+        for sym in _NIFTY_50:
+            await db.execute(
+                text("INSERT INTO watchlist_items (id, user_id, watchlist_id, symbol, exchange, added_at) VALUES (:id, :uid, :wlid, :sym, 'NSE', NOW()) ON CONFLICT ON CONSTRAINT uq_watchlist_item_symbol DO NOTHING"),
+                {"id": str(uuid4()), "uid": uid, "wlid": wl_id, "sym": sym},
+            )
+        # Stock of the Day placeholder
+        await db.execute(
+            text("INSERT INTO watchlists (id, user_id, name, created_at) VALUES (:id, :uid, 'Stock of the Day', NOW()) ON CONFLICT ON CONSTRAINT uq_watchlist_user_name DO NOTHING"),
+            {"id": str(uuid4()), "uid": uid},
+        )
+        await db.commit()
+    except Exception as exc:
+        _log.warning("auth.seed_watchlists.error", error=str(exc))

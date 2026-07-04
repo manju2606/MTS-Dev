@@ -500,6 +500,126 @@ export async function getPortfolio(token: string): Promise<PortfolioData> {
   return res.json()
 }
 
+// ── Portfolio Assistant ─────────────────────────────────────────────────────
+
+export type Holding = {
+  id: string
+  symbol: string
+  name: string
+  qty: number
+  avg_price: number
+  current_price: number
+  invested: number
+  current_value: number
+  pnl: number
+  pnl_pct: number
+  sector: string
+  recommendation: 'BUY' | 'HOLD' | 'SELL' | 'ADD' | 'REVIEW'
+  rec_reason: string
+  ai_score: number | null
+  ai_signal: string | null
+  ai_confidence: number | null
+  ai_stop_loss: number | null
+  ai_targets: number[]
+  buy_date: string | null
+}
+
+export type AssistantSummary = {
+  total_invested: number
+  current_value: number
+  total_pnl: number
+  total_pnl_pct: number
+  holdings_count: number
+  winners: number
+  losers: number
+  win_rate: number
+  health_score: number
+  diversification_score: number
+}
+
+export type AssistantAlert = {
+  symbol: string
+  type: 'LOSS' | 'TARGET'
+  severity: 'high' | 'medium'
+  message: string
+}
+
+export type SizingRow = {
+  symbol: string
+  weight_pct: number
+  flag: 'OVERWEIGHT' | 'OK' | 'UNDERWEIGHT'
+  invested: number
+}
+
+export type AssistantAnalysis = {
+  holdings: Holding[]
+  summary: AssistantSummary
+  sector_allocation: Record<string, number>
+  alerts: AssistantAlert[]
+  risk: {
+    level: string
+    worst_position_pct: number
+    best_position_pct: number
+    portfolio_volatility: number
+    concentration_risk: number
+  }
+  sizing: SizingRow[]
+}
+
+export async function getAssistantAnalysis(token: string): Promise<AssistantAnalysis> {
+  const res = await fetch(`${BASE}/api/v1/portfolio/assistant/analysis`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error('Failed to fetch assistant analysis')
+  return res.json()
+}
+
+export async function listHoldings(token: string): Promise<Holding[]> {
+  const res = await fetch(`${BASE}/api/v1/portfolio/holdings`, { headers: authHeaders(token) })
+  if (!res.ok) return []
+  return res.json()
+}
+
+export async function addHolding(token: string, body: {
+  symbol: string; name?: string; qty: number; avg_price: number; buy_date?: string; sector?: string
+}): Promise<Holding> {
+  const res = await fetch(`${BASE}/api/v1/portfolio/holdings`, {
+    method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || 'Failed to add holding') }
+  return res.json()
+}
+
+export async function deleteHolding(token: string, id: string): Promise<void> {
+  await fetch(`${BASE}/api/v1/portfolio/holdings/${id}`, { method: 'DELETE', headers: authHeaders(token) })
+}
+
+export async function updateHolding(token: string, id: string, qty: number, avg_price: number): Promise<void> {
+  await fetch(`${BASE}/api/v1/portfolio/holdings/${id}`, {
+    method: 'PUT', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ qty, avg_price }),
+  })
+}
+
+export async function importHoldings(token: string, rows: {
+  symbol: string; name?: string; qty: number; avg_price: number; buy_date?: string
+}[]): Promise<{ imported: number }> {
+  const res = await fetch(`${BASE}/api/v1/portfolio/holdings/import`, {
+    method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rows }),
+  })
+  if (!res.ok) throw new Error('Import failed')
+  return res.json()
+}
+
+export async function askAssistant(token: string, question: string): Promise<{ answer: string; sources: string[] }> {
+  const res = await fetch(`${BASE}/api/v1/portfolio/assistant/chat`, {
+    method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question }),
+  })
+  if (!res.ok) throw new Error('Chat failed')
+  return res.json()
+}
+
 // ── Alerts ─────────────────────────────────────────────────────────────────
 
 export type AlertRule = {

@@ -105,8 +105,11 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Portfolio',
     icon:  'briefcase',
-    href:  '/portfolio',
     roles: ['viewer', 'trader', 'admin'],
+    items: [
+      { href: '/portfolio',           label: 'Paper Trading',        icon: 'clipboard',  desc: 'P&L and analysis of paper trades' },
+      { href: '/portfolio/assistant', label: 'Portfolio Assistant',  icon: 'sparkles',   desc: 'Track real holdings · AI analysis · chat' },
+    ],
   },
   {
     label: 'Admin',

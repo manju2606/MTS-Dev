@@ -635,3 +635,298 @@ def _generate_answer(
             + (f"Best: {best['symbol']} ({best['pnl_pct']:+.1f}%). " if best else "")
             + (f"Worst: {worst['symbol']} ({worst['pnl_pct']:+.1f}%). " if worst else "")
             + "Ask me something specific — 'Which should I sell?', 'Where should I invest ₹1 lakh?', 'Am I diversified?'")
+
+
+# ── Portfolio Assistant — Fundamental Health ──────────────────────────────────
+
+@router.get("/assistant/fundamentals")
+async def assistant_fundamentals(current_user: CurrentUser) -> list[dict]:
+    """Fetch yfinance .info for each holding: P/E, P/B, ROE, beta, market cap, etc."""
+    from app.infra.db.repositories.holdings_repo import HoldingsRepository
+    import yfinance as yf
+
+    repo = HoldingsRepository()
+    holdings = await repo.list_holdings(str(current_user.id))
+    if not holdings:
+        return []
+
+    results = []
+    for h in holdings:
+        sym = h["symbol"]
+        try:
+            ticker = yf.Ticker(sym)
+            info = ticker.info or {}
+            results.append({
+                "symbol": sym.replace(".NS", "").replace(".BO", ""),
+                "raw_symbol": sym,
+                "name": info.get("longName") or info.get("shortName") or sym,
+                "sector": info.get("sector") or h.get("sector", "Other"),
+                "industry": info.get("industry", "—"),
+                "market_cap": info.get("marketCap"),
+                "pe_ratio": info.get("trailingPE") or info.get("forwardPE"),
+                "pb_ratio": info.get("priceToBook"),
+                "roe": round(info.get("returnOnEquity", 0) * 100, 1) if info.get("returnOnEquity") else None,
+                "eps": info.get("trailingEps"),
+                "beta": round(info.get("beta", 1.0), 2) if info.get("beta") else None,
+                "dividend_yield": round(info.get("dividendYield", 0) * 100, 2) if info.get("dividendYield") else None,
+                "week52_high": info.get("fiftyTwoWeekHigh"),
+                "week52_low": info.get("fiftyTwoWeekLow"),
+                "current_price": info.get("currentPrice") or info.get("regularMarketPrice"),
+                "analyst_target": info.get("targetMeanPrice"),
+                "recommendation": info.get("recommendationKey", "—").replace("_", " ").title(),
+                "debt_to_equity": round(info.get("debtToEquity", 0), 2) if info.get("debtToEquity") else None,
+                "profit_margins": round(info.get("profitMargins", 0) * 100, 1) if info.get("profitMargins") else None,
+            })
+        except Exception:
+            results.append({
+                "symbol": sym.replace(".NS", "").replace(".BO", ""),
+                "raw_symbol": sym, "name": sym, "sector": h.get("sector", "Other"),
+                "industry": "—", "market_cap": None, "pe_ratio": None, "pb_ratio": None,
+                "roe": None, "eps": None, "beta": None, "dividend_yield": None,
+                "week52_high": None, "week52_low": None, "current_price": None,
+                "analyst_target": None, "recommendation": "—", "debt_to_equity": None,
+                "profit_margins": None,
+            })
+    return results
+
+
+# ── Portfolio Assistant — Portfolio Timeline ──────────────────────────────────
+
+@router.get("/assistant/timeline")
+async def assistant_timeline(current_user: CurrentUser) -> dict:
+    """Portfolio equity curve vs Nifty50 benchmark over the past 6 months."""
+    from app.infra.db.repositories.holdings_repo import HoldingsRepository
+    import yfinance as yf
+    import pandas as pd
+
+    repo = HoldingsRepository()
+    holdings = await repo.list_holdings(str(current_user.id))
+    if not holdings:
+        return {"dates": [], "portfolio": [], "nifty": []}
+
+    period = "6mo"
+    symbols = [h["symbol"] for h in holdings]
+    qty_map = {h["symbol"]: h["qty"] for h in holdings}
+    avg_map = {h["symbol"]: h["avg_price"] for h in holdings}
+
+    # Download history for all holdings + Nifty benchmark
+    all_syms = symbols + ["^NSEI"]
+    try:
+        raw = yf.download(all_syms, period=period, auto_adjust=True, progress=False)
+        close = raw["Close"] if isinstance(raw.columns, pd.MultiIndex) else raw
+    except Exception:
+        return {"dates": [], "portfolio": [], "nifty": []}
+
+    if close.empty:
+        return {"dates": [], "portfolio": [], "nifty": []}
+
+    dates = [d.strftime("%Y-%m-%d") for d in close.index]
+    portfolio_values: list[float] = []
+    nifty_values: list[float] = []
+
+    # Get first Nifty close for normalization
+    nifty_col = "^NSEI" if "^NSEI" in close.columns else None
+    nifty_first = float(close[nifty_col].dropna().iloc[0]) if nifty_col and not close[nifty_col].dropna().empty else 1.0
+
+    # Start portfolio value = sum of (qty × avg_price) as baseline
+    total_invested = sum(h["qty"] * h["avg_price"] for h in holdings)
+
+    for _, row in close.iterrows():
+        port_val = 0.0
+        for sym in symbols:
+            col = sym
+            if col not in row.index:
+                port_val += qty_map[sym] * avg_map[sym]
+                continue
+            price = row[col]
+            if pd.isna(price):
+                price = avg_map[sym]
+            port_val += qty_map[sym] * float(price)
+        portfolio_values.append(round(port_val, 2))
+
+        # Nifty normalized to invested capital
+        if nifty_col:
+            nifty_price = row.get(nifty_col, nifty_first)
+            nifty_val = total_invested * (float(nifty_price) / nifty_first) if not pd.isna(nifty_price) else total_invested
+        else:
+            nifty_val = total_invested
+        nifty_values.append(round(nifty_val, 2))
+
+    return {"dates": dates, "portfolio": portfolio_values, "nifty": nifty_values}
+
+
+# ── Portfolio Assistant — Tax Analysis ────────────────────────────────────────
+
+@router.get("/assistant/tax")
+async def assistant_tax(current_user: CurrentUser) -> dict:
+    """STCG/LTCG computation for all holdings per Indian equity tax rules."""
+    from app.infra.db.repositories.holdings_repo import HoldingsRepository
+    from app.infra.market_data.yfinance_client import YFinanceClient
+
+    repo = HoldingsRepository()
+    holdings = await repo.list_holdings(str(current_user.id))
+    if not holdings:
+        return {"rows": [], "summary": {"total_stcg": 0, "total_ltcg": 0, "total_tax": 0}}
+
+    client = YFinanceClient()
+    rows = []
+    total_stcg = 0.0
+    total_ltcg = 0.0
+
+    for h in holdings:
+        sym = h["symbol"]
+        qty = h["qty"]
+        avg = h["avg_price"]
+        buy_date_str = h.get("buy_date") or ""
+        invested = qty * avg
+
+        try:
+            quote = await client.get_quote(sym)
+            current_price = quote.price
+        except Exception:
+            current_price = avg
+
+        pnl = (current_price - avg) * qty
+
+        # Holding period
+        days_held: int | None = None
+        if buy_date_str:
+            try:
+                from datetime import date
+                buy_dt = date.fromisoformat(str(buy_date_str)[:10])
+                days_held = (date.today() - buy_dt).days
+            except Exception:
+                pass
+
+        if days_held is None:
+            tax_type = "Unknown"
+            tax_rate = 0.0
+            estimated_tax = 0.0
+        elif days_held >= 365:
+            tax_type = "LTCG"
+            # LTCG: 10% above ₹1L exemption (per FY, simplified: applied per holding)
+            taxable = max(0.0, pnl)
+            tax_rate = 12.5  # post-Budget 2024: 12.5% LTCG
+            estimated_tax = taxable * 0.125 if taxable > 0 else 0.0
+            total_ltcg += pnl
+        else:
+            tax_type = "STCG"
+            taxable = max(0.0, pnl)
+            tax_rate = 20.0  # post-Budget 2024: 20% STCG
+            estimated_tax = taxable * 0.20 if taxable > 0 else 0.0
+            total_stcg += pnl
+
+        rows.append({
+            "symbol": sym.replace(".NS", "").replace(".BO", ""),
+            "qty": qty,
+            "avg_price": round(avg, 2),
+            "current_price": round(current_price, 2),
+            "invested": round(invested, 2),
+            "pnl": round(pnl, 2),
+            "days_held": days_held,
+            "tax_type": tax_type,
+            "tax_rate": tax_rate,
+            "estimated_tax": round(estimated_tax, 2),
+            "buy_date": buy_date_str,
+        })
+
+    ltcg_taxable = max(0.0, total_ltcg - 125_000)  # ₹1.25L LTCG exemption (FY25+)
+    ltcg_tax = ltcg_taxable * 0.125
+    stcg_tax = max(0.0, total_stcg) * 0.20
+
+    return {
+        "rows": sorted(rows, key=lambda r: r["pnl"]),
+        "summary": {
+            "total_stcg": round(total_stcg, 2),
+            "total_ltcg": round(total_ltcg, 2),
+            "stcg_tax": round(stcg_tax, 2),
+            "ltcg_tax": round(ltcg_tax, 2),
+            "total_tax": round(stcg_tax + ltcg_tax, 2),
+            "ltcg_exemption_used": round(min(125_000, max(0, total_ltcg)), 2),
+            "note": "Tax rates: STCG 20%, LTCG 12.5% (Budget 2024). LTCG exempt up to ₹1.25L per FY.",
+        },
+    }
+
+
+# ── Portfolio Assistant — Dividend Analysis ───────────────────────────────────
+
+@router.get("/assistant/dividends")
+async def assistant_dividends(current_user: CurrentUser) -> list[dict]:
+    """Historical dividends + yield-on-cost for each holding."""
+    from app.infra.db.repositories.holdings_repo import HoldingsRepository
+    import yfinance as yf
+
+    repo = HoldingsRepository()
+    holdings = await repo.list_holdings(str(current_user.id))
+    if not holdings:
+        return []
+
+    results = []
+    for h in holdings:
+        sym = h["symbol"]
+        qty = h["qty"]
+        avg = h["avg_price"]
+        try:
+            ticker = yf.Ticker(sym)
+            divs = ticker.dividends
+            # Keep last 2 years
+            recent = divs[divs.index >= (divs.index[-1] - __import__("pandas").DateOffset(years=2))] if not divs.empty else divs
+            div_list = [
+                {"date": d.strftime("%Y-%m-%d"), "amount": round(float(v), 4)}
+                for d, v in recent.items()
+            ]
+            annual_income = sum(v["amount"] for v in div_list) * qty / max(1, len(set(d["date"][:4] for d in div_list)) or 1)
+            yoc = (annual_income / (avg * qty) * 100) if avg * qty > 0 else 0.0
+            info = ticker.info or {}
+            dividend_yield = round((info.get("dividendYield") or 0) * 100, 2)
+        except Exception:
+            div_list = []
+            annual_income = 0.0
+            yoc = 0.0
+            dividend_yield = 0.0
+
+        results.append({
+            "symbol": sym.replace(".NS", "").replace(".BO", ""),
+            "qty": qty,
+            "avg_price": round(avg, 2),
+            "dividends": div_list[-8:],  # last 8 payouts
+            "annual_income_est": round(annual_income, 2),
+            "yield_on_cost": round(yoc, 2),
+            "current_yield": dividend_yield,
+            "total_received_est": round(sum(d["amount"] for d in div_list) * qty, 2),
+        })
+    return results
+
+
+# ── Portfolio Assistant — Correlation Matrix ──────────────────────────────────
+
+@router.get("/assistant/correlation")
+async def assistant_correlation(current_user: CurrentUser) -> dict:
+    """Daily returns correlation matrix for the user's holdings."""
+    from app.infra.db.repositories.holdings_repo import HoldingsRepository
+    import yfinance as yf
+    import pandas as pd
+
+    repo = HoldingsRepository()
+    holdings = await repo.list_holdings(str(current_user.id))
+    if len(holdings) < 2:
+        return {"symbols": [], "matrix": []}
+
+    symbols = [h["symbol"] for h in holdings]
+    labels = [s.replace(".NS", "").replace(".BO", "") for s in symbols]
+
+    try:
+        raw = yf.download(symbols, period="6mo", auto_adjust=True, progress=False)
+        close = raw["Close"] if isinstance(raw.columns, pd.MultiIndex) else raw
+        returns = close.pct_change().dropna()
+        # Keep only columns we requested
+        available = [s for s in symbols if s in returns.columns]
+        if len(available) < 2:
+            return {"symbols": [], "matrix": []}
+        corr = returns[available].corr().round(2)
+        avail_labels = [s.replace(".NS", "").replace(".BO", "") for s in available]
+        matrix = corr.values.tolist()
+    except Exception:
+        return {"symbols": [], "matrix": []}
+
+    return {"symbols": avail_labels, "matrix": matrix}

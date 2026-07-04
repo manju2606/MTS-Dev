@@ -64,6 +64,7 @@ async def update_risk_config(
 async def get_risk_status(
     current_user: CurrentUser,
     repo: TradeDep,
+    risk_engine: RiskDep,
 ) -> dict:
     all_trades = await repo.list_by_user(current_user.id)
     open_trades = [t for t in all_trades if t.status == TradeStatus.OPEN]
@@ -78,8 +79,21 @@ async def get_risk_status(
         and t.pnl is not None
     )
 
+    # Trip circuit breaker when daily loss exceeds configured limit
+    cfg = risk_engine.config
+    max_daily_loss = cfg.capital * cfg.max_daily_loss_pct
+    circuit_breaker_active = daily_pnl < 0 and abs(daily_pnl) >= max_daily_loss
+
+    # Also trip on max drawdown breach (total unrealised + realised)
+    all_closed_pnl = sum(t.pnl for t in all_trades if t.status == TradeStatus.CLOSED and t.pnl is not None)
+    if not circuit_breaker_active and cfg.max_drawdown_pct:
+        max_drawdown = cfg.capital * cfg.max_drawdown_pct
+        circuit_breaker_active = all_closed_pnl < 0 and abs(all_closed_pnl) >= max_drawdown
+
     return {
         "open_trades": len(open_trades),
-        "circuit_breaker_active": False,
+        "circuit_breaker_active": circuit_breaker_active,
         "daily_pnl": round(daily_pnl, 2),
+        "max_daily_loss": round(max_daily_loss, 2),
+        "all_time_pnl": round(all_closed_pnl, 2),
     }

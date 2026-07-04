@@ -5,8 +5,12 @@ import { useRouter } from 'next/navigation'
 import { NavBar } from '@/components/nav-bar'
 import {
   getAssistantAnalysis, addHolding, deleteHolding, importHoldings, askAssistant,
+  getAssistantFundamentals, getAssistantTimeline, getAssistantTax, getAssistantDividends, getAssistantCorrelation,
 } from '@/lib/api'
-import type { AssistantAnalysis, Holding, AssistantAlert, SizingRow } from '@/lib/api'
+import type {
+  AssistantAnalysis, Holding, AssistantAlert, SizingRow,
+  FundamentalRow, TimelineData, TaxData, DividendRow, CorrelationData,
+} from '@/lib/api'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -435,7 +439,74 @@ function AllocationTab({ data }: { data: AssistantAnalysis }) {
         </div>
       </div>
 
-      <Phase2Card title="Correlation Matrix" description="Shows how your holdings move together. Helps identify true diversification. Coming in Phase 2." />
+      <CorrelationSection />
+    </div>
+  )
+}
+
+// ── Correlation Matrix ────────────────────────────────────────────────────────
+
+function CorrelationSection() {
+  const [data, setData] = useState<CorrelationData | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [fetched, setFetched] = useState(false)
+
+  function load() {
+    const t = localStorage.getItem('mts_token') ?? ''
+    setLoading(true)
+    getAssistantCorrelation(t).then(d => { setData(d); setFetched(true); setLoading(false) }).catch(() => setLoading(false))
+  }
+
+  function corrColor(v: number) {
+    if (v >= 0.7)  return 'bg-red-200 dark:bg-red-800/60'
+    if (v >= 0.4)  return 'bg-amber-100 dark:bg-amber-900/40'
+    if (v <= -0.4) return 'bg-emerald-100 dark:bg-emerald-900/40'
+    return 'bg-zinc-50 dark:bg-zinc-800'
+  }
+
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="mb-3 flex items-center justify-between">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wider text-zinc-400">Correlation Matrix</p>
+          <p className="text-[10px] text-zinc-400 mt-0.5">Based on 6-month daily returns. Red = highly correlated (less diversification).</p>
+        </div>
+        {!fetched && <button onClick={load} disabled={loading} className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-60">{loading ? 'Computing…' : 'Load Correlation'}</button>}
+      </div>
+      {!fetched && !loading && <p className="text-xs text-zinc-400">Compute daily returns correlation for your holdings over 6 months.</p>}
+      {loading && <div className="h-20 animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" />}
+      {fetched && data && data.symbols.length >= 2 && (
+        <div className="overflow-x-auto">
+          <table className="text-xs">
+            <thead>
+              <tr>
+                <th className="w-20 px-2 py-1" />
+                {data.symbols.map(s => <th key={s} className="px-2 py-1 font-medium text-zinc-500">{s}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {data.symbols.map((row, ri) => (
+                <tr key={row}>
+                  <td className="px-2 py-1 font-semibold text-zinc-700 dark:text-zinc-300">{row}</td>
+                  {data.matrix[ri].map((v, ci) => (
+                    <td key={ci} className={`px-2 py-1 text-center font-mono ${corrColor(v)}`}>
+                      {ri === ci ? <span className="text-zinc-400">1.00</span> : v.toFixed(2)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="mt-2 flex items-center gap-3 text-[10px] text-zinc-400">
+            <span className="flex items-center gap-1"><span className="h-2 w-4 rounded bg-red-200 dark:bg-red-800/60" /> ≥0.7 High correlation</span>
+            <span className="flex items-center gap-1"><span className="h-2 w-4 rounded bg-amber-100 dark:bg-amber-900/40" /> 0.4–0.7 Moderate</span>
+            <span className="flex items-center gap-1"><span className="h-2 w-4 rounded bg-zinc-50 dark:bg-zinc-800 border border-zinc-200" /> &lt;0.4 Low (diversifying)</span>
+          </div>
+        </div>
+      )}
+      {fetched && data && data.symbols.length < 2 && (
+        <p className="text-sm text-zinc-400">Need at least 2 holdings with price history to compute correlation.</p>
+      )}
     </div>
   )
 }
@@ -480,10 +551,6 @@ function RiskTab({ data }: { data: AssistantAnalysis }) {
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Phase2Card title="Monte Carlo Simulation" description="10,000 portfolio paths to estimate probability of gain/loss over 1–12 months. Phase 2." />
-        <Phase2Card title="Value at Risk (VaR)" description="Statistical worst-case daily loss at 95% confidence. Requires price history. Phase 2." />
-      </div>
     </div>
   )
 }
@@ -572,11 +639,260 @@ function PerformanceTab({ data }: { data: AssistantAnalysis }) {
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Phase2Card title="Portfolio Timeline" description="Equity curve of portfolio value over time. Requires historical price data. Phase 2." />
-        <Phase2Card title="Dividend Analysis" description="Track dividends received, yield on cost, upcoming ex-dates. Phase 2." />
-        <Phase2Card title="Tax Analysis" description="STCG/LTCG computation, tax-loss harvesting suggestions. Phase 2." />
+      <TimelineSection token={''} />
+    </div>
+  )
+}
+
+// ── Portfolio Timeline (equity curve) ─────────────────────────────────────────
+
+function TimelineSection({ token }: { token: string }) {
+  const [tl, setTl] = useState<TimelineData | null>(null)
+  const [loading, setLoading] = useState(false)
+  const tokenRef = useRef(token)
+  tokenRef.current = token
+
+  useEffect(() => {
+    const t = typeof window !== 'undefined' ? localStorage.getItem('mts_token') ?? '' : ''
+    if (!t) return
+    setLoading(true)
+    getAssistantTimeline(t).then(d => { setTl(d); setLoading(false) }).catch(() => setLoading(false))
+  }, [])
+
+  if (loading) return <div className="h-36 animate-pulse rounded-xl bg-zinc-100 dark:bg-zinc-800" />
+  if (!tl || tl.dates.length === 0) return null
+
+  const tlData = tl
+  const maxVal = Math.max(...tlData.portfolio, ...tlData.nifty)
+  const minVal = Math.min(...tlData.portfolio, ...tlData.nifty)
+  const range = maxVal - minVal || 1
+  const W = 700; const H = 140; const PAD = 10
+  const n = tlData.dates.length
+
+  const toY = (v: number) => PAD + (1 - (v - minVal) / range) * (H - PAD * 2)
+  const toX = (i: number) => (i / (n - 1)) * W
+
+  const portPath = tlData.portfolio.map((v, i) => `${i === 0 ? 'M' : 'L'}${toX(i).toFixed(1)},${toY(v).toFixed(1)}`).join(' ')
+  const niftyPath = tlData.nifty.map((v, i) => `${i === 0 ? 'M' : 'L'}${toX(i).toFixed(1)},${toY(v).toFixed(1)}`).join(' ')
+
+  const portFirst = tlData.portfolio[0] ?? 0
+  const portFinal = tlData.portfolio[n - 1] ?? 0
+  const portReturn = portFirst > 0 ? ((portFinal - portFirst) / portFirst) * 100 : 0
+  const niftyFirst = tlData.nifty[0] ?? 0
+  const niftyFinal = tlData.nifty[n - 1] ?? 0
+  const niftyReturn = niftyFirst > 0 ? ((niftyFinal - niftyFirst) / niftyFirst) * 100 : 0
+
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="mb-3 flex items-center justify-between">
+        <p className="text-xs font-medium uppercase tracking-wider text-zinc-400">Portfolio Timeline (6 months)</p>
+        <div className="flex items-center gap-4 text-xs">
+          <span className="flex items-center gap-1.5"><span className="h-2 w-4 rounded bg-indigo-500" />Portfolio <span className={portReturn >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'}>{portReturn >= 0 ? '+' : ''}{portReturn.toFixed(1)}%</span></span>
+          <span className="flex items-center gap-1.5"><span className="h-2 w-4 rounded bg-zinc-400" />Nifty50 <span className={niftyReturn >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'}>{niftyReturn >= 0 ? '+' : ''}{niftyReturn.toFixed(1)}%</span></span>
+        </div>
       </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" preserveAspectRatio="none">
+        <path d={niftyPath} fill="none" stroke="#a1a1aa" strokeWidth="1.5" strokeDasharray="4 3" />
+        <path d={portPath} fill="none" stroke="#6366f1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      <div className="mt-2 flex justify-between text-[10px] text-zinc-400">
+        <span>{tlData.dates[0]}</span>
+        <span>{tlData.dates[n - 1]}</span>
+      </div>
+    </div>
+  )
+}
+
+// ── Research Tab ─────────────────────────────────────────────────────────────
+
+function FundamentalsSection({ token }: { token: string }) {
+  const [rows, setRows] = useState<FundamentalRow[]>([])
+  const [loading, setLoading] = useState(false)
+  const [fetched, setFetched] = useState(false)
+
+  function load() {
+    const t = localStorage.getItem('mts_token') ?? ''
+    setLoading(true)
+    getAssistantFundamentals(t).then(d => { setRows(d); setFetched(true); setLoading(false) }).catch(() => setLoading(false))
+  }
+
+  const fmtMCap = (v: number | null) => {
+    if (!v) return '—'
+    if (v >= 1e12) return `₹${(v / 1e12).toFixed(1)}T`
+    if (v >= 1e9) return `₹${(v / 1e9).toFixed(1)}B`
+    return `₹${(v / 1e7).toFixed(0)}Cr`
+  }
+
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="mb-3 flex items-center justify-between">
+        <p className="text-xs font-medium uppercase tracking-wider text-zinc-400">Fundamental Health</p>
+        {!fetched && <button onClick={load} disabled={loading} className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-60">{loading ? 'Fetching…' : 'Load Fundamentals'}</button>}
+      </div>
+      {!fetched && !loading && <p className="text-xs text-zinc-400">Click Load Fundamentals to fetch P/E, P/B, ROE, beta and analyst targets from yfinance.</p>}
+      {loading && <div className="h-16 animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" />}
+      {fetched && rows.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead><tr className="border-b border-zinc-100 dark:border-zinc-800">
+              {['Symbol', 'Market Cap', 'P/E', 'P/B', 'ROE %', 'Beta', 'Div Yield', 'Analyst', 'D/E'].map(h => (
+                <th key={h} className="px-3 py-2 text-left font-medium text-zinc-500">{h}</th>
+              ))}
+            </tr></thead>
+            <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800">
+              {rows.map(r => (
+                <tr key={r.symbol} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
+                  <td className="px-3 py-2">
+                    <p className="font-semibold text-zinc-900 dark:text-zinc-50">{r.symbol}</p>
+                    <p className="text-[10px] text-zinc-400">{r.industry}</p>
+                  </td>
+                  <td className="px-3 py-2 text-zinc-500">{fmtMCap(r.market_cap)}</td>
+                  <td className="px-3 py-2 font-mono text-zinc-700 dark:text-zinc-200">{r.pe_ratio?.toFixed(1) ?? '—'}</td>
+                  <td className="px-3 py-2 font-mono text-zinc-700 dark:text-zinc-200">{r.pb_ratio?.toFixed(2) ?? '—'}</td>
+                  <td className={`px-3 py-2 font-mono font-semibold ${(r.roe ?? 0) >= 15 ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-600 dark:text-zinc-300'}`}>{r.roe != null ? `${r.roe}%` : '—'}</td>
+                  <td className="px-3 py-2 text-zinc-500">{r.beta ?? '—'}</td>
+                  <td className="px-3 py-2 text-zinc-500">{r.dividend_yield != null ? `${r.dividend_yield}%` : '—'}</td>
+                  <td className="px-3 py-2">
+                    {r.recommendation !== '—' ? (
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${r.recommendation.toLowerCase().includes('buy') ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : r.recommendation.toLowerCase().includes('sell') ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'}`}>
+                        {r.recommendation}
+                      </span>
+                    ) : '—'}
+                  </td>
+                  <td className="px-3 py-2 text-zinc-500">{r.debt_to_equity ?? '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function DividendSection({ token }: { token: string }) {
+  const [rows, setRows] = useState<DividendRow[]>([])
+  const [loading, setLoading] = useState(false)
+  const [fetched, setFetched] = useState(false)
+
+  function load() {
+    const t = localStorage.getItem('mts_token') ?? ''
+    setLoading(true)
+    getAssistantDividends(t).then(d => { setRows(d); setFetched(true); setLoading(false) }).catch(() => setLoading(false))
+  }
+
+  const nonZero = rows.filter(r => r.dividends.length > 0 || r.current_yield > 0)
+
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="mb-3 flex items-center justify-between">
+        <p className="text-xs font-medium uppercase tracking-wider text-zinc-400">Dividend Analysis</p>
+        {!fetched && <button onClick={load} disabled={loading} className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-60">{loading ? 'Fetching…' : 'Load Dividends'}</button>}
+      </div>
+      {!fetched && !loading && <p className="text-xs text-zinc-400">Fetch historical dividends, yield-on-cost, and estimated annual income per holding.</p>}
+      {loading && <div className="h-16 animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" />}
+      {fetched && (
+        nonZero.length === 0
+          ? <p className="text-sm text-zinc-400">No dividend history found for your holdings. These may be growth stocks or dividends not yet declared.</p>
+          : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead><tr className="border-b border-zinc-100 dark:border-zinc-800">
+                  {['Symbol', 'Current Yield', 'Yield on Cost', 'Annual Income Est.', 'Total Received Est.', 'Recent Payouts'].map(h => (
+                    <th key={h} className="px-3 py-2 text-left font-medium text-zinc-500">{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800">
+                  {rows.map(r => (
+                    <tr key={r.symbol}>
+                      <td className="px-3 py-2 font-semibold text-zinc-900 dark:text-zinc-50">{r.symbol}</td>
+                      <td className="px-3 py-2 text-zinc-500">{r.current_yield > 0 ? `${r.current_yield}%` : '—'}</td>
+                      <td className={`px-3 py-2 font-semibold ${r.yield_on_cost >= 3 ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500'}`}>{r.yield_on_cost > 0 ? `${r.yield_on_cost}%` : '—'}</td>
+                      <td className="px-3 py-2 text-zinc-700 dark:text-zinc-200">{r.annual_income_est > 0 ? fmtCr(r.annual_income_est) : '—'}</td>
+                      <td className="px-3 py-2 text-zinc-700 dark:text-zinc-200">{r.total_received_est > 0 ? fmtCr(r.total_received_est) : '—'}</td>
+                      <td className="px-3 py-2 text-zinc-400">
+                        {r.dividends.slice(-3).map(d => `₹${d.amount} (${d.date.slice(0, 7)})`).join(', ') || '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
+      )}
+    </div>
+  )
+}
+
+function TaxSection({ token }: { token: string }) {
+  const [data, setData] = useState<TaxData | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [fetched, setFetched] = useState(false)
+
+  function load() {
+    const t = localStorage.getItem('mts_token') ?? ''
+    setLoading(true)
+    getAssistantTax(t).then(d => { setData(d); setFetched(true); setLoading(false) }).catch(() => setLoading(false))
+  }
+
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="mb-3 flex items-center justify-between">
+        <p className="text-xs font-medium uppercase tracking-wider text-zinc-400">Tax Analysis (STCG / LTCG)</p>
+        {!fetched && <button onClick={load} disabled={loading} className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-60">{loading ? 'Computing…' : 'Compute Tax'}</button>}
+      </div>
+      {!fetched && !loading && <p className="text-xs text-zinc-400">Compute estimated STCG (20%) and LTCG (12.5%) liability per holding per Budget 2024 rules.</p>}
+      {loading && <div className="h-16 animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" />}
+      {fetched && data && (
+        <>
+          <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {[
+              { label: 'STCG P&L', v: data.summary.total_stcg, tax: data.summary.stcg_tax, rate: '20%' },
+              { label: 'LTCG P&L', v: data.summary.total_ltcg, tax: data.summary.ltcg_tax, rate: '12.5%' },
+            ].map(s => (
+              <div key={s.label} className="rounded-lg border border-zinc-100 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-800">
+                <p className="text-[10px] text-zinc-400">{s.label} ({s.rate})</p>
+                <p className={`mt-0.5 text-sm font-bold ${s.v >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'}`}>{s.v >= 0 ? '+' : ''}{fmtCr(s.v)}</p>
+                <p className="text-[10px] text-zinc-400">Tax: {fmtCr(s.tax)}</p>
+              </div>
+            ))}
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/30 sm:col-span-2">
+              <p className="text-[10px] text-amber-600 dark:text-amber-400">Estimated Total Tax</p>
+              <p className="mt-0.5 text-sm font-bold text-amber-700 dark:text-amber-300">{fmtCr(data.summary.total_tax)}</p>
+              <p className="text-[10px] text-amber-500">LTCG exemption used: {fmtCr(data.summary.ltcg_exemption_used)}</p>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead><tr className="border-b border-zinc-100 dark:border-zinc-800">
+                {['Symbol', 'Qty', 'Avg', 'CMP', 'P&L', 'Days Held', 'Type', 'Rate', 'Est. Tax'].map(h => (
+                  <th key={h} className="px-3 py-2 text-left font-medium text-zinc-500">{h}</th>
+                ))}
+              </tr></thead>
+              <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800">
+                {data.rows.map(r => (
+                  <tr key={r.symbol}>
+                    <td className="px-3 py-2 font-semibold text-zinc-900 dark:text-zinc-50">{r.symbol}</td>
+                    <td className="px-3 py-2 text-zinc-500">{r.qty}</td>
+                    <td className="px-3 py-2 font-mono text-zinc-500">₹{fmt(r.avg_price)}</td>
+                    <td className="px-3 py-2 font-mono text-zinc-700 dark:text-zinc-200">₹{fmt(r.current_price)}</td>
+                    <td className={`px-3 py-2 font-mono font-semibold ${pnlColor(r.pnl)}`}>{r.pnl >= 0 ? '+' : ''}{fmtCr(r.pnl)}</td>
+                    <td className="px-3 py-2 text-zinc-400">{r.days_held != null ? `${r.days_held}d` : '—'}</td>
+                    <td className="px-3 py-2">
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${r.tax_type === 'LTCG' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' : r.tax_type === 'STCG' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' : 'bg-zinc-100 text-zinc-500'}`}>
+                        {r.tax_type}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-zinc-400">{r.tax_rate > 0 ? `${r.tax_rate}%` : '—'}</td>
+                    <td className={`px-3 py-2 font-mono font-semibold ${r.estimated_tax > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-zinc-400'}`}>{r.estimated_tax > 0 ? fmtCr(r.estimated_tax) : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-2 text-[10px] text-zinc-400">{data.summary.note}</p>
+        </>
+      )}
     </div>
   )
 }
@@ -586,24 +902,24 @@ function ResearchTab({ data }: { data: AssistantAnalysis }) {
     <div className="space-y-4">
       <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
         <p className="mb-2 text-xs font-medium uppercase tracking-wider text-zinc-400">News Impact</p>
-        <p className="text-sm text-zinc-500 mb-3">Recent AI scan news for your holdings. Visit the Discovery page for full coverage.</p>
+        <p className="text-sm text-zinc-500 mb-3">Recent AI scan coverage for your holdings. Visit Discovery for full analysis.</p>
         <div className="flex flex-wrap gap-2">
           {data.holdings.map(h => (
             <a key={h.id} href={`/discovery?symbol=${h.symbol}`}
               className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-xs text-zinc-700 hover:border-indigo-300 hover:bg-indigo-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
-              {h.symbol.replace(/\.(NS|BO)$/, '')}
+              {h.symbol.replace(/\.(NS|BO)$/, '')} →
             </a>
           ))}
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Phase2Card title="AI Price Prediction" description="ML model 1-day, 1-week, 1-month price targets per holding. Phase 2." />
-        <Phase2Card title="Social Sentiment" description="Reddit, Twitter/X, YouTube sentiment aggregation per stock. Phase 2." />
-        <Phase2Card title="Fundamental Health" description="P/E, P/B, ROE, debt ratios, earnings growth per holding. Phase 2." />
-        <Phase2Card title="Historical Backtesting" description="Test if your current portfolio would have outperformed the index. Phase 2." />
+      <FundamentalsSection token="" />
+      <DividendSection token="" />
+      <TaxSection token="" />
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Phase2Card title="Social Sentiment" description="Reddit, Twitter/X, YouTube sentiment aggregation per stock. Coming soon." />
         <Phase2Card title="Broker Connect" description="Auto-import live positions from Zerodha Kite, Upstox, AngelOne. Phase 3." />
-        <Phase2Card title="Options Analysis" description="If you hold options/F&O, track Greeks and P&L. Phase 3." />
       </div>
     </div>
   )

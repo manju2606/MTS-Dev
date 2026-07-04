@@ -620,6 +620,60 @@ export async function askAssistant(token: string, question: string): Promise<{ a
   return res.json()
 }
 
+export type FundamentalRow = {
+  symbol: string; raw_symbol: string; name: string; sector: string; industry: string
+  market_cap: number | null; pe_ratio: number | null; pb_ratio: number | null
+  roe: number | null; eps: number | null; beta: number | null; dividend_yield: number | null
+  week52_high: number | null; week52_low: number | null; current_price: number | null
+  analyst_target: number | null; recommendation: string
+  debt_to_equity: number | null; profit_margins: number | null
+}
+export async function getAssistantFundamentals(token: string): Promise<FundamentalRow[]> {
+  const res = await fetch(`${BASE}/api/v1/portfolio/assistant/fundamentals`, { headers: authHeaders(token) })
+  if (!res.ok) return []
+  return res.json()
+}
+
+export type TimelineData = { dates: string[]; portfolio: number[]; nifty: number[] }
+export async function getAssistantTimeline(token: string): Promise<TimelineData> {
+  const res = await fetch(`${BASE}/api/v1/portfolio/assistant/timeline`, { headers: authHeaders(token) })
+  if (!res.ok) return { dates: [], portfolio: [], nifty: [] }
+  return res.json()
+}
+
+export type TaxRow = {
+  symbol: string; qty: number; avg_price: number; current_price: number
+  invested: number; pnl: number; days_held: number | null
+  tax_type: 'STCG' | 'LTCG' | 'Unknown'; tax_rate: number; estimated_tax: number; buy_date: string
+}
+export type TaxData = {
+  rows: TaxRow[]
+  summary: { total_stcg: number; total_ltcg: number; stcg_tax: number; ltcg_tax: number; total_tax: number; ltcg_exemption_used: number; note: string }
+}
+export async function getAssistantTax(token: string): Promise<TaxData> {
+  const res = await fetch(`${BASE}/api/v1/portfolio/assistant/tax`, { headers: authHeaders(token) })
+  if (!res.ok) return { rows: [], summary: { total_stcg: 0, total_ltcg: 0, stcg_tax: 0, ltcg_tax: 0, total_tax: 0, ltcg_exemption_used: 0, note: '' } }
+  return res.json()
+}
+
+export type DividendRow = {
+  symbol: string; qty: number; avg_price: number
+  dividends: { date: string; amount: number }[]
+  annual_income_est: number; yield_on_cost: number; current_yield: number; total_received_est: number
+}
+export async function getAssistantDividends(token: string): Promise<DividendRow[]> {
+  const res = await fetch(`${BASE}/api/v1/portfolio/assistant/dividends`, { headers: authHeaders(token) })
+  if (!res.ok) return []
+  return res.json()
+}
+
+export type CorrelationData = { symbols: string[]; matrix: number[][] }
+export async function getAssistantCorrelation(token: string): Promise<CorrelationData> {
+  const res = await fetch(`${BASE}/api/v1/portfolio/assistant/correlation`, { headers: authHeaders(token) })
+  if (!res.ok) return { symbols: [], matrix: [] }
+  return res.json()
+}
+
 // ── Alerts ─────────────────────────────────────────────────────────────────
 
 export type AlertRule = {

@@ -6,10 +6,13 @@ import { NavBar } from '@/components/nav-bar'
 import {
   getAssistantAnalysis, addHolding, deleteHolding, importHoldings, askAssistant,
   getAssistantFundamentals, getAssistantTimeline, getAssistantTax, getAssistantDividends, getAssistantCorrelation,
+  getAssistantSentiment, getAssistantAISignals,
+  listPortfolios, createPortfolio, deletePortfolio,
 } from '@/lib/api'
 import type {
   AssistantAnalysis, Holding, AssistantAlert, SizingRow,
-  FundamentalRow, TimelineData, TaxData, DividendRow, CorrelationData,
+  FundamentalRow, TimelineData, TaxData, DividendRow, CorrelationData, Portfolio,
+  SentimentRow, AISignalRow,
 } from '@/lib/api'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -114,9 +117,123 @@ function Phase2Card({ title, description }: { title: string; description: string
   )
 }
 
+// ── Portfolio Switcher ────────────────────────────────────────────────────────
+
+function PortfolioSwitcher({
+  portfolios, active, onSwitch, onNew, onDelete,
+}: {
+  portfolios: Portfolio[]
+  active: string
+  onSwitch: (id: string) => void
+  onNew: () => void
+  onDelete: (id: string) => void
+}) {
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const showDelete = portfolios.length > 1
+
+  return (
+    <div className="mb-5 flex flex-wrap items-center gap-2">
+      {portfolios.map(p => (
+        <div key={p.portfolio_id} className="relative flex items-center">
+          <button
+            onClick={() => onSwitch(p.portfolio_id)}
+            className={cls(
+              'flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors',
+              active === p.portfolio_id
+                ? 'border-indigo-500 bg-indigo-600 text-white dark:border-indigo-500'
+                : 'border-zinc-300 bg-white text-zinc-700 hover:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-500',
+            )}
+          >
+            {p.name}
+            <span className={cls(
+              'rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
+              active === p.portfolio_id ? 'bg-indigo-500 text-indigo-100' : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400',
+            )}>
+              {p.holdings_count}
+            </span>
+          </button>
+          {showDelete && active === p.portfolio_id && (
+            confirmDelete === p.portfolio_id ? (
+              <div className="ml-1 flex items-center gap-1">
+                <span className="text-xs text-red-500">Delete?</span>
+                <button onClick={() => { onDelete(p.portfolio_id); setConfirmDelete(null) }}
+                  className="rounded px-1.5 py-0.5 text-[10px] font-semibold bg-red-500 text-white hover:bg-red-600">Yes</button>
+                <button onClick={() => setConfirmDelete(null)}
+                  className="rounded px-1.5 py-0.5 text-[10px] text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">No</button>
+              </div>
+            ) : (
+              <button onClick={() => setConfirmDelete(p.portfolio_id)}
+                className="ml-1 text-zinc-400 hover:text-red-400 text-xs leading-none" title="Delete portfolio">✕</button>
+            )
+          )}
+        </div>
+      ))}
+
+      <button
+        onClick={onNew}
+        className="flex items-center gap-1 rounded-lg border border-dashed border-zinc-300 bg-transparent px-3 py-1.5 text-sm font-medium text-zinc-500 hover:border-indigo-400 hover:text-indigo-600 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-indigo-500 dark:hover:text-indigo-400"
+      >
+        + New Portfolio
+      </button>
+    </div>
+  )
+}
+
+// ── New Portfolio Modal ────────────────────────────────────────────────────────
+
+function NewPortfolioModal({ token, onCreated, onCancel }: {
+  token: string
+  onCreated: (p: Portfolio) => void
+  onCancel: () => void
+}) {
+  const [name, setName] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!name.trim()) return
+    setSaving(true); setErr(null)
+    try {
+      const p = await createPortfolio(token, name.trim())
+      onCreated(p)
+    } catch (ex: unknown) {
+      setErr(ex instanceof Error ? ex.message : 'Failed to create')
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="w-80 rounded-2xl border border-zinc-200 bg-white p-6 shadow-xl dark:border-zinc-800 dark:bg-zinc-900">
+        <p className="mb-4 text-sm font-semibold text-zinc-900 dark:text-zinc-50">New Portfolio</p>
+        <form onSubmit={submit} className="flex flex-col gap-3">
+          <input
+            autoFocus
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder="e.g. Holding-2, Long Term, Dividend"
+            className="rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+          />
+          {err && <p className="text-xs text-red-500">{err}</p>}
+          <div className="flex gap-2">
+            <button type="submit" disabled={!name.trim() || saving}
+              className="flex-1 rounded-lg bg-indigo-600 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-60">
+              {saving ? 'Creating…' : 'Create'}
+            </button>
+            <button type="button" onClick={onCancel}
+              className="flex-1 rounded-lg border border-zinc-300 py-2 text-sm text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800">
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 // ── Add Holding Form ───────────────────────────────────────────────────────────
 
-function AddHoldingForm({ token, onAdded }: { token: string; onAdded: () => void }) {
+function AddHoldingForm({ token, portfolioId, onAdded }: { token: string; portfolioId: string; onAdded: () => void }) {
   const [sym, setSym] = useState('')
   const [qty, setQty] = useState('')
   const [price, setPrice] = useState('')
@@ -128,7 +245,7 @@ function AddHoldingForm({ token, onAdded }: { token: string; onAdded: () => void
     e.preventDefault()
     setErr(null); setSaving(true)
     try {
-      await addHolding(token, { symbol: sym.trim(), qty: Number(qty), avg_price: Number(price), buy_date: date || undefined })
+      await addHolding(token, { symbol: sym.trim(), qty: Number(qty), avg_price: Number(price), buy_date: date || undefined, portfolio_id: portfolioId })
       setSym(''); setQty(''); setPrice(''); setDate('')
       onAdded()
     } catch (e: unknown) { setErr(e instanceof Error ? e.message : 'Failed') }
@@ -156,7 +273,7 @@ function AddHoldingForm({ token, onAdded }: { token: string; onAdded: () => void
 
 // ── CSV Import ────────────────────────────────────────────────────────────────
 
-function CsvImport({ token, onImported }: { token: string; onImported: () => void }) {
+function CsvImport({ token, portfolioId, onImported }: { token: string; portfolioId: string; onImported: () => void }) {
   const [importing, setImporting] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
 
@@ -191,7 +308,7 @@ function CsvImport({ token, onImported }: { token: string; onImported: () => voi
 
       setImporting(true)
       try {
-        const { imported } = await importHoldings(token, rows)
+        const { imported } = await importHoldings(token, rows, portfolioId)
         setMsg(`Imported ${imported} holdings.`)
         onImported()
       } catch { setMsg('Import failed.') }
@@ -252,7 +369,7 @@ function OverviewTab({ data }: { data: AssistantAnalysis }) {
             <p className="text-sm text-zinc-400">No alerts. Portfolio looks healthy.</p>
           ) : (
             <div className="space-y-2">
-              {alerts.map((a, i) => (
+              {alerts.map((a: AssistantAlert, i: number) => (
                 <div key={i} className={cls(
                   'flex items-start gap-3 rounded-lg px-3 py-2 text-sm',
                   a.severity === 'high' ? 'bg-red-50 dark:bg-red-950/30' : 'bg-amber-50 dark:bg-amber-950/20'
@@ -268,7 +385,6 @@ function OverviewTab({ data }: { data: AssistantAnalysis }) {
         </div>
       </div>
 
-      {/* Portfolio Scorecard */}
       <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
         <p className="mb-3 text-xs font-medium uppercase tracking-wider text-zinc-400">Portfolio Scorecard</p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -361,7 +477,7 @@ function HoldingsTab({ data, token, onRefresh }: { data: AssistantAnalysis; toke
   )
 }
 
-function AllocationTab({ data }: { data: AssistantAnalysis }) {
+function AllocationTab({ data, portfolioId }: { data: AssistantAnalysis; portfolioId: string }) {
   const { sector_allocation, summary, sizing } = data
   const slices = Object.entries(sector_allocation).map(([label, value]) => ({ label, value }))
   const total = summary.current_value
@@ -369,13 +485,11 @@ function AllocationTab({ data }: { data: AssistantAnalysis }) {
   return (
     <div className="space-y-4">
       <div className="grid gap-4 lg:grid-cols-2">
-        {/* Asset Allocation */}
         <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
           <p className="mb-4 text-xs font-medium uppercase tracking-wider text-zinc-400">Asset Allocation by Sector</p>
           <MiniDonut data={slices} />
         </div>
 
-        {/* Sector bar chart */}
         <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
           <p className="mb-4 text-xs font-medium uppercase tracking-wider text-zinc-400">Sector Diversification</p>
           <div className="space-y-2">
@@ -397,7 +511,6 @@ function AllocationTab({ data }: { data: AssistantAnalysis }) {
         </div>
       </div>
 
-      {/* Position Sizing */}
       <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
         <p className="mb-3 text-xs font-medium uppercase tracking-wider text-zinc-400">Position Sizing Analysis</p>
         <div className="overflow-x-auto">
@@ -439,14 +552,14 @@ function AllocationTab({ data }: { data: AssistantAnalysis }) {
         </div>
       </div>
 
-      <CorrelationSection />
+      <CorrelationSection portfolioId={portfolioId} />
     </div>
   )
 }
 
 // ── Correlation Matrix ────────────────────────────────────────────────────────
 
-function CorrelationSection() {
+function CorrelationSection({ portfolioId }: { portfolioId: string }) {
   const [data, setData] = useState<CorrelationData | null>(null)
   const [loading, setLoading] = useState(false)
   const [fetched, setFetched] = useState(false)
@@ -454,7 +567,7 @@ function CorrelationSection() {
   function load() {
     const t = localStorage.getItem('mts_token') ?? ''
     setLoading(true)
-    getAssistantCorrelation(t).then(d => { setData(d); setFetched(true); setLoading(false) }).catch(() => setLoading(false))
+    getAssistantCorrelation(t, portfolioId).then(d => { setData(d); setFetched(true); setLoading(false) }).catch(() => setLoading(false))
   }
 
   function corrColor(v: number) {
@@ -550,12 +663,11 @@ function RiskTab({ data }: { data: AssistantAnalysis }) {
           </div>
         </div>
       </div>
-
     </div>
   )
 }
 
-function PerformanceTab({ data }: { data: AssistantAnalysis }) {
+function PerformanceTab({ data, portfolioId }: { data: AssistantAnalysis; portfolioId: string }) {
   const sorted = [...data.holdings].sort((a, b) => b.pnl_pct - a.pnl_pct)
   const winners = sorted.filter(h => h.pnl_pct > 0)
   const losers  = sorted.filter(h => h.pnl_pct < 0).reverse()
@@ -639,25 +751,24 @@ function PerformanceTab({ data }: { data: AssistantAnalysis }) {
         </div>
       </div>
 
-      <TimelineSection token={''} />
+      <TimelineSection portfolioId={portfolioId} />
     </div>
   )
 }
 
 // ── Portfolio Timeline (equity curve) ─────────────────────────────────────────
 
-function TimelineSection({ token }: { token: string }) {
+function TimelineSection({ portfolioId }: { portfolioId: string }) {
   const [tl, setTl] = useState<TimelineData | null>(null)
   const [loading, setLoading] = useState(false)
-  const tokenRef = useRef(token)
-  tokenRef.current = token
 
   useEffect(() => {
     const t = typeof window !== 'undefined' ? localStorage.getItem('mts_token') ?? '' : ''
     if (!t) return
     setLoading(true)
-    getAssistantTimeline(t).then(d => { setTl(d); setLoading(false) }).catch(() => setLoading(false))
-  }, [])
+    setTl(null)
+    getAssistantTimeline(t, portfolioId).then(d => { setTl(d); setLoading(false) }).catch(() => setLoading(false))
+  }, [portfolioId])
 
   if (loading) return <div className="h-36 animate-pulse rounded-xl bg-zinc-100 dark:bg-zinc-800" />
   if (!tl || tl.dates.length === 0) return null
@@ -705,7 +816,7 @@ function TimelineSection({ token }: { token: string }) {
 
 // ── Research Tab ─────────────────────────────────────────────────────────────
 
-function FundamentalsSection({ token }: { token: string }) {
+function FundamentalsSection({ portfolioId }: { portfolioId: string }) {
   const [rows, setRows] = useState<FundamentalRow[]>([])
   const [loading, setLoading] = useState(false)
   const [fetched, setFetched] = useState(false)
@@ -713,7 +824,7 @@ function FundamentalsSection({ token }: { token: string }) {
   function load() {
     const t = localStorage.getItem('mts_token') ?? ''
     setLoading(true)
-    getAssistantFundamentals(t).then(d => { setRows(d); setFetched(true); setLoading(false) }).catch(() => setLoading(false))
+    getAssistantFundamentals(t, portfolioId).then(d => { setRows(d); setFetched(true); setLoading(false) }).catch(() => setLoading(false))
   }
 
   const fmtMCap = (v: number | null) => {
@@ -770,7 +881,7 @@ function FundamentalsSection({ token }: { token: string }) {
   )
 }
 
-function DividendSection({ token }: { token: string }) {
+function DividendSection({ portfolioId }: { portfolioId: string }) {
   const [rows, setRows] = useState<DividendRow[]>([])
   const [loading, setLoading] = useState(false)
   const [fetched, setFetched] = useState(false)
@@ -778,7 +889,7 @@ function DividendSection({ token }: { token: string }) {
   function load() {
     const t = localStorage.getItem('mts_token') ?? ''
     setLoading(true)
-    getAssistantDividends(t).then(d => { setRows(d); setFetched(true); setLoading(false) }).catch(() => setLoading(false))
+    getAssistantDividends(t, portfolioId).then(d => { setRows(d); setFetched(true); setLoading(false) }).catch(() => setLoading(false))
   }
 
   const nonZero = rows.filter(r => r.dividends.length > 0 || r.current_yield > 0)
@@ -824,7 +935,7 @@ function DividendSection({ token }: { token: string }) {
   )
 }
 
-function TaxSection({ token }: { token: string }) {
+function TaxSection({ portfolioId }: { portfolioId: string }) {
   const [data, setData] = useState<TaxData | null>(null)
   const [loading, setLoading] = useState(false)
   const [fetched, setFetched] = useState(false)
@@ -832,7 +943,7 @@ function TaxSection({ token }: { token: string }) {
   function load() {
     const t = localStorage.getItem('mts_token') ?? ''
     setLoading(true)
-    getAssistantTax(t).then(d => { setData(d); setFetched(true); setLoading(false) }).catch(() => setLoading(false))
+    getAssistantTax(t, portfolioId).then(d => { setData(d); setFetched(true); setLoading(false) }).catch(() => setLoading(false))
   }
 
   return (
@@ -897,7 +1008,259 @@ function TaxSection({ token }: { token: string }) {
   )
 }
 
-function ResearchTab({ data }: { data: AssistantAnalysis }) {
+// ── News Sentiment Section (Phase 2) ──────────────────────────────────────────
+
+function SentimentSection({ portfolioId }: { portfolioId: string }) {
+  const [rows, setRows] = useState<SentimentRow[]>([])
+  const [loading, setLoading] = useState(false)
+  const [fetched, setFetched] = useState(false)
+  const [expanded, setExpanded] = useState<string | null>(null)
+
+  function load() {
+    const t = localStorage.getItem('mts_token') ?? ''
+    setLoading(true)
+    getAssistantSentiment(t, portfolioId)
+      .then(d => { setRows(d); setFetched(true); setLoading(false) })
+      .catch(() => setLoading(false))
+  }
+
+  function sentColor(avg: number) {
+    if (avg > 0.2) return 'text-emerald-600 dark:text-emerald-400'
+    if (avg < -0.2) return 'text-red-500 dark:text-red-400'
+    return 'text-zinc-500 dark:text-zinc-400'
+  }
+
+  function sentBar(avg: number) {
+    const pct = Math.round(((avg + 1) / 2) * 100)
+    const col = avg > 0.2 ? 'bg-emerald-500' : avg < -0.2 ? 'bg-red-500' : 'bg-zinc-400'
+    return (
+      <div className="flex items-center gap-2">
+        <div className="h-1.5 w-20 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+          <div className={`h-full rounded-full ${col}`} style={{ width: `${pct}%` }} />
+        </div>
+        <span className={`text-xs font-semibold ${sentColor(avg)}`}>{avg > 0 ? '+' : ''}{avg.toFixed(2)}</span>
+      </div>
+    )
+  }
+
+  const hasData = rows.some(r => r.news_count > 0)
+  const portAvg = hasData
+    ? rows.filter(r => r.news_count > 0).reduce((s, r) => s + r.avg_sentiment, 0) /
+      rows.filter(r => r.news_count > 0).length
+    : 0
+
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="mb-3 flex items-center justify-between">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wider text-zinc-400">News Sentiment</p>
+          {fetched && hasData && (
+            <p className={`text-xs mt-0.5 font-semibold ${sentColor(portAvg)}`}>
+              Portfolio: {portAvg > 0 ? 'Bullish' : portAvg < -0.2 ? 'Bearish' : 'Neutral'} ({portAvg > 0 ? '+' : ''}{portAvg.toFixed(2)})
+            </p>
+          )}
+        </div>
+        {!fetched && (
+          <button onClick={load} disabled={loading}
+            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-60">
+            {loading ? 'Fetching…' : 'Load Sentiment'}
+          </button>
+        )}
+      </div>
+
+      {!fetched && !loading && (
+        <p className="text-xs text-zinc-400">Recent news sentiment from the AI Discovery engine, scored per holding.</p>
+      )}
+      {loading && <div className="h-16 animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" />}
+
+      {fetched && rows.length === 0 && (
+        <p className="text-sm text-zinc-400">No holdings found in this portfolio.</p>
+      )}
+
+      {fetched && rows.length > 0 && (
+        <div className="space-y-2">
+          {rows.map(r => (
+            <div key={r.symbol} className="rounded-lg border border-zinc-100 dark:border-zinc-800">
+              <button
+                onClick={() => setExpanded(expanded === r.symbol ? null : r.symbol)}
+                className="flex w-full items-center justify-between px-3 py-2.5 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
+                <div className="flex items-center gap-3">
+                  <span className="min-w-[60px] text-sm font-semibold text-zinc-900 dark:text-zinc-50">{r.symbol}</span>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                    r.sentiment_label.includes('Bullish') ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' :
+                    r.sentiment_label.includes('Bearish') ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' :
+                    r.sentiment_label === 'No Data' ? 'bg-zinc-100 text-zinc-400 dark:bg-zinc-800' :
+                    'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'
+                  }`}>{r.sentiment_label}</span>
+                </div>
+                <div className="flex items-center gap-4">
+                  {r.news_count > 0 ? (
+                    <>
+                      {sentBar(r.avg_sentiment)}
+                      <div className="flex gap-2 text-[10px]">
+                        <span className="text-emerald-600">▲{r.bullish_count}</span>
+                        <span className="text-zinc-400">—{r.neutral_count}</span>
+                        <span className="text-red-500">▼{r.bearish_count}</span>
+                      </div>
+                      <span className="text-xs text-zinc-400">{r.news_count} articles</span>
+                    </>
+                  ) : (
+                    <span className="text-xs text-zinc-400">No news found</span>
+                  )}
+                  <span className="text-zinc-400">{expanded === r.symbol ? '▲' : '▼'}</span>
+                </div>
+              </button>
+
+              {expanded === r.symbol && r.headlines.length > 0 && (
+                <div className="border-t border-zinc-100 px-3 pb-3 dark:border-zinc-800">
+                  <div className="mt-2 space-y-2">
+                    {r.headlines.map((h, i) => (
+                      <div key={i} className="flex items-start gap-2">
+                        <span className={`mt-0.5 h-2 w-2 flex-shrink-0 rounded-full ${h.sentiment_score > 0.2 ? 'bg-emerald-500' : h.sentiment_score < -0.2 ? 'bg-red-500' : 'bg-zinc-400'}`} />
+                        <div className="min-w-0 flex-1">
+                          {h.url ? (
+                            <a href={h.url} target="_blank" rel="noopener noreferrer"
+                              className="text-xs text-zinc-800 hover:text-indigo-600 dark:text-zinc-200 dark:hover:text-indigo-400 line-clamp-2">
+                              {h.title}
+                            </a>
+                          ) : (
+                            <p className="text-xs text-zinc-800 dark:text-zinc-200 line-clamp-2">{h.title}</p>
+                          )}
+                          <p className="mt-0.5 text-[10px] text-zinc-400">{h.source} · {h.published_at}</p>
+                        </div>
+                        <span className={`flex-shrink-0 text-[10px] font-mono ${sentColor(h.sentiment_score)}`}>
+                          {h.sentiment_score > 0 ? '+' : ''}{h.sentiment_score.toFixed(2)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {expanded === r.symbol && r.headlines.length === 0 && r.news_count === 0 && (
+                <div className="border-t border-zinc-100 px-3 py-2 dark:border-zinc-800">
+                  <p className="text-xs text-zinc-400">No news articles found. Run a Discovery scan to populate news data.</p>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── AI Signals Section (Phase 2) ──────────────────────────────────────────────
+
+function AISignalsSection({ portfolioId }: { portfolioId: string }) {
+  const [rows, setRows] = useState<AISignalRow[]>([])
+  const [loading, setLoading] = useState(false)
+  const [fetched, setFetched] = useState(false)
+
+  function load() {
+    const t = localStorage.getItem('mts_token') ?? ''
+    setLoading(true)
+    getAssistantAISignals(t, portfolioId)
+      .then(d => { setRows(d); setFetched(true); setLoading(false) })
+      .catch(() => setLoading(false))
+  }
+
+  function actionColor(signal: string) {
+    if (signal === 'STRONG_BUY') return 'text-emerald-700 dark:text-emerald-300'
+    if (signal === 'BUY') return 'text-green-600 dark:text-green-400'
+    if (signal === 'SELL') return 'text-red-500 dark:text-red-400'
+    if (signal === 'STRONG_SELL') return 'text-red-700 dark:text-red-300'
+    return 'text-zinc-500 dark:text-zinc-400'
+  }
+
+  function actionHint(signal: string, avgPrice: number, stopLoss: number, targets: number[]) {
+    if (signal === 'NO_DATA') return 'Run Discovery scan to get AI signals.'
+    const t1 = targets[0] ?? 0
+    if (signal === 'STRONG_BUY' || signal === 'BUY') {
+      return `Add more. Target ₹${t1 > 0 ? t1.toFixed(0) : '—'}, stop ₹${stopLoss > 0 ? stopLoss.toFixed(0) : '—'}.`
+    }
+    if (signal === 'SELL' || signal === 'STRONG_SELL') {
+      return `Consider exiting. Avg ₹${avgPrice.toFixed(0)}, stop ₹${stopLoss > 0 ? stopLoss.toFixed(0) : '—'}.`
+    }
+    return `Hold. Target ₹${t1 > 0 ? t1.toFixed(0) : '—'}.`
+  }
+
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="mb-3 flex items-center justify-between">
+        <p className="text-xs font-medium uppercase tracking-wider text-zinc-400">AI Signals (Discovery Engine)</p>
+        {!fetched && (
+          <button onClick={load} disabled={loading}
+            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-60">
+            {loading ? 'Loading…' : 'Load AI Signals'}
+          </button>
+        )}
+      </div>
+
+      {!fetched && !loading && (
+        <p className="text-xs text-zinc-400">Latest buy/sell signals from the AI engine for each holding — entry, stop-loss, and targets.</p>
+      )}
+      {loading && <div className="h-16 animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" />}
+
+      {fetched && rows.length === 0 && (
+        <p className="text-sm text-zinc-400">No holdings found in this portfolio.</p>
+      )}
+
+      {fetched && rows.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-zinc-100 dark:border-zinc-800">
+                {['Symbol', 'Signal', 'Score', 'Entry ₹', 'Stop ₹', 'Target ₹', 'Tech', 'News', 'Action'].map(h => (
+                  <th key={h} className="px-3 py-2 text-left font-medium text-zinc-500">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800">
+              {rows.map(r => (
+                <tr key={r.symbol} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
+                  <td className="px-3 py-2">
+                    <p className="font-semibold text-zinc-900 dark:text-zinc-50">{r.symbol}</p>
+                    {r.scanned_at && <p className="text-[10px] text-zinc-400">{r.scanned_at}</p>}
+                  </td>
+                  <td className="px-3 py-2">
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${SIGNAL_STYLE[r.signal] ?? 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800'}`}>
+                      {r.signal === 'NO_DATA' ? 'No Data' : r.signal.replace('_', ' ')}
+                    </span>
+                    {r.confidence > 0 && (
+                      <p className="mt-0.5 text-[10px] text-zinc-400">{(r.confidence * 100).toFixed(0)}% conf</p>
+                    )}
+                  </td>
+                  <td className="px-3 py-2">
+                    {r.score > 0 ? (
+                      <div className="flex items-center gap-1.5">
+                        <div className="h-1.5 w-10 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+                          <div className={`h-full rounded-full ${r.score >= 70 ? 'bg-indigo-500' : r.score >= 50 ? 'bg-amber-400' : 'bg-red-400'}`}
+                            style={{ width: `${r.score}%` }} />
+                        </div>
+                        <span className="font-mono text-zinc-600 dark:text-zinc-300">{r.score}</span>
+                      </div>
+                    ) : <span className="text-zinc-400">—</span>}
+                  </td>
+                  <td className="px-3 py-2 font-mono text-zinc-700 dark:text-zinc-200">{r.entry_price > 0 ? r.entry_price.toFixed(0) : '—'}</td>
+                  <td className="px-3 py-2 font-mono text-red-500">{r.stop_loss > 0 ? r.stop_loss.toFixed(0) : '—'}</td>
+                  <td className="px-3 py-2 font-mono text-emerald-600 dark:text-emerald-400">{r.targets.length > 0 ? r.targets[0].toFixed(0) : '—'}</td>
+                  <td className="px-3 py-2 text-zinc-500">{r.technical_score > 0 ? r.technical_score.toFixed(0) : '—'}</td>
+                  <td className="px-3 py-2 text-zinc-500">{r.news_score > 0 ? r.news_score.toFixed(0) : '—'}</td>
+                  <td className={`px-3 py-2 max-w-[140px] ${actionColor(r.signal)}`}>
+                    <p className="text-[10px] font-semibold">{actionHint(r.signal, r.avg_price, r.stop_loss, r.targets)}</p>
+                    {r.holding_period && <p className="text-[10px] text-zinc-400">Hold: {r.holding_period}</p>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ResearchTab({ data, portfolioId }: { data: AssistantAnalysis; portfolioId: string }) {
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
@@ -913,14 +1276,14 @@ function ResearchTab({ data }: { data: AssistantAnalysis }) {
         </div>
       </div>
 
-      <FundamentalsSection token="" />
-      <DividendSection token="" />
-      <TaxSection token="" />
+      <FundamentalsSection portfolioId={portfolioId} />
+      <DividendSection portfolioId={portfolioId} />
+      <TaxSection portfolioId={portfolioId} />
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Phase2Card title="Social Sentiment" description="Reddit, Twitter/X, YouTube sentiment aggregation per stock. Coming soon." />
-        <Phase2Card title="Broker Connect" description="Auto-import live positions from Zerodha Kite, Upstox, AngelOne. Phase 3." />
-      </div>
+      <AISignalsSection portfolioId={portfolioId} />
+      <SentimentSection portfolioId={portfolioId} />
+
+      <Phase2Card title="Broker Connect" description="Auto-import live positions from Zerodha Kite, Upstox, AngelOne. Phase 3." />
     </div>
   )
 }
@@ -939,7 +1302,7 @@ const QUICK_QUESTIONS = [
 
 type ChatMsg = { role: 'user' | 'ai'; text: string }
 
-function AssistantTab({ token }: { token: string }) {
+function AssistantTab({ token, portfolioId }: { token: string; portfolioId: string }) {
   const [messages, setMessages] = useState<ChatMsg[]>([
     { role: 'ai', text: 'Hello! I\'m your Portfolio Assistant. Ask me anything about your holdings — performance, risk, what to buy or sell, diversification, and more.' }
   ])
@@ -955,7 +1318,7 @@ function AssistantTab({ token }: { token: string }) {
     setInput('')
     setThinking(true)
     try {
-      const { answer } = await askAssistant(token, question)
+      const { answer } = await askAssistant(token, question, portfolioId)
       setMessages(m => [...m, { role: 'ai', text: answer }])
     } catch {
       setMessages(m => [...m, { role: 'ai', text: 'Sorry, I couldn\'t fetch your portfolio data right now. Please try again.' }])
@@ -964,7 +1327,6 @@ function AssistantTab({ token }: { token: string }) {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Quick questions */}
       <div className="flex flex-wrap gap-2">
         {QUICK_QUESTIONS.map(q => (
           <button key={q} onClick={() => send(q)} disabled={thinking}
@@ -974,7 +1336,6 @@ function AssistantTab({ token }: { token: string }) {
         ))}
       </div>
 
-      {/* Chat window */}
       <div className="flex h-96 flex-col overflow-y-auto rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         <div className="flex-1 space-y-4 overflow-y-auto p-4">
           {messages.map((m, i) => (
@@ -990,7 +1351,6 @@ function AssistantTab({ token }: { token: string }) {
                   ? 'bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200'
                   : 'bg-indigo-600 text-white'
               )}>
-                {/* Render **bold** markdown */}
                 {m.text.split(/(\*\*[^*]+\*\*)/).map((part, pi) =>
                   part.startsWith('**') ? <strong key={pi}>{part.slice(2, -2)}</strong> : <span key={pi}>{part}</span>
                 )}
@@ -1039,26 +1399,67 @@ const TABS: { id: Tab; label: string; count?: (d: AssistantAnalysis) => number }
 export default function AssistantView() {
   const router = useRouter()
   const tokenRef = useRef('')
-  const [data, setData]           = useState<AssistantAnalysis | null>(null)
-  const [loading, setLoading]     = useState(true)
-  const [tab, setTab]             = useState<Tab>('overview')
-  const [showAdd, setShowAdd]     = useState(false)
+  const [data, setData]               = useState<AssistantAnalysis | null>(null)
+  const [loading, setLoading]         = useState(true)
+  const [tab, setTab]                 = useState<Tab>('overview')
+  const [showAdd, setShowAdd]         = useState(false)
+  const [portfolios, setPortfolios]   = useState<Portfolio[]>([])
+  const [activePortfolioId, setActivePortfolioId] = useState('default')
+  const [showNewPortfolio, setShowNewPortfolio]   = useState(false)
 
-  async function load(token: string) {
-    const d = await getAssistantAnalysis(token).catch(() => null)
-    if (d) { setData(d); setLoading(false) }
-    else setLoading(false)
+  async function loadPortfolios(token: string) {
+    const ps = await listPortfolios(token).catch(() => [] as Portfolio[])
+    setPortfolios(ps)
+    // If we have portfolios and active is still "default" but not in the list, pick first
+    if (ps.length > 0 && !ps.find(p => p.portfolio_id === activePortfolioId)) {
+      setActivePortfolioId(ps[0].portfolio_id)
+    }
+    return ps
+  }
+
+  async function loadData(token: string, portfolioId: string) {
+    setLoading(true)
+    const d = await getAssistantAnalysis(token, portfolioId).catch(() => null)
+    setData(d)
+    setLoading(false)
   }
 
   useEffect(() => {
     const t = localStorage.getItem('mts_token')
     if (!t) { router.replace('/login'); return }
     tokenRef.current = t
-    load(t)
+    loadPortfolios(t).then(ps => {
+      const pid = ps.length > 0 ? ps[0].portfolio_id : 'default'
+      setActivePortfolioId(pid)
+      loadData(t, pid)
+    })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router])
 
-  function refresh() { load(tokenRef.current) }
+  function refresh() { loadData(tokenRef.current, activePortfolioId) }
+
+  function switchPortfolio(id: string) {
+    if (id === activePortfolioId) return
+    setActivePortfolioId(id)
+    setTab('overview')
+    loadData(tokenRef.current, id)
+  }
+
+  async function handleDeletePortfolio(id: string) {
+    await deletePortfolio(tokenRef.current, id).catch(() => null)
+    const ps = await loadPortfolios(tokenRef.current)
+    const fallback = ps.find(p => p.portfolio_id !== id)?.portfolio_id ?? 'default'
+    setActivePortfolioId(fallback)
+    loadData(tokenRef.current, fallback)
+  }
+
+  function handlePortfolioCreated(p: Portfolio) {
+    setShowNewPortfolio(false)
+    setPortfolios(prev => [...prev, p])
+    setActivePortfolioId(p.portfolio_id)
+    setTab('overview')
+    loadData(tokenRef.current, p.portfolio_id)
+  }
 
   const isEmpty = !loading && data && data.holdings.length === 0
 
@@ -1068,10 +1469,10 @@ export default function AssistantView() {
       <main className="mx-auto max-w-7xl px-4 py-6">
 
         {/* Header */}
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Portfolio Assistant</h1>
-            <p className="text-xs text-zinc-400">Track your real holdings · AI analysis · 23 insights</p>
+            <p className="text-xs text-zinc-400">Track your real holdings · AI analysis · Multiple portfolios</p>
           </div>
           <button onClick={() => setShowAdd(v => !v)}
             className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">
@@ -1079,13 +1480,43 @@ export default function AssistantView() {
           </button>
         </div>
 
+        {/* Portfolio Switcher */}
+        {portfolios.length > 0 && (
+          <PortfolioSwitcher
+            portfolios={portfolios}
+            active={activePortfolioId}
+            onSwitch={switchPortfolio}
+            onNew={() => setShowNewPortfolio(true)}
+            onDelete={handleDeletePortfolio}
+          />
+        )}
+        {portfolios.length === 0 && !loading && (
+          <div className="mb-5 flex items-center gap-2">
+            <button onClick={() => setShowNewPortfolio(true)}
+              className="flex items-center gap-1 rounded-lg border border-dashed border-zinc-300 bg-transparent px-3 py-1.5 text-sm font-medium text-zinc-500 hover:border-indigo-400 hover:text-indigo-600 dark:border-zinc-700 dark:text-zinc-400">
+              + New Portfolio
+            </button>
+          </div>
+        )}
+
+        {/* New portfolio modal */}
+        {showNewPortfolio && (
+          <NewPortfolioModal
+            token={tokenRef.current}
+            onCreated={handlePortfolioCreated}
+            onCancel={() => setShowNewPortfolio(false)}
+          />
+        )}
+
         {/* Add / Import panel */}
         {showAdd && (
           <div className="mb-5 rounded-xl border border-indigo-200 bg-indigo-50/60 p-4 dark:border-indigo-800 dark:bg-indigo-950/20">
-            <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-indigo-500">Add Holdings</p>
-            <AddHoldingForm token={tokenRef.current} onAdded={() => { refresh(); setShowAdd(false) }} />
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-indigo-500">
+              Add Holdings to &ldquo;{portfolios.find(p => p.portfolio_id === activePortfolioId)?.name ?? activePortfolioId}&rdquo;
+            </p>
+            <AddHoldingForm token={tokenRef.current} portfolioId={activePortfolioId} onAdded={() => { refresh(); setShowAdd(false); loadPortfolios(tokenRef.current) }} />
             <div className="mt-3 border-t border-indigo-200 pt-3 dark:border-indigo-800">
-              <CsvImport token={tokenRef.current} onImported={() => { refresh(); setShowAdd(false) }} />
+              <CsvImport token={tokenRef.current} portfolioId={activePortfolioId} onImported={() => { refresh(); setShowAdd(false); loadPortfolios(tokenRef.current) }} />
             </div>
             <p className="mt-3 text-[11px] text-zinc-400">
               CSV columns: <code>symbol, qty, avg_price, buy_date (optional), name (optional)</code>.<br />
@@ -1102,8 +1533,8 @@ export default function AssistantView() {
 
         {isEmpty && (
           <div className="rounded-xl border border-zinc-200 bg-white px-4 py-16 text-center dark:border-zinc-800 dark:bg-zinc-900">
-            <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">No holdings yet</p>
-            <p className="mt-1 text-xs text-zinc-400">Click "+ Add Holding" to add stocks manually, or import a CSV.</p>
+            <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">No holdings in this portfolio</p>
+            <p className="mt-1 text-xs text-zinc-400">Click &ldquo;+ Add Holding&rdquo; to add stocks manually, or import a CSV.</p>
           </div>
         )}
 
@@ -1127,11 +1558,11 @@ export default function AssistantView() {
 
             {tab === 'overview'    && <OverviewTab data={data} />}
             {tab === 'holdings'   && <HoldingsTab data={data} token={tokenRef.current} onRefresh={refresh} />}
-            {tab === 'allocation' && <AllocationTab data={data} />}
+            {tab === 'allocation' && <AllocationTab data={data} portfolioId={activePortfolioId} />}
             {tab === 'risk'       && <RiskTab data={data} />}
-            {tab === 'performance'&& <PerformanceTab data={data} />}
-            {tab === 'research'   && <ResearchTab data={data} />}
-            {tab === 'assistant'  && <AssistantTab token={tokenRef.current} />}
+            {tab === 'performance'&& <PerformanceTab data={data} portfolioId={activePortfolioId} />}
+            {tab === 'research'   && <ResearchTab data={data} portfolioId={activePortfolioId} />}
+            {tab === 'assistant'  && <AssistantTab token={tokenRef.current} portfolioId={activePortfolioId} />}
           </>
         )}
       </main>

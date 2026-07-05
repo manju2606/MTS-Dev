@@ -566,26 +566,71 @@ export type AssistantAnalysis = {
   sizing: SizingRow[]
 }
 
-export async function getAssistantAnalysis(token: string): Promise<AssistantAnalysis> {
-  const res = await fetch(`${BASE}/api/v1/portfolio/assistant/analysis`, { headers: authHeaders(token) })
+// ── Portfolio (multi-portfolio) ────────────────────────────────────────────────
+
+export type Portfolio = {
+  id: string
+  portfolio_id: string
+  name: string
+  created_at: string
+  holdings_count: number
+}
+
+export async function listPortfolios(token: string): Promise<Portfolio[]> {
+  const res = await fetch(`${BASE}/api/v1/portfolio/holdings/portfolios`, { headers: authHeaders(token) })
+  if (!res.ok) return []
+  return res.json()
+}
+
+export async function createPortfolio(token: string, name: string): Promise<Portfolio> {
+  const res = await fetch(`${BASE}/api/v1/portfolio/holdings/portfolios`, {
+    method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error((e as { detail?: string }).detail || 'Failed to create portfolio') }
+  return res.json()
+}
+
+export async function renamePortfolio(token: string, portfolioId: string, name: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/v1/portfolio/holdings/portfolios/${encodeURIComponent(portfolioId)}`, {
+    method: 'PATCH', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error((e as { detail?: string }).detail || 'Failed to rename') }
+}
+
+export async function deletePortfolio(token: string, portfolioId: string): Promise<void> {
+  await fetch(`${BASE}/api/v1/portfolio/holdings/portfolios/${encodeURIComponent(portfolioId)}`, {
+    method: 'DELETE', headers: authHeaders(token),
+  })
+}
+
+export async function getAssistantAnalysis(token: string, portfolioId = 'default'): Promise<AssistantAnalysis> {
+  const res = await fetch(
+    `${BASE}/api/v1/portfolio/assistant/analysis?portfolio_id=${encodeURIComponent(portfolioId)}`,
+    { headers: authHeaders(token) },
+  )
   if (!res.ok) throw new Error('Failed to fetch assistant analysis')
   return res.json()
 }
 
-export async function listHoldings(token: string): Promise<Holding[]> {
-  const res = await fetch(`${BASE}/api/v1/portfolio/holdings`, { headers: authHeaders(token) })
+export async function listHoldings(token: string, portfolioId = 'default'): Promise<Holding[]> {
+  const res = await fetch(
+    `${BASE}/api/v1/portfolio/holdings?portfolio_id=${encodeURIComponent(portfolioId)}`,
+    { headers: authHeaders(token) },
+  )
   if (!res.ok) return []
   return res.json()
 }
 
 export async function addHolding(token: string, body: {
-  symbol: string; name?: string; qty: number; avg_price: number; buy_date?: string; sector?: string
+  symbol: string; name?: string; qty: number; avg_price: number; buy_date?: string; sector?: string; portfolio_id?: string
 }): Promise<Holding> {
   const res = await fetch(`${BASE}/api/v1/portfolio/holdings`, {
     method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
-  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || 'Failed to add holding') }
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error((e as { detail?: string }).detail || 'Failed to add holding') }
   return res.json()
 }
 
@@ -602,19 +647,19 @@ export async function updateHolding(token: string, id: string, qty: number, avg_
 
 export async function importHoldings(token: string, rows: {
   symbol: string; name?: string; qty: number; avg_price: number; buy_date?: string
-}[]): Promise<{ imported: number }> {
+}[], portfolioId = 'default'): Promise<{ imported: number }> {
   const res = await fetch(`${BASE}/api/v1/portfolio/holdings/import`, {
     method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ rows }),
+    body: JSON.stringify({ rows, portfolio_id: portfolioId }),
   })
   if (!res.ok) throw new Error('Import failed')
   return res.json()
 }
 
-export async function askAssistant(token: string, question: string): Promise<{ answer: string; sources: string[] }> {
+export async function askAssistant(token: string, question: string, portfolioId = 'default'): Promise<{ answer: string; sources: string[] }> {
   const res = await fetch(`${BASE}/api/v1/portfolio/assistant/chat`, {
     method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, portfolio_id: portfolioId }),
   })
   if (!res.ok) throw new Error('Chat failed')
   return res.json()
@@ -628,15 +673,21 @@ export type FundamentalRow = {
   analyst_target: number | null; recommendation: string
   debt_to_equity: number | null; profit_margins: number | null
 }
-export async function getAssistantFundamentals(token: string): Promise<FundamentalRow[]> {
-  const res = await fetch(`${BASE}/api/v1/portfolio/assistant/fundamentals`, { headers: authHeaders(token) })
+export async function getAssistantFundamentals(token: string, portfolioId = 'default'): Promise<FundamentalRow[]> {
+  const res = await fetch(
+    `${BASE}/api/v1/portfolio/assistant/fundamentals?portfolio_id=${encodeURIComponent(portfolioId)}`,
+    { headers: authHeaders(token) },
+  )
   if (!res.ok) return []
   return res.json()
 }
 
 export type TimelineData = { dates: string[]; portfolio: number[]; nifty: number[] }
-export async function getAssistantTimeline(token: string): Promise<TimelineData> {
-  const res = await fetch(`${BASE}/api/v1/portfolio/assistant/timeline`, { headers: authHeaders(token) })
+export async function getAssistantTimeline(token: string, portfolioId = 'default'): Promise<TimelineData> {
+  const res = await fetch(
+    `${BASE}/api/v1/portfolio/assistant/timeline?portfolio_id=${encodeURIComponent(portfolioId)}`,
+    { headers: authHeaders(token) },
+  )
   if (!res.ok) return { dates: [], portfolio: [], nifty: [] }
   return res.json()
 }
@@ -650,8 +701,11 @@ export type TaxData = {
   rows: TaxRow[]
   summary: { total_stcg: number; total_ltcg: number; stcg_tax: number; ltcg_tax: number; total_tax: number; ltcg_exemption_used: number; note: string }
 }
-export async function getAssistantTax(token: string): Promise<TaxData> {
-  const res = await fetch(`${BASE}/api/v1/portfolio/assistant/tax`, { headers: authHeaders(token) })
+export async function getAssistantTax(token: string, portfolioId = 'default'): Promise<TaxData> {
+  const res = await fetch(
+    `${BASE}/api/v1/portfolio/assistant/tax?portfolio_id=${encodeURIComponent(portfolioId)}`,
+    { headers: authHeaders(token) },
+  )
   if (!res.ok) return { rows: [], summary: { total_stcg: 0, total_ltcg: 0, stcg_tax: 0, ltcg_tax: 0, total_tax: 0, ltcg_exemption_used: 0, note: '' } }
   return res.json()
 }
@@ -661,16 +715,78 @@ export type DividendRow = {
   dividends: { date: string; amount: number }[]
   annual_income_est: number; yield_on_cost: number; current_yield: number; total_received_est: number
 }
-export async function getAssistantDividends(token: string): Promise<DividendRow[]> {
-  const res = await fetch(`${BASE}/api/v1/portfolio/assistant/dividends`, { headers: authHeaders(token) })
+export async function getAssistantDividends(token: string, portfolioId = 'default'): Promise<DividendRow[]> {
+  const res = await fetch(
+    `${BASE}/api/v1/portfolio/assistant/dividends?portfolio_id=${encodeURIComponent(portfolioId)}`,
+    { headers: authHeaders(token) },
+  )
   if (!res.ok) return []
   return res.json()
 }
 
 export type CorrelationData = { symbols: string[]; matrix: number[][] }
-export async function getAssistantCorrelation(token: string): Promise<CorrelationData> {
-  const res = await fetch(`${BASE}/api/v1/portfolio/assistant/correlation`, { headers: authHeaders(token) })
+export async function getAssistantCorrelation(token: string, portfolioId = 'default'): Promise<CorrelationData> {
+  const res = await fetch(
+    `${BASE}/api/v1/portfolio/assistant/correlation?portfolio_id=${encodeURIComponent(portfolioId)}`,
+    { headers: authHeaders(token) },
+  )
   if (!res.ok) return { symbols: [], matrix: [] }
+  return res.json()
+}
+
+export type SentimentHeadline = {
+  title: string
+  source: string
+  url: string
+  published_at: string
+  sentiment_score: number
+}
+
+export type SentimentRow = {
+  symbol: string
+  news_count: number
+  avg_sentiment: number
+  bullish_count: number
+  bearish_count: number
+  neutral_count: number
+  sentiment_label: string
+  headlines: SentimentHeadline[]
+}
+
+export async function getAssistantSentiment(token: string, portfolioId = 'default'): Promise<SentimentRow[]> {
+  const res = await fetch(
+    `${BASE}/api/v1/portfolio/assistant/sentiment?portfolio_id=${encodeURIComponent(portfolioId)}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) return []
+  return res.json()
+}
+
+export type AISignalRow = {
+  symbol: string
+  avg_price: number
+  qty: number
+  signal: string
+  confidence: number
+  score: number
+  entry_price: number
+  stop_loss: number
+  targets: number[]
+  news_score: number
+  social_score: number
+  technical_score: number
+  explanation: string
+  holding_period: string
+  risk_reward_ratio: number
+  scanned_at: string | null
+}
+
+export async function getAssistantAISignals(token: string, portfolioId = 'default'): Promise<AISignalRow[]> {
+  const res = await fetch(
+    `${BASE}/api/v1/portfolio/assistant/ai-signals?portfolio_id=${encodeURIComponent(portfolioId)}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) return []
   return res.json()
 }
 

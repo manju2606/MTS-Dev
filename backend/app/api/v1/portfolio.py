@@ -152,11 +152,68 @@ _SECTOR_MAP: dict[str, str] = {
 }
 
 
-@router.get("/holdings")
-async def list_holdings(current_user: CurrentUser) -> list[dict]:
+from fastapi import Query as QParam
+
+
+# ── Portfolios CRUD ────────────────────────────────────────────────────────────
+
+@router.get("/holdings/portfolios")
+async def list_portfolios(current_user: CurrentUser) -> list[dict]:
     from app.infra.db.repositories.holdings_repo import HoldingsRepository
     repo = HoldingsRepository()
-    return await repo.list_holdings(str(current_user.id))
+    return await repo.list_portfolios(str(current_user.id))
+
+
+@router.post("/holdings/portfolios", status_code=status.HTTP_201_CREATED)
+async def create_portfolio(
+    body: dict = Body(...),
+    current_user: CurrentUser = None,  # type: ignore[assignment]
+) -> dict:
+    from app.infra.db.repositories.holdings_repo import HoldingsRepository
+    name: str = body.get("name", "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name required")
+    repo = HoldingsRepository()
+    return await repo.create_portfolio(str(current_user.id), name)
+
+
+@router.patch("/holdings/portfolios/{portfolio_id}")
+async def rename_portfolio(
+    portfolio_id: str,
+    body: dict = Body(...),
+    current_user: CurrentUser = None,  # type: ignore[assignment]
+) -> dict:
+    from app.infra.db.repositories.holdings_repo import HoldingsRepository
+    name: str = body.get("name", "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name required")
+    repo = HoldingsRepository()
+    ok = await repo.rename_portfolio(str(current_user.id), portfolio_id, name)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+    return {"ok": True}
+
+
+@router.delete("/holdings/portfolios/{portfolio_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_portfolio(
+    portfolio_id: str,
+    current_user: CurrentUser = None,  # type: ignore[assignment]
+) -> None:
+    from app.infra.db.repositories.holdings_repo import HoldingsRepository
+    repo = HoldingsRepository()
+    await repo.delete_portfolio(str(current_user.id), portfolio_id)
+
+
+# ── Holdings CRUD ──────────────────────────────────────────────────────────────
+
+@router.get("/holdings")
+async def list_holdings(
+    current_user: CurrentUser,
+    portfolio_id: str = QParam(default="default"),
+) -> list[dict]:
+    from app.infra.db.repositories.holdings_repo import HoldingsRepository
+    repo = HoldingsRepository()
+    return await repo.list_holdings(str(current_user.id), portfolio_id)
 
 
 @router.post("/holdings", status_code=status.HTTP_201_CREATED)
@@ -174,8 +231,9 @@ async def add_holding(body: dict = Body(...), current_user: CurrentUser = None) 
     name: str = body.get("name", symbol.replace(".NS", "").replace(".BO", ""))
     buy_date: str | None = body.get("buy_date")
     sector: str = body.get("sector") or _SECTOR_MAP.get(symbol, "Other")
+    portfolio_id: str = body.get("portfolio_id", "default")
     repo = HoldingsRepository()
-    result = await repo.add_holding(str(current_user.id), symbol, name, qty, avg_price, buy_date, sector)
+    result = await repo.add_holding(str(current_user.id), symbol, name, qty, avg_price, buy_date, sector, portfolio_id)
     if not result:
         raise HTTPException(status_code=500, detail="Failed to add holding")
     return result
@@ -210,9 +268,10 @@ async def delete_holding(holding_id: str, current_user: CurrentUser = None) -> N
 
 @router.post("/holdings/import")
 async def import_holdings(body: dict = Body(...), current_user: CurrentUser = None) -> dict:  # type: ignore[assignment]
-    """Bulk-replace holdings from a parsed CSV payload."""
+    """Bulk-replace holdings for a specific portfolio from a parsed CSV payload."""
     from app.infra.db.repositories.holdings_repo import HoldingsRepository
     rows: list[dict] = body.get("rows", [])
+    portfolio_id: str = body.get("portfolio_id", "default")
     if not rows:
         raise HTTPException(status_code=400, detail="No rows provided")
     sanitized = []
@@ -238,14 +297,17 @@ async def import_holdings(body: dict = Body(...), current_user: CurrentUser = No
             "sector": r.get("sector") or _SECTOR_MAP.get(sym, "Other"),
         })
     repo = HoldingsRepository()
-    n = await repo.bulk_upsert(str(current_user.id), sanitized)
+    n = await repo.bulk_upsert(str(current_user.id), sanitized, portfolio_id)
     return {"imported": n}
 
 
 # ── Portfolio Assistant — Analysis ────────────────────────────────────────────
 
 @router.get("/assistant/analysis")
-async def assistant_analysis(current_user: CurrentUser) -> dict:
+async def assistant_analysis(
+    current_user: CurrentUser,
+    portfolio_id: str = QParam(default="default"),
+) -> dict:
     """Full enriched analysis of the user's real holdings."""
     from app.infra.db.repositories.holdings_repo import HoldingsRepository
     from app.infra.db.repositories.discovery_repo import DiscoveryRepository
@@ -253,7 +315,7 @@ async def assistant_analysis(current_user: CurrentUser) -> dict:
 
     h_repo = HoldingsRepository()
     d_repo = DiscoveryRepository()
-    holdings = await h_repo.list_holdings(str(current_user.id))
+    holdings = await h_repo.list_holdings(str(current_user.id), portfolio_id)
 
     if not holdings:
         return {
@@ -437,13 +499,14 @@ async def assistant_chat(
     from app.infra.market_data.yfinance_client import YFinanceClient
 
     question: str = body.get("question", "").strip()
+    portfolio_id: str = body.get("portfolio_id", "default")
     if not question:
         raise HTTPException(status_code=400, detail="question required")
 
     # Fetch live analysis (reuse the analysis endpoint logic inline)
     h_repo = HoldingsRepository()
     d_repo = DiscoveryRepository()
-    holdings = await h_repo.list_holdings(str(current_user.id))
+    holdings = await h_repo.list_holdings(str(current_user.id), portfolio_id)
 
     if not holdings:
         return {"answer": "Your portfolio is empty. Add some holdings first using the '+' button above.", "sources": []}
@@ -640,13 +703,16 @@ def _generate_answer(
 # ── Portfolio Assistant — Fundamental Health ──────────────────────────────────
 
 @router.get("/assistant/fundamentals")
-async def assistant_fundamentals(current_user: CurrentUser) -> list[dict]:
+async def assistant_fundamentals(
+    current_user: CurrentUser,
+    portfolio_id: str = QParam(default="default"),
+) -> list[dict]:
     """Fetch yfinance .info for each holding: P/E, P/B, ROE, beta, market cap, etc."""
     from app.infra.db.repositories.holdings_repo import HoldingsRepository
     import yfinance as yf
 
     repo = HoldingsRepository()
-    holdings = await repo.list_holdings(str(current_user.id))
+    holdings = await repo.list_holdings(str(current_user.id), portfolio_id)
     if not holdings:
         return []
 
@@ -693,14 +759,17 @@ async def assistant_fundamentals(current_user: CurrentUser) -> list[dict]:
 # ── Portfolio Assistant — Portfolio Timeline ──────────────────────────────────
 
 @router.get("/assistant/timeline")
-async def assistant_timeline(current_user: CurrentUser) -> dict:
+async def assistant_timeline(
+    current_user: CurrentUser,
+    portfolio_id: str = QParam(default="default"),
+) -> dict:
     """Portfolio equity curve vs Nifty50 benchmark over the past 6 months."""
     from app.infra.db.repositories.holdings_repo import HoldingsRepository
     import yfinance as yf
     import pandas as pd
 
     repo = HoldingsRepository()
-    holdings = await repo.list_holdings(str(current_user.id))
+    holdings = await repo.list_holdings(str(current_user.id), portfolio_id)
     if not holdings:
         return {"dates": [], "portfolio": [], "nifty": []}
 
@@ -758,13 +827,16 @@ async def assistant_timeline(current_user: CurrentUser) -> dict:
 # ── Portfolio Assistant — Tax Analysis ────────────────────────────────────────
 
 @router.get("/assistant/tax")
-async def assistant_tax(current_user: CurrentUser) -> dict:
+async def assistant_tax(
+    current_user: CurrentUser,
+    portfolio_id: str = QParam(default="default"),
+) -> dict:
     """STCG/LTCG computation for all holdings per Indian equity tax rules."""
     from app.infra.db.repositories.holdings_repo import HoldingsRepository
     from app.infra.market_data.yfinance_client import YFinanceClient
 
     repo = HoldingsRepository()
-    holdings = await repo.list_holdings(str(current_user.id))
+    holdings = await repo.list_holdings(str(current_user.id), portfolio_id)
     if not holdings:
         return {"rows": [], "summary": {"total_stcg": 0, "total_ltcg": 0, "total_tax": 0}}
 
@@ -851,13 +923,16 @@ async def assistant_tax(current_user: CurrentUser) -> dict:
 # ── Portfolio Assistant — Dividend Analysis ───────────────────────────────────
 
 @router.get("/assistant/dividends")
-async def assistant_dividends(current_user: CurrentUser) -> list[dict]:
+async def assistant_dividends(
+    current_user: CurrentUser,
+    portfolio_id: str = QParam(default="default"),
+) -> list[dict]:
     """Historical dividends + yield-on-cost for each holding."""
     from app.infra.db.repositories.holdings_repo import HoldingsRepository
     import yfinance as yf
 
     repo = HoldingsRepository()
-    holdings = await repo.list_holdings(str(current_user.id))
+    holdings = await repo.list_holdings(str(current_user.id), portfolio_id)
     if not holdings:
         return []
 
@@ -901,14 +976,17 @@ async def assistant_dividends(current_user: CurrentUser) -> list[dict]:
 # ── Portfolio Assistant — Correlation Matrix ──────────────────────────────────
 
 @router.get("/assistant/correlation")
-async def assistant_correlation(current_user: CurrentUser) -> dict:
+async def assistant_correlation(
+    current_user: CurrentUser,
+    portfolio_id: str = QParam(default="default"),
+) -> dict:
     """Daily returns correlation matrix for the user's holdings."""
     from app.infra.db.repositories.holdings_repo import HoldingsRepository
     import yfinance as yf
     import pandas as pd
 
     repo = HoldingsRepository()
-    holdings = await repo.list_holdings(str(current_user.id))
+    holdings = await repo.list_holdings(str(current_user.id), portfolio_id)
     if len(holdings) < 2:
         return {"symbols": [], "matrix": []}
 
@@ -930,3 +1008,149 @@ async def assistant_correlation(current_user: CurrentUser) -> dict:
         return {"symbols": [], "matrix": []}
 
     return {"symbols": avail_labels, "matrix": matrix}
+
+
+# ── Portfolio Assistant — News Sentiment (Phase 2) ────────────────────────────
+
+@router.get("/assistant/sentiment")
+async def assistant_sentiment(
+    current_user: CurrentUser,
+    portfolio_id: str = QParam(default="default"),
+) -> list[dict]:
+    """News sentiment for each holding from the Discovery engine."""
+    from app.infra.db.repositories.holdings_repo import HoldingsRepository
+    from app.infra.db.repositories.discovery_repo import DiscoveryRepository
+
+    h_repo = HoldingsRepository()
+    d_repo = DiscoveryRepository()
+    holdings = await h_repo.list_holdings(str(current_user.id), portfolio_id)
+    if not holdings:
+        return []
+
+    results = []
+    for h in holdings:
+        sym_full = h["symbol"]   # e.g. SBIN.NS — matches how scanner persists it
+        sym_clean = sym_full.replace(".NS", "").replace(".BO", "")
+        # news mentioned_symbols may use either format; try both
+        news = await d_repo.get_news(sym_full, limit=10) or await d_repo.get_news(sym_clean, limit=10)
+        if not news:
+            results.append({
+                "symbol": sym_clean,
+                "news_count": 0,
+                "avg_sentiment": 0.0,
+                "bullish_count": 0,
+                "bearish_count": 0,
+                "neutral_count": 0,
+                "sentiment_label": "No Data",
+                "headlines": [],
+            })
+            continue
+
+        scores = [n.sentiment_score for n in news]
+        avg = sum(scores) / len(scores) if scores else 0.0
+        bullish = sum(1 for s in scores if s > 0.2)
+        bearish = sum(1 for s in scores if s < -0.2)
+        neutral = len(scores) - bullish - bearish
+        label = (
+            "Very Bullish" if avg > 0.5 else
+            "Bullish" if avg > 0.2 else
+            "Very Bearish" if avg < -0.5 else
+            "Bearish" if avg < -0.2 else
+            "Neutral"
+        )
+
+        headlines = []
+        for n in news[:5]:
+            pub = n.published_at
+            pub_str = pub.strftime("%b %d") if hasattr(pub, "strftime") else str(pub)[:10]
+            headlines.append({
+                "title": n.title,
+                "source": n.source,
+                "url": n.url,
+                "published_at": pub_str,
+                "sentiment_score": round(n.sentiment_score, 3),
+            })
+
+        results.append({
+            "symbol": sym_clean,
+            "news_count": len(news),
+            "avg_sentiment": round(avg, 3),
+            "bullish_count": bullish,
+            "bearish_count": bearish,
+            "neutral_count": neutral,
+            "sentiment_label": label,
+            "headlines": headlines,
+        })
+
+    return results
+
+
+# ── Portfolio Assistant — AI Signals (Phase 2) ────────────────────────────────
+
+@router.get("/assistant/ai-signals")
+async def assistant_ai_signals(
+    current_user: CurrentUser,
+    portfolio_id: str = QParam(default="default"),
+) -> list[dict]:
+    """Latest Discovery-engine AI signal for each holding — entry, stop-loss, targets."""
+    from app.infra.db.repositories.holdings_repo import HoldingsRepository
+    from app.infra.db.repositories.discovery_repo import DiscoveryRepository
+
+    h_repo = HoldingsRepository()
+    d_repo = DiscoveryRepository()
+    holdings = await h_repo.list_holdings(str(current_user.id), portfolio_id)
+    if not holdings:
+        return []
+
+    results = []
+    for h in holdings:
+        sym_full = h["symbol"]   # e.g. SBIN.NS — matches how scanner persists it
+        sym_clean = sym_full.replace(".NS", "").replace(".BO", "")
+        # scores are stored with the full .NS symbol
+        scores = await d_repo.get_scores_for_symbol(sym_full, limit=1)
+        avg_price = h.get("avg_price", 0.0)
+        qty = h.get("qty", 0)
+
+        if not scores:
+            results.append({
+                "symbol": sym_clean,
+                "avg_price": avg_price,
+                "qty": qty,
+                "signal": "NO_DATA",
+                "confidence": 0.0,
+                "score": 0,
+                "entry_price": 0.0,
+                "stop_loss": 0.0,
+                "targets": [],
+                "news_score": 50.0,
+                "social_score": 50.0,
+                "technical_score": 50.0,
+                "explanation": "No AI scan data available. Run a Discovery scan first.",
+                "holding_period": "",
+                "risk_reward_ratio": 0.0,
+                "scanned_at": None,
+            })
+            continue
+
+        s = scores[0]
+        scanned_str = s.scanned_at.strftime("%b %d, %H:%M") if s.scanned_at else None
+        results.append({
+            "symbol": sym_clean,
+            "avg_price": avg_price,
+            "qty": qty,
+            "signal": s.signal,
+            "confidence": round(s.confidence, 3),
+            "score": s.score,
+            "entry_price": s.entry_price,
+            "stop_loss": s.stop_loss,
+            "targets": s.targets[:3],
+            "news_score": round(s.news_score, 1),
+            "social_score": round(s.social_score, 1),
+            "technical_score": round(s.technical_score, 1),
+            "explanation": s.explanation or s.news_summary or "",
+            "holding_period": s.holding_period or "",
+            "risk_reward_ratio": round(s.risk_reward_ratio, 2),
+            "scanned_at": scanned_str,
+        })
+
+    return results

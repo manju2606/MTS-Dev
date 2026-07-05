@@ -115,11 +115,19 @@ async def check_alerts(
             alert.triggered_price = price
             updated = await repo.update(alert)
             triggered.append(_alert_dict(updated))
+            from app.infra.notifications.push import fire as notif_fire
             from app.infra.webhooks.dispatcher import fire as wh_fire
             wh_fire("alert.triggered", {
                 "symbol": alert.symbol, "direction": alert.direction,
                 "price_target": alert.price_target, "triggered_price": price,
             })
+            notif_fire(
+                str(alert.user_id),
+                "alert.triggered",
+                f"Price alert: {alert.symbol}",
+                f"{alert.symbol} hit ₹{price:.2f} ({alert.direction} ₹{alert.price_target:.2f})",
+                "/alerts",
+            )
 
     return triggered
 

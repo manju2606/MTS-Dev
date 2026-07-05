@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
-import { getMe } from '@/lib/api'
+import { getMe, getUnreadCount } from '@/lib/api'
 import type { User } from '@/lib/api'
 
 // ── Icon primitives ───────────────────────────────────────────────────────────
@@ -111,6 +111,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: '/portfolio',           label: 'Paper Trading',        icon: 'clipboard',  desc: 'P&L and analysis of paper trades' },
       { href: '/portfolio/assistant', label: 'Portfolio Assistant',  icon: 'sparkles',   desc: 'Track real holdings · AI analysis · chat' },
+      { href: '/tax',                 label: 'Tax Report',           icon: 'fileText',   desc: 'STCG / LTCG breakdown & CSV export' },
     ],
   },
   {
@@ -326,6 +327,23 @@ export function NavBar({ active }: { active: string }) {
     router.replace('/login')
   }
 
+  const [unreadCount, setUnreadCount] = useState(0)
+
+  useEffect(() => {
+    const t = localStorage.getItem('mts_token')
+    if (!t) return
+    let cancelled = false
+    async function poll() {
+      try {
+        const n = await getUnreadCount(t!)
+        if (!cancelled) setUnreadCount(n)
+      } catch { /* ignore */ }
+    }
+    poll()
+    const id = setInterval(poll, 30_000)
+    return () => { cancelled = true; clearInterval(id) }
+  }, [])
+
   const role        = user?.role ?? 'viewer'
   const groups      = NAV_GROUPS.filter(g => g.roles.includes(role))
   const displayName = user ? (user.full_name.trim() || user.email.split('@')[0]) : null
@@ -391,6 +409,20 @@ export function NavBar({ active }: { active: string }) {
               </div>
             )}
 
+            <Link
+              href="/notifications"
+              title="Notifications"
+              className={`relative hidden rounded-lg p-1.5 sm:block ${LINK}`}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                <path d={ICONS['bell']} />
+              </svg>
+              {unreadCount > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </Link>
             <button
               onClick={toggle}
               title={dark ? 'Light mode' : 'Dark mode'}

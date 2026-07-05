@@ -4,6 +4,7 @@ from app.api.v1 import (
     admin,
     ai,
     alerts,
+    audit_api,
     auth,
     backtest,
     broker,
@@ -15,6 +16,7 @@ from app.api.v1 import (
     market_pulse,
     market_sources,
     ml_api,
+    notifications,
     org_api,
     paper,
     portfolio,
@@ -23,6 +25,7 @@ from app.api.v1 import (
     scanner,
     stock_of_day,
     strategy_api,
+    tax_report,
     usage,
     webhook_api,
     ws,
@@ -61,3 +64,6 @@ router.include_router(org_api.router)
 router.include_router(strategy_api.router)
 router.include_router(webhook_api.router)
 router.include_router(ws.router)
+router.include_router(notifications.router)
+router.include_router(tax_report.router)
+router.include_router(audit_api.router)

@@ -2326,3 +2326,146 @@ export async function compareQuoteSources(token: string, symbol: string): Promis
   if (!res.ok) throw new Error(await res.text())
   return res.json()
 }
+
+// ── Phase 6: Notifications ────────────────────────────────────────────────────
+
+export type AppNotification = {
+  id: string
+  type: string
+  title: string
+  body: string
+  link: string
+  read: boolean
+  created_at: string
+}
+
+export async function listNotifications(token: string): Promise<AppNotification[]> {
+  const res = await fetch(`${BASE}/api/v1/notifications`, { headers: authHeaders(token) })
+  if (!res.ok) return []
+  return res.json()
+}
+
+export async function getUnreadCount(token: string): Promise<number> {
+  const res = await fetch(`${BASE}/api/v1/notifications/unread-count`, { headers: authHeaders(token) })
+  if (!res.ok) return 0
+  const data = await res.json()
+  return data.count ?? 0
+}
+
+export async function markNotificationRead(token: string, id: string): Promise<void> {
+  await fetch(`${BASE}/api/v1/notifications/${id}/read`, {
+    method: 'PATCH', headers: authHeaders(token),
+  })
+}
+
+export async function markAllNotificationsRead(token: string): Promise<void> {
+  await fetch(`${BASE}/api/v1/notifications/read-all`, {
+    method: 'POST', headers: authHeaders(token),
+  })
+}
+
+export async function clearNotifications(token: string): Promise<void> {
+  await fetch(`${BASE}/api/v1/notifications/clear`, {
+    method: 'DELETE', headers: authHeaders(token),
+  })
+}
+
+// ── Phase 6: Tax Report ───────────────────────────────────────────────────────
+
+export type TaxTrade = {
+  symbol: string
+  signal: string
+  entry_price: number
+  exit_price: number
+  quantity: number
+  pnl: number
+  holding_days: number
+  category: 'STCG' | 'LTCG'
+  opened_at: string | null
+  closed_at: string | null
+  mode: string
+}
+
+export type TaxSummarySection = {
+  gain: number
+  loss: number
+  net: number
+  tax_rate_pct: number
+  estimated_tax: number
+  exemption?: number
+  taxable?: number
+}
+
+export type TaxReport = {
+  fy: string
+  mode: string
+  total_trades: number
+  summary: {
+    stcg: TaxSummarySection
+    ltcg: TaxSummarySection
+    total_pnl: number
+    estimated_total_tax: number
+  }
+  trades: TaxTrade[]
+}
+
+export async function getTaxReport(token: string, fy: string, mode: string): Promise<TaxReport> {
+  const res = await fetch(
+    `${BASE}/api/v1/tax/report?fy=${encodeURIComponent(fy)}&mode=${encodeURIComponent(mode)}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+export function exportTaxCsv(token: string, fy: string, mode: string): void {
+  const url = `${BASE}/api/v1/tax/export?fy=${encodeURIComponent(fy)}&mode=${encodeURIComponent(mode)}`
+  const a = document.createElement('a')
+  a.href = url
+  a.setAttribute('data-auth', token)
+  // Download with auth header isn't directly possible; open in new tab
+  // The endpoint falls back gracefully without auth (returns 401 which browser shows)
+  // For simplicity, trigger via fetch + blob
+  fetch(url, { headers: authHeaders(token) })
+    .then(r => r.blob())
+    .then(blob => {
+      const href = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = href
+      link.download = `mts_tax_${fy}_${mode}.csv`
+      link.click()
+      URL.revokeObjectURL(href)
+    })
+    .catch(() => {})
+}
+
+// ── Phase 6: Audit Log ────────────────────────────────────────────────────────
+
+export type AuditEvent = {
+  id: string
+  user_id: string
+  action: string
+  resource: string
+  details: Record<string, string>
+  ip: string
+  created_at: string
+}
+
+export type AuditPage = {
+  total: number
+  events: AuditEvent[]
+}
+
+export async function listAuditLog(
+  token: string,
+  params: { user_id?: string; action?: string; limit?: number; skip?: number } = {},
+): Promise<AuditPage> {
+  const q = new URLSearchParams()
+  if (params.user_id) q.set('user_id', params.user_id)
+  if (params.action) q.set('action', params.action)
+  if (params.limit !== undefined) q.set('limit', String(params.limit))
+  if (params.skip !== undefined) q.set('skip', String(params.skip))
+  const res = await fetch(`${BASE}/api/v1/admin/audit?${q}`, { headers: authHeaders(token) })
+  if (!res.ok) return { total: 0, events: [] }
+  return res.json()
+}

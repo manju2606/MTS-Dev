@@ -46,6 +46,46 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def audit_middleware(request, call_next):
+    """Log non-GET mutating API calls to the audit trail."""
+    response = await call_next(request)
+    if (
+        request.method not in ("GET", "HEAD", "OPTIONS")
+        and request.url.path.startswith("/api/v1/")
+        and response.status_code < 400
+        and not request.url.path.startswith("/api/v1/health")
+    ):
+        try:
+            from app.core.security import decode_token
+            from app.domain.models.audit import AuditEvent
+            from app.infra.db.repositories import audit_repo
+
+            auth = request.headers.get("authorization", "")
+            user_id = "anonymous"
+            if auth.lower().startswith("bearer "):
+                try:
+                    payload = decode_token(auth[7:])
+                    user_id = payload.get("sub", "anonymous")
+                except Exception:
+                    pass
+
+            action = f"{request.method.lower()}.{request.url.path.split('/')[-1] or 'root'}"
+            ip = request.client.host if request.client else ""
+            event = AuditEvent(
+                user_id=user_id,
+                action=action,
+                resource=request.url.path,
+                details={"method": request.method, "path": str(request.url.path)},
+                ip=ip,
+            )
+            import asyncio as _asyncio
+            _asyncio.create_task(audit_repo.log_event(event))
+        except Exception:
+            pass
+    return response
+
 app.include_router(api_v1_router, prefix="/api/v1")
 
 

@@ -8,6 +8,7 @@ from functools import partial
 import structlog
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from app.core import connection_manager as cm
 from app.core.security import decode_token
 
 log = structlog.get_logger()
@@ -62,6 +63,7 @@ async def price_stream(websocket: WebSocket, token: str = ""):
         return
 
     await websocket.accept()
+    cm.register(user_id, websocket)
     log.info("ws.price_stream.connected", user_id=user_id)
 
     symbols: list[str] = []
@@ -121,5 +123,6 @@ async def price_stream(websocket: WebSocket, token: str = ""):
     except WebSocketDisconnect:
         log.info("ws.price_stream.disconnected", user_id=user_id)
     finally:
+        cm.deregister(user_id, websocket)
         if stream_task and not stream_task.done():
             stream_task.cancel()

@@ -275,20 +275,28 @@ function LiveViewInner() {
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b border-zinc-100 dark:border-zinc-800">
-                      {['Symbol', 'Signal', 'Qty', 'Avg Price'].map(h => (
+                      {['Symbol', 'Signal', 'Qty', 'Avg ₹', 'LTP ₹', 'P&L', 'Return'].map(h => (
                         <th key={h} className="pb-2 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {positions.map((p, i) => (
-                      <tr key={i} className="border-b border-zinc-50 dark:border-zinc-800/50">
-                        <td className="py-2 font-mono font-semibold text-zinc-900 dark:text-zinc-50">{p.symbol.replace(/\.(NS|BO)$/, '')}</td>
-                        <td className={`py-2 font-bold ${signalCls(p.signal)}`}>{p.signal}</td>
-                        <td className="py-2 text-zinc-600 dark:text-zinc-300">{p.quantity}</td>
-                        <td className="py-2 font-mono text-zinc-700 dark:text-zinc-300">₹{p.avg_price.toFixed(2)}</td>
-                      </tr>
-                    ))}
+                    {positions.map((p, i) => {
+                      const pnl = p.pnl ?? 0
+                      const pnlPct = p.pnl_pct ?? 0
+                      const pnlCls = pnl >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'
+                      return (
+                        <tr key={i} className="border-b border-zinc-50 dark:border-zinc-800/50">
+                          <td className="py-2 font-mono font-semibold text-zinc-900 dark:text-zinc-50">{p.symbol.replace(/\.(NS|BO)$/, '')}</td>
+                          <td className={`py-2 font-bold ${signalCls(p.signal)}`}>{p.signal}</td>
+                          <td className="py-2 text-zinc-600 dark:text-zinc-300">{p.quantity}</td>
+                          <td className="py-2 font-mono text-zinc-700 dark:text-zinc-300">₹{p.avg_price.toFixed(2)}</td>
+                          <td className="py-2 font-mono text-zinc-700 dark:text-zinc-200">{p.ltp ? `₹${p.ltp.toFixed(2)}` : '—'}</td>
+                          <td className={`py-2 font-mono font-semibold ${pnlCls}`}>{pnl >= 0 ? '+' : ''}₹{Math.abs(pnl).toFixed(0)}</td>
+                          <td className={`py-2 font-semibold ${pnlCls}`}>{pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%</td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               )}

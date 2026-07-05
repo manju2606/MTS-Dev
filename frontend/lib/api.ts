@@ -159,6 +159,17 @@ export type LivePosition = {
   signal: string
   quantity: number
   avg_price: number
+  ltp?: number
+  pnl?: number
+  pnl_pct?: number
+}
+
+export type BrokerPosition = {
+  symbol: string
+  qty: number
+  avg_price: number
+  broker: string
+  exchange: string
 }
 
 // Phase 4 — ML & Admin
@@ -1149,6 +1160,27 @@ export async function disconnectBroker(token: string): Promise<BrokerStatus> {
 export async function activateSimulatedBroker(token: string): Promise<BrokerStatus> {
   const res = await fetch(`${BASE}/api/v1/broker/use-simulated`, { method: 'POST', headers: authHeaders(token) })
   if (!res.ok) throw new Error('Failed')
+  return res.json()
+}
+
+export async function getUpstoxLoginUrl(token: string): Promise<{ login_url: string; redirect_uri: string }> {
+  const res = await fetch(`${BASE}/api/v1/broker/upstox/login-url`, { headers: authHeaders(token) })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Failed') }
+  return res.json()
+}
+
+export async function connectUpstox(token: string, code: string): Promise<BrokerStatus> {
+  const res = await fetch(`${BASE}/api/v1/broker/upstox/connect`, {
+    method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Connect failed') }
+  return res.json()
+}
+
+export async function getBrokerPositions(token: string): Promise<BrokerPosition[]> {
+  const res = await fetch(`${BASE}/api/v1/broker/positions`, { headers: authHeaders(token) })
+  if (!res.ok) return []
   return res.json()
 }
 

@@ -41,5 +41,10 @@ class Settings(BaseSettings):
     KITE_API_KEY: str | None = None
     KITE_API_SECRET: str | None = None
 
+    # Phase 3 — Upstox
+    UPSTOX_API_KEY: str | None = None
+    UPSTOX_API_SECRET: str | None = None
+    UPSTOX_REDIRECT_URI: str = "http://localhost:3000/broker/upstox/callback"
+
 
 settings = Settings()

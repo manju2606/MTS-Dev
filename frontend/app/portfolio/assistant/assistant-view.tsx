@@ -7,12 +7,13 @@ import {
   getAssistantAnalysis, addHolding, deleteHolding, importHoldings, askAssistant,
   getAssistantFundamentals, getAssistantTimeline, getAssistantTax, getAssistantDividends, getAssistantCorrelation,
   getAssistantSentiment, getAssistantAISignals,
+  getBrokerStatus, getBrokerPositions,
   listPortfolios, createPortfolio, deletePortfolio,
 } from '@/lib/api'
 import type {
   AssistantAnalysis, Holding, AssistantAlert, SizingRow,
   FundamentalRow, TimelineData, TaxData, DividendRow, CorrelationData, Portfolio,
-  SentimentRow, AISignalRow,
+  SentimentRow, AISignalRow, BrokerPosition, BrokerStatus,
 } from '@/lib/api'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -107,15 +108,6 @@ function MiniDonut({ data }: { data: { label: string; value: number }[] }) {
   )
 }
 
-function Phase2Card({ title, description }: { title: string; description: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-zinc-300 bg-zinc-50/50 p-6 text-center dark:border-zinc-700 dark:bg-zinc-800/20">
-      <span className="mb-2 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-300">Phase 2</span>
-      <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{title}</p>
-      <p className="mt-1 text-xs text-zinc-400">{description}</p>
-    </div>
-  )
-}
 
 // ── Portfolio Switcher ────────────────────────────────────────────────────────
 
@@ -1260,7 +1252,131 @@ function AISignalsSection({ portfolioId }: { portfolioId: string }) {
   )
 }
 
-function ResearchTab({ data, portfolioId }: { data: AssistantAnalysis; portfolioId: string }) {
+// ── Broker Connect Section (Phase 3) ──────────────────────────────────────────
+
+function BrokerConnectSection({ portfolioId, onImported }: { portfolioId: string; onImported: () => void }) {
+  const [brokerStatus, setBrokerStatus] = useState<BrokerStatus | null>(null)
+  const [positions, setPositions] = useState<BrokerPosition[]>([])
+  const [loading, setLoading] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [fetched, setFetched] = useState(false)
+  const [result, setResult] = useState<string | null>(null)
+
+  function load() {
+    const t = localStorage.getItem('mts_token') ?? ''
+    setLoading(true)
+    Promise.all([getBrokerStatus(t), getBrokerPositions(t)])
+      .then(([status, pos]) => {
+        setBrokerStatus(status)
+        setPositions(pos)
+        setFetched(true)
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }
+
+  async function importAll() {
+    if (positions.length === 0) return
+    const t = localStorage.getItem('mts_token') ?? ''
+    setImporting(true)
+    setResult(null)
+    let ok = 0; let fail = 0
+    for (const p of positions) {
+      try {
+        const sym = p.symbol.includes('.') ? p.symbol : `${p.symbol}.NS`
+        await addHolding(t, { symbol: sym, qty: p.qty, avg_price: p.avg_price, portfolio_id: portfolioId })
+        ok++
+      } catch { fail++ }
+    }
+    setImporting(false)
+    setResult(`Imported ${ok} position${ok !== 1 ? 's' : ''}${fail > 0 ? `, ${fail} failed` : ''} into "${portfolioId}".`)
+    if (ok > 0) onImported()
+  }
+
+  const brokerLabel: Record<string, string> = {
+    zerodha: 'Zerodha Kite',
+    upstox: 'Upstox',
+    simulated: 'Simulated',
+  }
+
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="mb-3 flex items-center justify-between">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wider text-zinc-400">Broker Connect</p>
+          {brokerStatus && (
+            <p className="mt-0.5 text-xs text-zinc-500">
+              Connected: <span className="font-semibold capitalize text-zinc-900 dark:text-zinc-50">
+                {brokerLabel[brokerStatus.broker] ?? brokerStatus.broker}
+              </span>
+              <span className={`ml-2 inline-block h-1.5 w-1.5 rounded-full ${brokerStatus.connected ? 'bg-emerald-500' : 'bg-red-400'}`} />
+            </p>
+          )}
+        </div>
+        {!fetched && (
+          <button onClick={load} disabled={loading}
+            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-60">
+            {loading ? 'Loading…' : 'Load Positions'}
+          </button>
+        )}
+      </div>
+
+      {!fetched && !loading && (
+        <p className="text-xs text-zinc-400">
+          Auto-import live positions from Zerodha or Upstox into this portfolio. Configure your broker on the{' '}
+          <a href="/broker" className="text-indigo-600 hover:underline dark:text-indigo-400">Broker page</a>.
+        </p>
+      )}
+      {loading && <div className="h-12 animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" />}
+
+      {fetched && positions.length === 0 && (
+        <div className="text-xs text-zinc-400">
+          <p>No open positions found in your connected broker ({brokerLabel[brokerStatus?.broker ?? ''] ?? brokerStatus?.broker}).</p>
+          {brokerStatus?.broker === 'simulated' && (
+            <p className="mt-1">Connect Zerodha or Upstox on the <a href="/broker" className="text-indigo-600 hover:underline dark:text-indigo-400">Broker page</a> to import real positions.</p>
+          )}
+        </div>
+      )}
+
+      {fetched && positions.length > 0 && (
+        <div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead><tr className="border-b border-zinc-100 dark:border-zinc-800">
+                {['Symbol', 'Qty', 'Avg Price ₹', 'Broker'].map(h => (
+                  <th key={h} className="px-2 py-2 text-left font-medium text-zinc-500">{h}</th>
+                ))}
+              </tr></thead>
+              <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800">
+                {positions.map((p, i) => (
+                  <tr key={i} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
+                    <td className="px-2 py-2 font-semibold text-zinc-900 dark:text-zinc-50">{p.symbol.replace(/\.(NS|BO)$/, '')}</td>
+                    <td className="px-2 py-2 text-zinc-600 dark:text-zinc-300">{p.qty}</td>
+                    <td className="px-2 py-2 font-mono text-zinc-700 dark:text-zinc-200">₹{p.avg_price.toFixed(2)}</td>
+                    <td className="px-2 py-2 capitalize text-zinc-400">{brokerLabel[p.broker] ?? p.broker}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {result && (
+            <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">{result}</p>
+          )}
+
+          <button
+            onClick={importAll}
+            disabled={importing || !!result}
+            className="mt-3 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-60">
+            {importing ? 'Importing…' : `Import ${positions.length} position${positions.length !== 1 ? 's' : ''} → "${portfolioId}"`}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ResearchTab({ data, portfolioId, onHoldingsChanged }: { data: AssistantAnalysis; portfolioId: string; onHoldingsChanged: () => void }) {
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
@@ -1282,8 +1398,7 @@ function ResearchTab({ data, portfolioId }: { data: AssistantAnalysis; portfolio
 
       <AISignalsSection portfolioId={portfolioId} />
       <SentimentSection portfolioId={portfolioId} />
-
-      <Phase2Card title="Broker Connect" description="Auto-import live positions from Zerodha Kite, Upstox, AngelOne. Phase 3." />
+      <BrokerConnectSection portfolioId={portfolioId} onImported={onHoldingsChanged} />
     </div>
   )
 }
@@ -1561,7 +1676,7 @@ export default function AssistantView() {
             {tab === 'allocation' && <AllocationTab data={data} portfolioId={activePortfolioId} />}
             {tab === 'risk'       && <RiskTab data={data} />}
             {tab === 'performance'&& <PerformanceTab data={data} portfolioId={activePortfolioId} />}
-            {tab === 'research'   && <ResearchTab data={data} portfolioId={activePortfolioId} />}
+            {tab === 'research'   && <ResearchTab data={data} portfolioId={activePortfolioId} onHoldingsChanged={refresh} />}
             {tab === 'assistant'  && <AssistantTab token={tokenRef.current} portfolioId={activePortfolioId} />}
           </>
         )}

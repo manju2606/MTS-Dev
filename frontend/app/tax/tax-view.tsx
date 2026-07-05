@@ -68,7 +68,7 @@ function SummaryPanel({ report }: { report: TaxReport }) {
           <MetricCard label="Est. Tax @12.5%" value={`₹${ltcg.estimated_tax.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`} />
         </div>
         <p className="mt-2 text-[10px] text-zinc-400">
-          ₹1,25,000 exemption applied. Taxable LTCG: ₹{ltcg.taxable.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+          ₹1,25,000 exemption applied. Taxable LTCG: ₹{(ltcg.taxable ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
         </p>
       </div>
 

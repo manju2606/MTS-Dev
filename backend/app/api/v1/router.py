@@ -8,6 +8,8 @@ from app.api.v1 import (
     auth,
     backtest,
     broker,
+    calendar,
+    custom_screener,
     dashboard,
     discovery,
     forecast,
@@ -17,6 +19,7 @@ from app.api.v1 import (
     market_sources,
     ml_api,
     notifications,
+    options,
     org_api,
     paper,
     portfolio,
@@ -67,3 +70,6 @@ router.include_router(ws.router)
 router.include_router(notifications.router)
 router.include_router(tax_report.router)
 router.include_router(audit_api.router)
+router.include_router(options.router)
+router.include_router(calendar.router)
+router.include_router(custom_screener.router)

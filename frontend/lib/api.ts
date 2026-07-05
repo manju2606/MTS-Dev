@@ -2439,6 +2439,157 @@ export function exportTaxCsv(token: string, fy: string, mode: string): void {
     .catch(() => {})
 }
 
+// ── Phase 7: Options Chain ────────────────────────────────────────────────────
+
+export type OptionsRow = {
+  strike: number
+  last_price: number
+  bid: number | null
+  ask: number | null
+  volume: number
+  open_interest: number
+  iv: number | null
+  delta: number | null
+  change_pct: number
+  in_the_money: boolean
+}
+
+export type OptionsChain = {
+  symbol: string
+  expiry: string
+  spot: number | null
+  atm_strike: number | null
+  pcr: number | null
+  max_pain: number | null
+  total_call_oi: number
+  total_put_oi: number
+  calls: OptionsRow[]
+  puts: OptionsRow[]
+}
+
+export async function getOptionsExpiries(token: string, symbol: string): Promise<string[]> {
+  const res = await fetch(
+    `${BASE}/api/v1/options/${encodeURIComponent(symbol)}/expiries`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Failed to load expiries') }
+  return res.json()
+}
+
+export async function getOptionsChain(token: string, symbol: string, expiry: string): Promise<OptionsChain> {
+  const res = await fetch(
+    `${BASE}/api/v1/options/${encodeURIComponent(symbol)}/chain?expiry=${encodeURIComponent(expiry)}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Failed to load chain') }
+  return res.json()
+}
+
+// ── Phase 7: Economic Calendar ────────────────────────────────────────────────
+
+export type CalendarEvent = {
+  id: string
+  date: string
+  title: string
+  description: string
+  type: string
+  impact: string
+  symbol?: string
+}
+
+export async function getCalendarEvents(token: string, fromDate: string, toDate: string): Promise<CalendarEvent[]> {
+  const res = await fetch(
+    `${BASE}/api/v1/calendar/events?from_date=${encodeURIComponent(fromDate)}&to_date=${encodeURIComponent(toDate)}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) return []
+  return res.json()
+}
+
+// ── Phase 7: Custom Screener ──────────────────────────────────────────────────
+
+export type ScreenerCriterion = {
+  field: string
+  operator: string
+  value: number
+}
+
+export type ScreenerMeta = {
+  fields: string[]
+  operators: string[]
+  universes: string[]
+}
+
+export type ScreenResult = {
+  symbol: string
+  name: string
+  price: number
+  change_pct: number
+  rsi: number
+  macd_hist: number
+  sma20_ratio: number
+  sma50_ratio: number
+  volume_ratio: number
+  atr_pct: number
+  pe_ratio: number | null
+  pb_ratio: number | null
+  market_cap_cr: number | null
+  dividend_yield: number | null
+  roe: number | null
+  debt_to_equity: number | null
+  revenue_growth: number | null
+}
+
+export type SavedScreen = {
+  id: string
+  name: string
+  universe: string
+  criteria: ScreenerCriterion[]
+  created_at: string
+}
+
+export async function getScreenerMeta(token: string): Promise<ScreenerMeta> {
+  const res = await fetch(`${BASE}/api/v1/screener/meta`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+export async function runScreen(
+  token: string,
+  body: { universe: string; criteria: ScreenerCriterion[]; limit?: number },
+): Promise<{ total_scanned: number; matches: number; results: ScreenResult[] }> {
+  const res = await fetch(`${BASE}/api/v1/screener/run`, {
+    method: 'POST',
+    headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Screen failed') }
+  return res.json()
+}
+
+export async function listSavedScreens(token: string): Promise<SavedScreen[]> {
+  const res = await fetch(`${BASE}/api/v1/screener/saved`, { headers: authHeaders(token) })
+  if (!res.ok) return []
+  return res.json()
+}
+
+export async function saveScreen(
+  token: string,
+  body: { name: string; universe: string; criteria: ScreenerCriterion[] },
+): Promise<SavedScreen> {
+  const res = await fetch(`${BASE}/api/v1/screener/saved`, {
+    method: 'POST',
+    headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Save failed') }
+  return res.json()
+}
+
+export async function deleteSavedScreen(token: string, id: string): Promise<void> {
+  await fetch(`${BASE}/api/v1/screener/saved/${id}`, { method: 'DELETE', headers: authHeaders(token) })
+}
+
 // ── Phase 6: Audit Log ────────────────────────────────────────────────────────
 
 export type AuditEvent = {

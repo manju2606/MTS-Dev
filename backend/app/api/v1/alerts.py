@@ -115,6 +115,11 @@ async def check_alerts(
             alert.triggered_price = price
             updated = await repo.update(alert)
             triggered.append(_alert_dict(updated))
+            from app.infra.webhooks.dispatcher import fire as wh_fire
+            wh_fire("alert.triggered", {
+                "symbol": alert.symbol, "direction": alert.direction,
+                "price_target": alert.price_target, "triggered_price": price,
+            })
 
     return triggered
 

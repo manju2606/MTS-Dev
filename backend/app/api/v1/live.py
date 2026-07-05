@@ -88,6 +88,12 @@ async def place_live_order(
     repo = OrderRepository()
     await repo.save(order)
 
+    from app.infra.webhooks.dispatcher import fire as wh_fire
+    wh_fire("trade.executed", {
+        "symbol": order.symbol, "signal": signal, "quantity": body.quantity,
+        "broker": broker.name, "order_type": body.order_type,
+    })
+
     return _serialize_order(order)
 
 

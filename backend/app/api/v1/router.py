@@ -22,7 +22,10 @@ from app.api.v1 import (
     risk,
     scanner,
     stock_of_day,
+    strategy_api,
     usage,
+    webhook_api,
+    ws,
 )
 
 router = APIRouter()
@@ -55,3 +58,6 @@ router.include_router(forecast.router)
 router.include_router(stock_of_day.router)
 router.include_router(market_sources.router)
 router.include_router(org_api.router)
+router.include_router(strategy_api.router)
+router.include_router(webhook_api.router)
+router.include_router(ws.router)

@@ -1973,6 +1973,193 @@ export async function updateSotDSettings(token: string, cfg: SotDSettings): Prom
   return res.json()
 }
 
+// ── Phase 5: Strategy Builder ─────────────────────────────────────────────────
+
+export type StrategyCondition = {
+  indicator: string
+  operator: string
+  value: number
+}
+
+export type Strategy = {
+  id: string
+  name: string
+  user_id: string
+  action: 'BUY' | 'SELL'
+  conditions: StrategyCondition[]
+  description: string
+  is_active: boolean
+  created_at: string
+}
+
+export type StrategyMeta = {
+  indicators: string[]
+  operators: string[]
+}
+
+export type StrategyBacktestResult = {
+  symbol: string
+  strategy_name: string
+  action: string
+  period: string
+  total_trades: number
+  winners: number
+  losers: number
+  win_rate_pct: number
+  total_return_pct: number
+  max_drawdown_pct: number
+  sharpe_ratio: number
+  trades: { date_in: string; date_out: string; signal: string; entry: number; exit: number; pnl: number; pnl_pct: number }[]
+  equity_curve: { date: string; value: number }[]
+}
+
+export async function getStrategyMeta(token: string): Promise<StrategyMeta> {
+  const res = await fetch(`${BASE}/api/v1/strategy/meta`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+export async function listStrategies(token: string): Promise<Strategy[]> {
+  const res = await fetch(`${BASE}/api/v1/strategy`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+export async function createStrategy(token: string, body: {
+  name: string; action: string; conditions: StrategyCondition[]; description?: string
+}): Promise<Strategy> {
+  const res = await fetch(`${BASE}/api/v1/strategy`, {
+    method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Create failed') }
+  return res.json()
+}
+
+export async function deleteStrategy(token: string, id: string): Promise<void> {
+  await fetch(`${BASE}/api/v1/strategy/${id}`, { method: 'DELETE', headers: authHeaders(token) })
+}
+
+export async function toggleStrategy(token: string, id: string): Promise<Strategy> {
+  const res = await fetch(`${BASE}/api/v1/strategy/${id}/toggle`, {
+    method: 'PATCH', headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+export async function backtestStrategy(token: string, id: string, symbol: string, period = '1y'): Promise<StrategyBacktestResult> {
+  const res = await fetch(`${BASE}/api/v1/strategy/${id}/backtest`, {
+    method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ symbol, period }),
+  })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Backtest failed') }
+  return res.json()
+}
+
+// ── Phase 5: Webhooks ─────────────────────────────────────────────────────────
+
+export type WebhookSub = {
+  id: string
+  name: string
+  url: string
+  events: string[]
+  secret: string
+  is_active: boolean
+  created_at: string
+  last_triggered_at: string | null
+  failure_count: number
+}
+
+export type WebhookDelivery = {
+  webhook_id: string
+  event: string
+  status_code: number | null
+  ok: boolean
+  error: string
+  delivered_at: string
+}
+
+export async function listWebhookEvents(token: string): Promise<string[]> {
+  const res = await fetch(`${BASE}/api/v1/webhooks/events`, { headers: authHeaders(token) })
+  if (!res.ok) return []
+  return res.json()
+}
+
+export async function listWebhooks(token: string): Promise<WebhookSub[]> {
+  const res = await fetch(`${BASE}/api/v1/webhooks`, { headers: authHeaders(token) })
+  if (!res.ok) return []
+  return res.json()
+}
+
+export async function createWebhook(token: string, body: { name: string; url: string; events: string[] }): Promise<WebhookSub> {
+  const res = await fetch(`${BASE}/api/v1/webhooks`, {
+    method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Create failed') }
+  return res.json()
+}
+
+export async function deleteWebhook(token: string, id: string): Promise<void> {
+  await fetch(`${BASE}/api/v1/webhooks/${id}`, { method: 'DELETE', headers: authHeaders(token) })
+}
+
+export async function toggleWebhook(token: string, id: string): Promise<WebhookSub> {
+  const res = await fetch(`${BASE}/api/v1/webhooks/${id}/toggle`, {
+    method: 'PATCH', headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+export async function listWebhookDeliveries(token: string, id: string): Promise<WebhookDelivery[]> {
+  const res = await fetch(`${BASE}/api/v1/webhooks/${id}/deliveries`, { headers: authHeaders(token) })
+  if (!res.ok) return []
+  return res.json()
+}
+
+// ── Phase 5: WebSocket price streaming ───────────────────────────────────────
+
+export type PriceTick = {
+  symbol: string
+  price: number | null
+  change: number
+  change_pct: number
+  ok: boolean
+}
+
+export type PriceStreamMessage =
+  | { type: 'tick'; data: PriceTick[] }
+  | { type: 'subscribed'; symbols: string[] }
+  | { type: 'unsubscribed' }
+  | { type: 'pong' }
+
+export function createPriceStream(token: string, onMessage: (msg: PriceStreamMessage) => void): {
+  subscribe: (symbols: string[]) => void
+  unsubscribe: () => void
+  close: () => void
+} {
+  const wsBase = BASE.replace(/^http/, 'ws') || (typeof window !== 'undefined' ? `ws://${window.location.host}` : 'ws://localhost')
+  const ws = new WebSocket(`${wsBase}/api/v1/ws/prices?token=${encodeURIComponent(token)}`)
+
+  ws.onmessage = (e) => {
+    try { onMessage(JSON.parse(e.data)) } catch { /* ignore */ }
+  }
+
+  return {
+    subscribe(symbols) {
+      const send = () => ws.send(JSON.stringify({ action: 'subscribe', symbols }))
+      if (ws.readyState === WebSocket.OPEN) send()
+      else ws.addEventListener('open', send, { once: true })
+    },
+    unsubscribe() {
+      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ action: 'unsubscribe' }))
+    },
+    close() { ws.close() },
+  }
+}
+
 // ── Phase 4: Organization / Multi-client SaaS ────────────────────────────────
 
 export type OrgPlanLimits = {

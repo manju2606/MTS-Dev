@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { NavBar } from '@/components/nav-bar'
+import { LiveTicker } from '@/components/live-ticker'
 import {
   listWatchlists, createWatchlist, deleteWatchlist,
   getWatchlistItems, addItemToWatchlist, removeItemFromWatchlist,
@@ -289,6 +290,13 @@ function WatchlistsPanel({ token }: { token: string }) {
                 )}
               </form>
             </div>
+
+            {/* Live ticker */}
+            {items.length > 0 && (
+              <div className="px-4 pt-3">
+                <LiveTicker symbols={items.map(i => i.symbol)} token={token} />
+              </div>
+            )}
 
             {/* Table */}
             {items.length === 0 ? (

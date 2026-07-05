@@ -1973,6 +1973,115 @@ export async function updateSotDSettings(token: string, cfg: SotDSettings): Prom
   return res.json()
 }
 
+// ── Phase 4: Organization / Multi-client SaaS ────────────────────────────────
+
+export type OrgPlanLimits = {
+  max_users: number
+  max_capital: number
+  live_trading: boolean
+}
+
+export type OrgData = {
+  id: string
+  name: string
+  plan: 'free' | 'pro' | 'enterprise'
+  is_active: boolean
+  created_at: string
+  member_count: number
+  role: 'owner' | 'admin' | 'member'
+  limits: OrgPlanLimits
+}
+
+export type OrgMember = {
+  org_id: string
+  user_id: string
+  role: string
+  joined_at: string
+}
+
+export type OrgInvite = {
+  org_id: string
+  email: string
+  invited_by: string
+  token: string
+  accepted: boolean
+  created_at: string
+}
+
+export async function getMyOrg(token: string): Promise<OrgData | null> {
+  const res = await fetch(`${BASE}/api/v1/org/my`, { headers: authHeaders(token) })
+  if (!res.ok) return null
+  return res.json()
+}
+
+export async function createOrg(token: string, name: string, plan = 'free'): Promise<OrgData> {
+  const res = await fetch(`${BASE}/api/v1/org`, {
+    method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, plan }),
+  })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Create failed') }
+  return res.json()
+}
+
+export async function listOrgMembers(token: string): Promise<OrgMember[]> {
+  const res = await fetch(`${BASE}/api/v1/org/my/members`, { headers: authHeaders(token) })
+  if (!res.ok) return []
+  return res.json()
+}
+
+export async function listOrgInvites(token: string): Promise<OrgInvite[]> {
+  const res = await fetch(`${BASE}/api/v1/org/my/invites`, { headers: authHeaders(token) })
+  if (!res.ok) return []
+  return res.json()
+}
+
+export async function inviteMember(token: string, email: string): Promise<{ email: string; invite_token: string; message: string }> {
+  const res = await fetch(`${BASE}/api/v1/org/my/invite`, {
+    method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Invite failed') }
+  return res.json()
+}
+
+export async function revokeInvite(token: string, email: string): Promise<void> {
+  await fetch(`${BASE}/api/v1/org/my/invite/${encodeURIComponent(email)}`, {
+    method: 'DELETE', headers: authHeaders(token),
+  })
+}
+
+export async function acceptInvite(token: string, inviteToken: string): Promise<{ joined: boolean; org_id: string }> {
+  const res = await fetch(`${BASE}/api/v1/org/accept-invite?token=${encodeURIComponent(inviteToken)}`, {
+    method: 'POST', headers: authHeaders(token),
+  })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Accept failed') }
+  return res.json()
+}
+
+export async function updateOrgPlan(token: string, plan: string): Promise<OrgData> {
+  const res = await fetch(`${BASE}/api/v1/org/my/plan`, {
+    method: 'PATCH', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ plan }),
+  })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Update failed') }
+  return res.json()
+}
+
+export async function listAllOrgs(token: string): Promise<OrgData[]> {
+  const res = await fetch(`${BASE}/api/v1/org/admin/all`, { headers: authHeaders(token) })
+  if (!res.ok) return []
+  return res.json()
+}
+
+export async function adminSetOrgPlan(token: string, orgId: string, plan: string): Promise<OrgData> {
+  const res = await fetch(`${BASE}/api/v1/org/admin/${orgId}/plan`, {
+    method: 'PATCH', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ plan }),
+  })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Update failed') }
+  return res.json()
+}
+
 // ── Market Data Sources ───────────────────────────────────────────────────────
 
 export type MarketSourceInfo = {

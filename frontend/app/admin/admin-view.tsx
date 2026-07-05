@@ -7,10 +7,11 @@ import {
   getAdminStats, listAdminUsers, updateAdminUser, createAdminUser,
   listEmailRecipients, addEmailRecipient, removeEmailRecipient, toggleEmailRecipient,
   sendReportNow, getSotDSettings, updateSotDSettings,
+  listAllOrgs, adminSetOrgPlan,
 } from '@/lib/api'
-import type { AdminStats, AdminUser, EmailRecipient, SotDSettings } from '@/lib/api'
+import type { AdminStats, AdminUser, EmailRecipient, SotDSettings, OrgData } from '@/lib/api'
 
-type Tab = 'users' | 'email-list' | 'trading-rules'
+type Tab = 'users' | 'email-list' | 'trading-rules' | 'organizations'
 
 function SendReportButton({ tokenRef }: { tokenRef: React.RefObject<string> }) {
   const [busy, setBusy] = useState(false)
@@ -410,6 +411,121 @@ function TradingRulesPanel({ tokenRef }: { tokenRef: React.RefObject<string> }) 
   )
 }
 
+// ── Organizations Panel ───────────────────────────────────────────────────────
+
+const PLAN_META = {
+  free:       { label: 'Free',       color: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300',          users: 1,    capital: '₹1L',   live: false },
+  pro:        { label: 'Pro',        color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300',  users: 5,    capital: '₹10L',  live: true  },
+  enterprise: { label: 'Enterprise', color: 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300',      users: '∞',  capital: '∞',     live: true  },
+} as const
+
+function OrgPanel({ tokenRef }: { tokenRef: React.RefObject<string> }) {
+  const [orgs, setOrgs] = useState<OrgData[]>([])
+  const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState<string | null>(null)
+  const [updatingId, setUpdatingId] = useState<string | null>(null)
+
+  useEffect(() => {
+    listAllOrgs(tokenRef.current)
+      .then(setOrgs)
+      .catch(e => setErr(e instanceof Error ? e.message : 'Load failed'))
+      .finally(() => setLoading(false))
+  }, [tokenRef])
+
+  async function changePlan(orgId: string, plan: string) {
+    setUpdatingId(orgId); setErr(null)
+    try {
+      const updated = await adminSetOrgPlan(tokenRef.current, orgId, plan)
+      setOrgs(prev => prev.map(o => o.id === orgId ? { ...o, plan: updated.plan, limits: updated.limits } : o))
+    } catch (e) { setErr(e instanceof Error ? e.message : 'Update failed') }
+    finally { setUpdatingId(null) }
+  }
+
+  if (loading) return <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-16 animate-pulse rounded-xl bg-zinc-200 dark:bg-zinc-800" />)}</div>
+
+  return (
+    <div className="space-y-5">
+      {err && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950 dark:text-red-300">{err}</p>}
+
+      {/* Plan comparison */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {(Object.entries(PLAN_META) as [string, typeof PLAN_META[keyof typeof PLAN_META]][]).map(([key, meta]) => (
+          <div key={key} className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="mb-3 flex items-center gap-2">
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${meta.color}`}>{meta.label}</span>
+            </div>
+            <div className="space-y-2 text-xs text-zinc-600 dark:text-zinc-300">
+              <p><span className="text-zinc-400">Users:</span> {typeof meta.users === 'number' ? meta.users : meta.users}</p>
+              <p><span className="text-zinc-400">Max Capital:</span> {meta.capital}</p>
+              <p><span className="text-zinc-400">Live Trading:</span> {meta.live ? <span className="text-emerald-600 dark:text-emerald-400">Yes</span> : <span className="text-zinc-400">No</span>}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Org table */}
+      <div className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="border-b border-zinc-100 px-5 py-4 dark:border-zinc-800">
+          <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">All Organizations ({orgs.length})</p>
+        </div>
+
+        {orgs.length === 0 ? (
+          <p className="px-5 py-8 text-sm text-zinc-400">No organizations created yet. Users create orgs from their profile.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-zinc-100 dark:border-zinc-800">
+                  {['Name', 'Plan', 'Members', 'Live Trading', 'Created', 'Actions'].map(h => (
+                    <th key={h} className="px-4 py-3 text-left font-medium text-zinc-400">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {orgs.map(org => {
+                  const meta = PLAN_META[org.plan as keyof typeof PLAN_META] ?? PLAN_META.free
+                  return (
+                    <tr key={org.id} className="border-b border-zinc-50 dark:border-zinc-800/50">
+                      <td className="px-4 py-3 font-semibold text-zinc-900 dark:text-zinc-50">{org.name}</td>
+                      <td className="px-4 py-3">
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${meta.color}`}>{meta.label}</span>
+                      </td>
+                      <td className="px-4 py-3 text-zinc-500">
+                        {org.member_count}
+                        {org.limits.max_users !== -1 && <span className="text-zinc-300"> / {org.limits.max_users}</span>}
+                      </td>
+                      <td className="px-4 py-3">
+                        {org.limits.live_trading
+                          ? <span className="text-emerald-600 dark:text-emerald-400">Yes</span>
+                          : <span className="text-zinc-400">No</span>}
+                      </td>
+                      <td className="px-4 py-3 text-zinc-400">
+                        {new Date(org.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })}
+                      </td>
+                      <td className="px-4 py-3">
+                        <select
+                          value={org.plan}
+                          disabled={updatingId === org.id}
+                          onChange={e => changePlan(org.id, e.target.value)}
+                          className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-[10px] text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 disabled:opacity-50 cursor-pointer"
+                        >
+                          <option value="free">Free</option>
+                          <option value="pro">Pro</option>
+                          <option value="enterprise">Enterprise</option>
+                        </select>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Main Admin View ───────────────────────────────────────────────────────────
 
 export default function AdminView() {
@@ -514,6 +630,7 @@ export default function AdminView() {
             { key: 'users', label: 'User Management' },
             { key: 'email-list', label: 'Email List' },
             { key: 'trading-rules', label: 'Trading Rules' },
+            { key: 'organizations', label: 'Organizations' },
           ] as { key: Tab; label: string }[]).map(({ key, label }) => (
             <button
               key={key}
@@ -595,6 +712,9 @@ export default function AdminView() {
 
         {/* Trading Rules tab */}
         {tab === 'trading-rules' && <TradingRulesPanel tokenRef={tokenRef} />}
+
+        {/* Organizations tab */}
+        {tab === 'organizations' && <OrgPanel tokenRef={tokenRef} />}
       </main>
     </div>
   )

@@ -57,5 +57,10 @@ ml/artifacts/
 *.pt
 *.onnx
 mlruns/
+
+# Stock master pipeline — raw source snapshots + run report are
+# reproducible build output; the final India_Stock_Master.csv is tracked.
+data/raw/
+data/stock_master_report.json
 backend/scripts/email_preview.html
 backend/*.err

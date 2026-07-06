@@ -103,7 +103,6 @@ class WebhookRepository:
         })
         update: dict = {"last_triggered_at": now.isoformat()}
         if not ok:
-            update["$inc"] = {"failure_count": 1}
             await _col().update_one({"id": wh_id}, {"$set": update, "$inc": {"failure_count": 1}})
         else:
             update["failure_count"] = 0

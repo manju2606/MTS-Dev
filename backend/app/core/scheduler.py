@@ -45,7 +45,7 @@ async def _run_golden_stock_scan() -> None:
 
 
 async def _resolve_btst_outcomes() -> None:
-    """10:00 IST weekdays: resolve yesterday's BTST pick outcomes."""
+    """10:00 IST weekdays: resolve yesterday's Intraday pick outcomes."""
     try:
         from datetime import date, timedelta
         from app.services.golden_stock_service import resolve_btst_outcomes

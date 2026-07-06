@@ -1,4 +1,4 @@
-"""Golden Stock — BTST API routes."""
+"""Golden Stock — Intraday API routes."""
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -17,7 +17,7 @@ async def get_latest(_: CurrentUser) -> dict:
     repo = GoldenStockRepository()
     doc = await repo.get_latest_scan()
     if doc is None:
-        raise HTTPException(status_code=404, detail="No BTST scan found. Run a scan first.")
+        raise HTTPException(status_code=404, detail="No Intraday scan found. Run a scan first.")
     return doc
 
 
@@ -39,7 +39,7 @@ async def get_scan_by_date(date_str: str, _: CurrentUser) -> dict:
     repo = GoldenStockRepository()
     doc = await repo.get_scan_by_date(date_str)
     if doc is None:
-        raise HTTPException(status_code=404, detail=f"No BTST scan found for date {date_str}")
+        raise HTTPException(status_code=404, detail=f"No Intraday scan found for date {date_str}")
     return doc
 
 

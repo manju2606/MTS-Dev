@@ -9,7 +9,7 @@ import {
   triggerGoldenStockScan,
   listWatchlists,
 } from '@/lib/api'
-import type { BTSTCandidate, GoldenStockScan, GoldenStockHistoryItem, Watchlist } from '@/lib/api'
+import type { IntradayCandidate, GoldenStockScan, GoldenStockHistoryItem, Watchlist } from '@/lib/api'
 
 function fmt(n: number) {
   return n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -70,7 +70,7 @@ function Badge({ label, variant }: { label: string; variant: 'indigo' | 'emerald
   )
 }
 
-function PickCard({ pick, token, watchlists }: { pick: BTSTCandidate; token: string; watchlists: Watchlist[] }) {
+function PickCard({ pick, token, watchlists }: { pick: IntradayCandidate; token: string; watchlists: Watchlist[] }) {
   const sym = pick.symbol.replace('.NS', '').replace('.BO', '')
   const changePos = pick.change_pct >= 0
 

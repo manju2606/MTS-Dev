@@ -1,4 +1,4 @@
-"""MongoDB repository for Golden Stock BTST scan records.
+"""MongoDB repository for Golden Stock Intraday scan records.
 
 Collection: golden_stock_scans (in mts_journal DB)
 """
@@ -11,7 +11,7 @@ import structlog
 from bson import ObjectId
 
 from app.core.config import settings
-from app.infra.scanner.golden_stock_scanner import BTSTCandidate, GoldenStockScan
+from app.infra.scanner.golden_stock_scanner import IntradayCandidate, GoldenStockScan
 
 log = structlog.get_logger()
 

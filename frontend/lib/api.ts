@@ -2621,9 +2621,10 @@ export async function listAuditLog(
   return res.json()
 }
 
-// ── Phase 8: Golden Stock — BTST ──────────────────────────────────────────────
+// ── Phase 8: Golden Stock — Intraday ─────────────────────────────────────────
 
-export type BTSTCandidate = {
+export type BTSTCandidate = IntradayCandidate  // backward-compat alias
+export type IntradayCandidate = {
   rank: number
   symbol: string
   name: string
@@ -2659,7 +2660,7 @@ export type GoldenStockScan = {
   scan_time: string
   universe_scanned: number
   passed_filter: number
-  picks: BTSTCandidate[]
+  picks: IntradayCandidate[]
   created_at?: string
 }
 

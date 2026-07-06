@@ -1,6 +1,6 @@
-"""HTML email report for Golden Stock BTST picks."""
+"""HTML email report for Golden Stock Intraday picks."""
 
-from app.infra.scanner.golden_stock_scanner import BTSTCandidate, GoldenStockScan
+from app.infra.scanner.golden_stock_scanner import IntradayCandidate, GoldenStockScan
 
 
 def _score_bar(score: int, max_score: int, color: str) -> str:
@@ -13,7 +13,7 @@ def _score_bar(score: int, max_score: int, color: str) -> str:
     )
 
 
-def _pick_row(p: BTSTCandidate) -> str:
+def _pick_row(p: IntradayCandidate) -> str:
     score_color = (
         "#059669" if p.confidence_score >= 70
         else "#f59e0b" if p.confidence_score >= 50
@@ -96,7 +96,7 @@ def golden_stock_email_html(scan: GoldenStockScan) -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Golden Stock BTST — {scan.scan_date}</title>
+  <title>Golden Stock Intraday — {scan.scan_date}</title>
 </head>
 <body style="margin:0;padding:0;background:#f3f4f6;font-family:Arial,Helvetica,sans-serif;">
 
@@ -105,8 +105,8 @@ def golden_stock_email_html(scan: GoldenStockScan) -> str:
   <!-- Header -->
   <div style="background:linear-gradient(135deg,#f59e0b,#d97706);padding:28px 32px;">
     <p style="margin:0;font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:rgba(255,255,255,0.75);">Manju Trade AI Pro</p>
-    <h1 style="margin:6px 0 0;font-size:24px;font-weight:800;color:#fff;">Golden Stock — BTST</h1>
-    <p style="margin:4px 0 0;color:rgba(255,255,255,0.85);font-size:13px;">Buy Today Sell Tomorrow &nbsp;·&nbsp; {scan.scan_date} &nbsp;·&nbsp; {scan_time_display} IST</p>
+    <h1 style="margin:6px 0 0;font-size:24px;font-weight:800;color:#fff;">Golden Stock — Intraday</h1>
+    <p style="margin:4px 0 0;color:rgba(255,255,255,0.85);font-size:13px;">Intraday AI Picks &nbsp;·&nbsp; {scan.scan_date} &nbsp;·&nbsp; {scan_time_display} IST</p>
   </div>
 
   <!-- Summary strip -->
@@ -123,7 +123,7 @@ def golden_stock_email_html(scan: GoldenStockScan) -> str:
         </td>
         <td style="text-align:center;padding:0 16px;border-left:1px solid #fde68a;">
           <p style="margin:0;font-size:20px;font-weight:800;color:#059669;">{pick_count}</p>
-          <p style="margin:0;font-size:10px;color:#065f46;text-transform:uppercase;">BTST Picks</p>
+          <p style="margin:0;font-size:10px;color:#065f46;text-transform:uppercase;">Intraday Picks</p>
         </td>
         <td style="text-align:center;padding:0 0 0 16px;border-left:1px solid #fde68a;">
           <p style="margin:0;font-size:16px;font-weight:800;color:#4f46e5;">{top_sym} · {top_score}</p>
@@ -136,7 +136,7 @@ def golden_stock_email_html(scan: GoldenStockScan) -> str:
   <!-- Picks table -->
   <div style="padding:24px 32px;">
     <h2 style="margin:0 0 16px;font-size:14px;font-weight:700;color:#111827;text-transform:uppercase;letter-spacing:0.5px;">
-      Top {pick_count} BTST Candidates
+      Top {pick_count} Intraday Candidates
     </h2>
     <table style="width:100%;border-collapse:collapse;">
       <thead>
@@ -157,8 +157,8 @@ def golden_stock_email_html(scan: GoldenStockScan) -> str:
   <!-- Disclaimer -->
   <div style="padding:16px 32px 24px;border-top:1px solid #f3f4f6;">
     <p style="margin:0;font-size:10px;color:#9ca3af;line-height:1.6;">
-      BTST picks are algorithmic candidates only. Not financial advice. Always verify with your own research.
-      Entry on close today; exit on next trading day's open or intraday. Stop loss: 2.5%. Target: 5%.
+      Intraday picks are algorithmic candidates only. Not financial advice. Always verify with your own research.
+      Entry and exit within the same trading session. Stop loss: 2.5%. Target: 5%.
       For Indian markets (NSE) only.
     </p>
   </div>

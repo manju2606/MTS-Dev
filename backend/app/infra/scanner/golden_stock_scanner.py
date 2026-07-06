@@ -1,11 +1,11 @@
-"""Golden Stock — BTST Scanner.
+"""Golden Stock — Intraday Scanner.
 
 Two-pass scanner over NIFTY_ALL (~750 stocks):
   Pass 1 — Batch yfinance download: compute basic technicals, filter candidates.
   Pass 2 — Full scoring for up to 150 candidates: fetch fundamentals + ADX, score 0-100.
 
 Exported:
-  BTSTCandidate, GoldenStockScan, run_golden_stock_scan()
+  IntradayCandidate, GoldenStockScan, run_golden_stock_scan()
 """
 
 import asyncio
@@ -28,7 +28,7 @@ IST = timezone(timedelta(hours=5, minutes=30))
 # ── Dataclasses ───────────────────────────────────────────────────────────────
 
 @dataclass
-class BTSTCandidate:
+class IntradayCandidate:
     rank: int
     symbol: str
     name: str
@@ -60,7 +60,7 @@ class GoldenStockScan:
     scan_time: str
     universe_scanned: int
     passed_filter: int
-    picks: list[BTSTCandidate] = field(default_factory=list)
+    picks: list[IntradayCandidate] = field(default_factory=list)
 
 
 # ── ADX calculation ───────────────────────────────────────────────────────────
@@ -255,7 +255,7 @@ def _fetch_ticker_info_sync(symbol: str) -> dict:
         return {"name": symbol.replace(".NS", "")}
 
 
-def _score_candidate(cand: dict, info: dict) -> BTSTCandidate | None:
+def _score_candidate(cand: dict, info: dict) -> IntradayCandidate | None:
     sym = cand["symbol"]
     current = cand["current"]
     sma20 = cand["sma20"]
@@ -386,7 +386,7 @@ def _score_candidate(cand: dict, info: dict) -> BTSTCandidate | None:
 
     total_score = fund + tech + mom
 
-    # ── BTST hard filters ─────────────────────────────────────────────────────
+    # ── Intraday hard filters ──────────────────────────────────────────────────
     if total_score < 45:
         return None
     if volume_ratio < 1.5:
@@ -430,7 +430,7 @@ def _score_candidate(cand: dict, info: dict) -> BTSTCandidate | None:
     name = info.get("name") or sym.replace(".NS", "")
     sector = SYMBOL_SECTOR.get(sym, "Unknown")
 
-    return BTSTCandidate(
+    return IntradayCandidate(
         rank=0,
         symbol=sym,
         name=str(name),
@@ -481,7 +481,7 @@ async def run_golden_stock_scan() -> GoldenStockScan:
     # Pass 2 — fetch fundamentals with semaphore
     sem = asyncio.Semaphore(15)
 
-    async def _fetch_and_score(cand: dict) -> BTSTCandidate | None:
+    async def _fetch_and_score(cand: dict) -> IntradayCandidate | None:
         async with sem:
             try:
                 info = await loop.run_in_executor(

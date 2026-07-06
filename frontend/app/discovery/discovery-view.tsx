@@ -129,10 +129,10 @@ function ExpandedRow({ s, onClose }: { s: StockScore; onClose: () => void }) {
             <p className="mt-3 text-xs italic text-zinc-500">{s.explanation}</p>
             {!['NEUTRAL', 'SELL', 'STRONG_SELL'].includes(s.signal) && (
               <Link
-                href={`/paper?symbol=${encodeURIComponent(s.symbol)}&signal=${s.signal.replace('STRONG_', '')}`}
+                href={`/trade?symbol=${encodeURIComponent(s.symbol)}`}
                 className="mt-3 inline-block rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500"
               >
-                Paper trade →
+                Trade →
               </Link>
             )}
           </div>

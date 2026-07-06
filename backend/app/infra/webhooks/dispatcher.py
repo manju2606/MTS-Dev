@@ -44,6 +44,16 @@ async def _deliver_one(url: str, secret: str, wh_id: str, event: str, data: dict
     return None, False, "max retries"
 
 
+async def deliver_test(
+    url: str, secret: str, wh_id: str, event: str, data: dict
+) -> tuple[int | None, bool, str]:
+    """Deliver a single one-off payload synchronously (awaited), for a user
+    explicitly clicking "Send test event" — unlike `fire`, callers need the
+    real result to show in the UI, not fire-and-forget.
+    """
+    return await _deliver_one(url, secret, wh_id, event, data)
+
+
 async def dispatch(event: str, data: dict) -> None:
     """Dispatch event to all active subscribers. Call fire-and-forget."""
     from app.infra.db.repositories.webhook_repo import WebhookRepository

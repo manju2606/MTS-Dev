@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import secrets
 from dataclasses import asdict
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, status
@@ -13,6 +14,43 @@ from app.domain.models.webhook import WEBHOOK_EVENTS, WebhookSubscription
 from app.infra.db.repositories.webhook_repo import WebhookRepository
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
+
+# One realistic example payload per event, matching the exact shape the
+# real dispatch call sites send (alerts.py / live.py) where those exist.
+# Used both for the docs-style "example payload" shown in the UI and as
+# the actual body sent by the "Send test event" button.
+_SAMPLE_PAYLOADS: dict[str, dict] = {
+    "alert.triggered": {
+        "symbol": "RELIANCE.NS", "direction": "above",
+        "price_target": 1400.0, "triggered_price": 1402.35,
+    },
+    "signal.generated": {
+        "symbol": "TCS.NS", "signal": "BUY", "confidence": 0.82,
+        "entry_price": 3850.0, "stop_loss": 3780.0, "target": 3990.0,
+        "risk_reward_ratio": 2.0, "holding_period": "3-5 days",
+        "explanation": "RSI bullish crossover with above-average volume.",
+    },
+    "trade.executed": {
+        "symbol": "INFY.NS", "signal": "BUY", "quantity": 10,
+        "broker": "paper", "order_type": "MARKET",
+    },
+    "discovery.scan_complete": {
+        "universe_size": 152, "picks_found": 50,
+        "strong_buy_count": 5, "scan_duration_seconds": 12.4,
+    },
+    "position.stop_hit": {
+        "symbol": "SBIN.NS", "entry_price": 800.0, "stop_loss": 780.0,
+        "exit_price": 779.5, "pnl": -20.5, "pnl_pct": -2.56,
+    },
+    "position.target_hit": {
+        "symbol": "HDFCBANK.NS", "entry_price": 1650.0, "target": 1700.0,
+        "exit_price": 1701.2, "pnl": 51.2, "pnl_pct": 3.10,
+    },
+}
+
+
+def sample_payload(event: str) -> dict:
+    return _SAMPLE_PAYLOADS.get(event, {"note": f"No example defined for '{event}'"})
 
 
 class CreateWebhookBody(BaseModel):
@@ -34,6 +72,17 @@ def _serialize(wh: WebhookSubscription, include_secret: bool = False) -> dict:
 @router.get("/events")
 async def list_events() -> list[str]:
     return WEBHOOK_EVENTS
+
+
+@router.get("/events/{event}/example")
+async def get_event_example(event: str, current_user: CurrentUser) -> dict:
+    if event not in WEBHOOK_EVENTS:
+        raise HTTPException(400, detail=f"Unknown event: {event}")
+    return {
+        "event": event,
+        "data": sample_payload(event),
+        "timestamp": datetime.now(UTC).isoformat(),
+    }
 
 
 @router.get("")
@@ -99,3 +148,37 @@ async def list_deliveries(wh_id: str, current_user: CurrentUser) -> list[dict]:
     if not wh or wh.user_id != str(current_user.id):
         raise HTTPException(404, detail="Webhook not found")
     return await repo.list_deliveries(wh_id)
+
+
+class TestWebhookBody(BaseModel):
+    event: str | None = None
+
+
+@router.post("/{wh_id}/test")
+async def test_webhook(wh_id: str, body: TestWebhookBody, current_user: CurrentUser) -> dict:
+    """Fire one real HTTP delivery of a sample payload at the webhook's URL,
+    so a user can verify their endpoint before waiting for a real event.
+    Recorded in the delivery log like any other attempt.
+    """
+    repo = WebhookRepository()
+    wh = await repo.get(wh_id)
+    if not wh or wh.user_id != str(current_user.id):
+        raise HTTPException(404, detail="Webhook not found")
+
+    event = body.event or (wh.events[0] if wh.events else "alert.triggered")
+    if event not in wh.events:
+        raise HTTPException(400, detail=f"'{event}' is not one of this webhook's subscribed events")
+
+    from app.infra.webhooks.dispatcher import deliver_test
+
+    data = sample_payload(event)
+    status_code, ok, err = await deliver_test(wh.url, wh.secret, str(wh.id), event, data)
+    await repo.record_delivery(str(wh.id), event, status_code, ok, err)
+
+    return {
+        "event": event,
+        "sample_payload": data,
+        "status_code": status_code,
+        "ok": ok,
+        "error": err,
+    }

@@ -5,9 +5,9 @@ import { useRouter } from 'next/navigation'
 import { NavBar } from '@/components/nav-bar'
 import {
   listWebhooks, createWebhook, deleteWebhook, toggleWebhook,
-  listWebhookDeliveries, listWebhookEvents,
+  listWebhookDeliveries, listWebhookEvents, getWebhookEventExample, testWebhook,
 } from '@/lib/api'
-import type { WebhookSub, WebhookDelivery } from '@/lib/api'
+import type { WebhookSub, WebhookDelivery, WebhookTestResult } from '@/lib/api'
 
 const EVENT_LABELS: Record<string, string> = {
   'alert.triggered':        'Price Alert Triggered',
@@ -93,6 +93,20 @@ function WebhookCard({
   onToggled: (w: WebhookSub) => void
 }) {
   const [showLog, setShowLog] = useState(false)
+  const [testEvent, setTestEvent] = useState(wh.events[0] ?? '')
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<WebhookTestResult | null>(null)
+  const [testError, setTestError] = useState<string | null>(null)
+
+  async function handleTest() {
+    setTesting(true); setTestResult(null); setTestError(null)
+    try {
+      const result = await testWebhook(tokenRef.current, wh.id, testEvent)
+      setTestResult(result)
+    } catch (e) {
+      setTestError(e instanceof Error ? e.message : 'Test failed')
+    } finally { setTesting(false) }
+  }
 
   return (
     <div className={`rounded-xl border bg-white dark:bg-zinc-900 ${wh.is_active ? 'border-zinc-200 dark:border-zinc-800' : 'border-zinc-100 opacity-60 dark:border-zinc-800'}`}>
@@ -111,9 +125,18 @@ function WebhookCard({
             <p className="mb-2 truncate text-xs font-mono text-zinc-500">{wh.url}</p>
             <div className="flex flex-wrap gap-1 mb-2">
               {wh.events.map(e => (
-                <span key={e} className="rounded-md bg-indigo-50 px-2 py-0.5 text-[10px] text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
+                <button
+                  key={e}
+                  onClick={() => { setTestEvent(e); setTestResult(null); setTestError(null) }}
+                  title="Select which event to send a test for"
+                  className={`rounded-md px-2 py-0.5 text-[10px] transition-colors ${
+                    testEvent === e
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950 dark:text-indigo-300 dark:hover:bg-indigo-900'
+                  }`}
+                >
                   {EVENT_LABELS[e] ?? e}
-                </span>
+                </button>
               ))}
             </div>
             <p className="text-[10px] text-zinc-400">
@@ -122,6 +145,13 @@ function WebhookCard({
             </p>
           </div>
           <div className="flex items-center gap-2 ml-3 shrink-0">
+            <button
+              onClick={handleTest}
+              disabled={testing || !testEvent}
+              className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-60"
+            >
+              {testing ? 'Sending…' : '▶ Send Test'}
+            </button>
             <button
               onClick={() => onToggled(wh)}
               className={`text-xs font-medium ${wh.is_active ? 'text-amber-600 hover:text-amber-800 dark:text-amber-400' : 'text-emerald-600 hover:text-emerald-800 dark:text-emerald-400'}`}
@@ -137,6 +167,26 @@ function WebhookCard({
             <button onClick={onDeleted} className="text-xs text-red-400 hover:text-red-600">Delete</button>
           </div>
         </div>
+
+        {testError && (
+          <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950 dark:text-red-300">{testError}</p>
+        )}
+        {testResult && (
+          <div className={`mt-3 rounded-lg border px-3 py-2 text-xs ${
+            testResult.ok
+              ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950'
+              : 'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950'
+          }`}>
+            <p className={testResult.ok ? 'font-semibold text-emerald-700 dark:text-emerald-300' : 'font-semibold text-red-600 dark:text-red-300'}>
+              {testResult.ok
+                ? `Delivered — HTTP ${testResult.status_code}`
+                : `Failed${testResult.status_code ? ` — HTTP ${testResult.status_code}` : ''}${testResult.error ? `: ${testResult.error}` : ''}`}
+            </p>
+            <pre className="mt-1.5 overflow-x-auto rounded bg-white/60 p-2 font-mono text-[10px] text-zinc-600 dark:bg-black/20 dark:text-zinc-300">
+              {JSON.stringify({ event: testResult.event, data: testResult.sample_payload }, null, 2)}
+            </pre>
+          </div>
+        )}
 
         {showLog && (
           <DeliveryLog wh={wh} tokenRef={tokenRef} onClose={() => setShowLog(false)} />
@@ -159,6 +209,19 @@ function CreateWebhookForm({ allEvents, tokenRef, onCreated }: {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [secretShown, setSecretShown] = useState<string | null>(null)
+  const [previewEvent, setPreviewEvent] = useState<string | null>(null)
+  const [previewJson, setPreviewJson] = useState<string | null>(null)
+
+  async function showExample(ev: string) {
+    if (previewEvent === ev) { setPreviewEvent(null); setPreviewJson(null); return }
+    setPreviewEvent(ev); setPreviewJson('Loading…')
+    try {
+      const example = await getWebhookEventExample(tokenRef.current, ev)
+      setPreviewJson(JSON.stringify(example, null, 2))
+    } catch {
+      setPreviewJson('Failed to load example.')
+    }
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -194,24 +257,39 @@ function CreateWebhookForm({ allEvents, tokenRef, onCreated }: {
         <input value={url} onChange={e => setUrl(e.target.value)} placeholder="https://your-endpoint.com/hook" className={inp} />
       </div>
       <p className="mb-2 text-xs font-medium text-zinc-500">Subscribe to events:</p>
-      <div className="mb-4 flex flex-wrap gap-2">
+      <div className="mb-2 flex flex-wrap gap-2">
         {allEvents.map(ev => {
           const checked = selectedEvents.includes(ev)
           return (
-            <button
-              type="button" key={ev}
-              onClick={() => setSelectedEvents(prev => checked ? prev.filter(e => e !== ev) : [...prev, ev])}
-              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                checked
-                  ? 'bg-indigo-600 text-white'
-                  : 'border border-zinc-200 text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800'
-              }`}
-            >
-              {EVENT_LABELS[ev] ?? ev}
-            </button>
+            <div key={ev} className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setSelectedEvents(prev => checked ? prev.filter(e => e !== ev) : [...prev, ev])}
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                  checked
+                    ? 'bg-indigo-600 text-white'
+                    : 'border border-zinc-200 text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800'
+                }`}
+              >
+                {EVENT_LABELS[ev] ?? ev}
+              </button>
+              <button
+                type="button"
+                onClick={() => showExample(ev)}
+                title="View example payload"
+                className={`text-xs ${previewEvent === ev ? 'text-indigo-600 dark:text-indigo-400' : 'text-zinc-300 hover:text-zinc-500 dark:text-zinc-600 dark:hover:text-zinc-400'}`}
+              >
+                {'{ }'}
+              </button>
+            </div>
           )
         })}
       </div>
+      {previewJson && (
+        <pre className="mb-4 max-h-64 overflow-auto rounded-lg bg-zinc-50 p-3 font-mono text-[11px] text-zinc-600 dark:bg-zinc-800/60 dark:text-zinc-300">
+          {previewJson}
+        </pre>
+      )}
       <button type="submit" disabled={busy}
         className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-60">
         {busy ? 'Creating…' : 'Register Webhook'}

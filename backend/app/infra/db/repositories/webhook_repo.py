@@ -31,6 +31,12 @@ def _log_col() -> motor.motor_asyncio.AsyncIOMotorCollection:  # type: ignore[ty
     return _db()["webhook_deliveries"]
 
 
+def _parse_dt(value: str | datetime | None) -> datetime | None:
+    if value is None or isinstance(value, datetime):
+        return value
+    return datetime.fromisoformat(value)
+
+
 def _from_doc(doc: dict) -> WebhookSubscription:
     return WebhookSubscription(
         id=UUID(doc["id"]),
@@ -40,8 +46,8 @@ def _from_doc(doc: dict) -> WebhookSubscription:
         secret=doc.get("secret", ""),
         name=doc.get("name", ""),
         is_active=doc.get("is_active", True),
-        created_at=doc.get("created_at", datetime.now(UTC)),
-        last_triggered_at=doc.get("last_triggered_at"),
+        created_at=_parse_dt(doc.get("created_at")) or datetime.now(UTC),
+        last_triggered_at=_parse_dt(doc.get("last_triggered_at")),
         failure_count=doc.get("failure_count", 0),
     )
 

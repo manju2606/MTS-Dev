@@ -2127,6 +2127,33 @@ export async function listWebhookDeliveries(token: string, id: string): Promise<
   return res.json()
 }
 
+export type WebhookEventExample = { event: string; data: Record<string, unknown>; timestamp: string }
+
+export async function getWebhookEventExample(token: string, event: string): Promise<WebhookEventExample> {
+  const res = await fetch(`${BASE}/api/v1/webhooks/events/${encodeURIComponent(event)}/example`, {
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+export type WebhookTestResult = {
+  event: string
+  sample_payload: Record<string, unknown>
+  status_code: number | null
+  ok: boolean
+  error: string
+}
+
+export async function testWebhook(token: string, id: string, event?: string): Promise<WebhookTestResult> {
+  const res = await fetch(`${BASE}/api/v1/webhooks/${id}/test`, {
+    method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ event: event ?? null }),
+  })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Test failed') }
+  return res.json()
+}
+
 // ── Phase 5: WebSocket price streaming ───────────────────────────────────────
 
 export type PriceTick = {

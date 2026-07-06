@@ -118,6 +118,8 @@ NSE_UNIVERSE: list[tuple[str, str]] = [
     ("RBLBANK.NS",     "RBL Bank"),
     ("CHOLAFIN.NS",    "Cholamandalam Investment"),
     ("BAJAJHLDNG.NS",  "Bajaj Holdings"),
+    ("JIOFIN.NS",      "Jio Financial Services"),
+    ("IEX.NS",         "Indian Energy Exchange"),
     # Infrastructure / Energy
     ("ADANIGREEN.NS",  "Adani Green Energy"),
     ("ADANIPOWER.NS",  "Adani Power"),

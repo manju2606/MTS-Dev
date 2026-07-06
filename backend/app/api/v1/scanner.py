@@ -1,6 +1,7 @@
 import asyncio
 import math
 from dataclasses import asdict
+from datetime import UTC
 from uuid import UUID
 
 import yfinance as yf
@@ -107,7 +108,7 @@ _RESAMPLE_FROM: dict[str, tuple[str, str, int]] = {
 
 
 def _resample_bars(bars: list[dict], factor: int) -> list[dict]:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     def _merge(chunk: list[dict]) -> dict:
         return {
@@ -123,7 +124,7 @@ def _resample_bars(bars: list[dict], factor: int) -> list[dict]:
     chunk: list[dict] = []
     last_day = None
     for b in bars:
-        day = datetime.fromtimestamp(b["time"], tz=timezone.utc).date()
+        day = datetime.fromtimestamp(b["time"], tz=UTC).date()
         if last_day is not None and day != last_day and chunk:
             out.append(_merge(chunk))
             chunk = []

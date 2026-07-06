@@ -1,8 +1,8 @@
 import hashlib
 import secrets
-import structlog
 from uuid import UUID, uuid4
 
+import structlog
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
 

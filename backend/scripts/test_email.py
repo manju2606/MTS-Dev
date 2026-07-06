@@ -70,8 +70,8 @@ def _fake_picks():
 
 async def run(send: bool, to: str | None) -> None:
     from app.core.config import settings
-    from app.infra.email.report import build_report_html, send_daily_report
     from app.infra.email.client import send_email
+    from app.infra.email.report import build_report_html
 
     picks = _fake_picks()
     html = build_report_html(picks, scanned_count=158)

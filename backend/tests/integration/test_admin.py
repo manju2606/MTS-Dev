@@ -56,6 +56,7 @@ async def admin_token(client: AsyncClient) -> str:
     # Practical solution: register user1, register user2, have user2 promote user1.
     # But neither starts as admin. So we must set role directly in the DB.
     from sqlalchemy import update
+
     from app.infra.db.models import UserORM
     from tests.conftest import TestSession
 

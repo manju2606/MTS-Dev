@@ -9,12 +9,12 @@ Orchestrates:
 """
 
 import asyncio
-from datetime import datetime, timezone, timedelta
+from datetime import timedelta, timezone
 
 import structlog
 
-from app.infra.scanner.btst_scanner import BTSTScan, run_btst_scan
 from app.infra.db.repositories.btst_repo import BTSTRepository
+from app.infra.scanner.btst_scanner import BTSTScan, run_btst_scan
 
 log = structlog.get_logger()
 
@@ -102,10 +102,12 @@ async def _update_btst_watchlist(scan: BTSTScan) -> None:
         return
     try:
         from uuid import uuid4
-        from app.core.config import settings
-        from app.infra.db.models import UserORM
+
         from sqlalchemy import select, text
         from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+        from app.core.config import settings
+        from app.infra.db.models import UserORM
 
         engine = create_async_engine(settings.DATABASE_URL)
         Session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
@@ -167,9 +169,9 @@ async def _send_btst_email(scan: BTSTScan) -> None:
         return
     try:
         from app.core.config import settings
-        from app.infra.email.client import send_email
-        from app.infra.email.btst_report import btst_email_html
         from app.infra.db.repositories.email_list_repo import EmailListRepository
+        from app.infra.email.btst_report import btst_email_html
+        from app.infra.email.client import send_email
 
         email_repo = EmailListRepository()
         managed = await email_repo.list_active_emails()

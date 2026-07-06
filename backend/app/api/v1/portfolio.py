@@ -154,7 +154,6 @@ _SECTOR_MAP: dict[str, str] = {
 
 from fastapi import Query as QParam
 
-
 # ── Portfolios CRUD ────────────────────────────────────────────────────────────
 
 @router.get("/holdings/portfolios")
@@ -309,8 +308,8 @@ async def assistant_analysis(
     portfolio_id: str = QParam(default="default"),
 ) -> dict:
     """Full enriched analysis of the user's real holdings."""
-    from app.infra.db.repositories.holdings_repo import HoldingsRepository
     from app.infra.db.repositories.discovery_repo import DiscoveryRepository
+    from app.infra.db.repositories.holdings_repo import HoldingsRepository
     from app.infra.market_data.yfinance_client import YFinanceClient
 
     h_repo = HoldingsRepository()
@@ -367,7 +366,7 @@ async def assistant_analysis(
         elif sc and getattr(sc, "signal", "") in ("BUY", "STRONG_BUY"):
             rec, rec_reason = "HOLD", f"AI bullish ({getattr(sc, 'signal', '')}) — maintain position"
         elif sc and getattr(sc, "signal", "") in ("SELL", "STRONG_SELL") and pnl_pct < 0:
-            rec, rec_reason = "SELL", f"AI bearish + position at loss — exit to limit downside"
+            rec, rec_reason = "SELL", "AI bearish + position at loss — exit to limit downside"
         else:
             rec, rec_reason = "HOLD", "No strong signal — continue holding and monitor"
 
@@ -494,8 +493,8 @@ async def assistant_chat(
     current_user: CurrentUser = None,  # type: ignore[assignment]
 ) -> dict:
     """Rule-based AI answers grounded in the user's actual portfolio data."""
-    from app.infra.db.repositories.holdings_repo import HoldingsRepository
     from app.infra.db.repositories.discovery_repo import DiscoveryRepository
+    from app.infra.db.repositories.holdings_repo import HoldingsRepository
     from app.infra.market_data.yfinance_client import YFinanceClient
 
     question: str = body.get("question", "").strip()
@@ -668,8 +667,8 @@ def _generate_answer(
         total_at_risk = sum(h["invested"] for h in at_risk)
         pct_at_risk = total_at_risk / total_invested * 100 if total_invested else 0
         if not at_risk:
-            return (f"All your positions are currently in profit. "
-                    f"The main downside risk is giving back gains — watch positions up >20% without strong AI backing.")
+            return ("All your positions are currently in profit. "
+                    "The main downside risk is giving back gains — watch positions up >20% without strong AI backing.")
         sym_list = ", ".join(f"{h['symbol']} ({h['pnl_pct']:+.1f}%)" for h in at_risk[:4])
         return (f"{len(at_risk)} position(s) have meaningful downside: {sym_list}. "
                 f"These represent ₹{total_at_risk:,.0f} ({pct_at_risk:.0f}% of invested capital). "
@@ -708,8 +707,9 @@ async def assistant_fundamentals(
     portfolio_id: str = QParam(default="default"),
 ) -> list[dict]:
     """Fetch yfinance .info for each holding: P/E, P/B, ROE, beta, market cap, etc."""
-    from app.infra.db.repositories.holdings_repo import HoldingsRepository
     import yfinance as yf
+
+    from app.infra.db.repositories.holdings_repo import HoldingsRepository
 
     repo = HoldingsRepository()
     holdings = await repo.list_holdings(str(current_user.id), portfolio_id)
@@ -764,9 +764,10 @@ async def assistant_timeline(
     portfolio_id: str = QParam(default="default"),
 ) -> dict:
     """Portfolio equity curve vs Nifty50 benchmark over the past 6 months."""
-    from app.infra.db.repositories.holdings_repo import HoldingsRepository
-    import yfinance as yf
     import pandas as pd
+    import yfinance as yf
+
+    from app.infra.db.repositories.holdings_repo import HoldingsRepository
 
     repo = HoldingsRepository()
     holdings = await repo.list_holdings(str(current_user.id), portfolio_id)
@@ -928,8 +929,9 @@ async def assistant_dividends(
     portfolio_id: str = QParam(default="default"),
 ) -> list[dict]:
     """Historical dividends + yield-on-cost for each holding."""
-    from app.infra.db.repositories.holdings_repo import HoldingsRepository
     import yfinance as yf
+
+    from app.infra.db.repositories.holdings_repo import HoldingsRepository
 
     repo = HoldingsRepository()
     holdings = await repo.list_holdings(str(current_user.id), portfolio_id)
@@ -981,9 +983,10 @@ async def assistant_correlation(
     portfolio_id: str = QParam(default="default"),
 ) -> dict:
     """Daily returns correlation matrix for the user's holdings."""
-    from app.infra.db.repositories.holdings_repo import HoldingsRepository
-    import yfinance as yf
     import pandas as pd
+    import yfinance as yf
+
+    from app.infra.db.repositories.holdings_repo import HoldingsRepository
 
     repo = HoldingsRepository()
     holdings = await repo.list_holdings(str(current_user.id), portfolio_id)
@@ -1018,8 +1021,8 @@ async def assistant_sentiment(
     portfolio_id: str = QParam(default="default"),
 ) -> list[dict]:
     """News sentiment for each holding from the Discovery engine."""
-    from app.infra.db.repositories.holdings_repo import HoldingsRepository
     from app.infra.db.repositories.discovery_repo import DiscoveryRepository
+    from app.infra.db.repositories.holdings_repo import HoldingsRepository
 
     h_repo = HoldingsRepository()
     d_repo = DiscoveryRepository()
@@ -1093,8 +1096,8 @@ async def assistant_ai_signals(
     portfolio_id: str = QParam(default="default"),
 ) -> list[dict]:
     """Latest Discovery-engine AI signal for each holding — entry, stop-loss, targets."""
-    from app.infra.db.repositories.holdings_repo import HoldingsRepository
     from app.infra.db.repositories.discovery_repo import DiscoveryRepository
+    from app.infra.db.repositories.holdings_repo import HoldingsRepository
 
     h_repo = HoldingsRepository()
     d_repo = DiscoveryRepository()

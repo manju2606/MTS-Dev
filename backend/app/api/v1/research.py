@@ -5,8 +5,8 @@ from dataclasses import asdict
 from fastapi import APIRouter, HTTPException, Query
 
 from app.api.deps import CurrentUser
-from app.infra.scanner.universe import NIFTY_INDICES
 from app.infra.scanner.market_scanner import scan
+from app.infra.scanner.universe import NIFTY_INDICES
 
 router = APIRouter(prefix="/research", tags=["research-agent"])
 

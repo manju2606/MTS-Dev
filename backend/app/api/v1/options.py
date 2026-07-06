@@ -27,8 +27,8 @@ def _get_expiries(symbol: str) -> list[str]:
 
 
 def _get_chain(symbol: str, expiry: str) -> dict:
-    import yfinance as yf
     import numpy as np
+    import yfinance as yf
 
     tk = yf.Ticker(symbol)
     try:

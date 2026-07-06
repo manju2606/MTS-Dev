@@ -1,6 +1,6 @@
 """Daily stock research report — builds and sends an HTML email with today's top picks."""
 
-from datetime import date, datetime, timezone, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import structlog
 

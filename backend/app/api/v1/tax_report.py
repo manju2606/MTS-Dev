@@ -3,13 +3,13 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
 from app.api.deps import CurrentUser, TradeDep
-from app.domain.models.trade import TradeMode, TradeStatus
+from app.domain.models.trade import TradeStatus
 
 router = APIRouter(prefix="/tax", tags=["tax-report"])
 
@@ -22,16 +22,16 @@ def _fy_bounds(fy: str) -> tuple[datetime, datetime]:
         start_year = int(fy.split("-")[0])
     except (ValueError, IndexError):
         raise HTTPException(status_code=422, detail="fy must be like '2025-26'")
-    start = datetime(start_year, 4, 1, tzinfo=timezone.utc)
-    end = datetime(start_year + 1, 3, 31, 23, 59, 59, tzinfo=timezone.utc)
+    start = datetime(start_year, 4, 1, tzinfo=UTC)
+    end = datetime(start_year + 1, 3, 31, 23, 59, 59, tzinfo=UTC)
     return start, end
 
 
 def _holding_days(opened: datetime | None, closed: datetime | None) -> int:
     if not opened or not closed:
         return 0
-    o = opened.replace(tzinfo=timezone.utc) if opened.tzinfo is None else opened
-    c = closed.replace(tzinfo=timezone.utc) if closed.tzinfo is None else closed
+    o = opened.replace(tzinfo=UTC) if opened.tzinfo is None else opened
+    c = closed.replace(tzinfo=UTC) if closed.tzinfo is None else closed
     return (c - o).days
 
 
@@ -58,7 +58,7 @@ async def tax_report(
             continue
         if mode != "all" and t.mode.value != mode:
             continue
-        closed_utc = t.closed_at.replace(tzinfo=timezone.utc) if t.closed_at.tzinfo is None else t.closed_at
+        closed_utc = t.closed_at.replace(tzinfo=UTC) if t.closed_at.tzinfo is None else t.closed_at
         if not (fy_start <= closed_utc <= fy_end):
             continue
         trades.append(t)

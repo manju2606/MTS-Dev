@@ -1,18 +1,18 @@
 """Discovery engine API — top picks, news, stock history, status, manual scan."""
 
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
-from app.api.deps import CurrentUser, require_role
+from app.api.deps import CurrentUser
 from app.core.scheduler import (
+    get_scheduler,
     is_scan_running,
     last_scan_info,
     run_full_scan,
-    get_scheduler,
 )
-from app.domain.models.discovery import DiscoveryStatus, StockScore
+from app.domain.models.discovery import StockScore
 from app.domain.models.user import UserRole
 from app.infra.db.repositories.discovery_repo import DiscoveryRepository
 from app.infra.scanner.universe import SYMBOL_SECTOR
@@ -184,6 +184,7 @@ async def trigger_report(current_user: CurrentUser) -> dict:
     if current_user.role != UserRole.ADMIN:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin only")
     import asyncio
+
     from app.infra.email.report import send_daily_report
     asyncio.create_task(send_daily_report())
     return {"message": "Report email queued"}
@@ -231,6 +232,7 @@ async def get_report(report_id: str, current_user: CurrentUser) -> dict:
 async def get_report_performance(report_id: str, current_user: CurrentUser) -> dict:
     """Return each pick in the report enriched with the current market price and P&L."""
     import asyncio
+
     from app.infra.market_data.yfinance_client import YFinanceClient
 
     repo = DiscoveryRepository()

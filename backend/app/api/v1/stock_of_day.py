@@ -47,7 +47,7 @@ def _serialize(s: object) -> dict:
 @router.get("/today")
 async def get_today(_: CurrentUser) -> dict:
     """Return today's Stock of the Day pick (null if not yet generated)."""
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
     IST = timezone(timedelta(hours=5, minutes=30))
     today = datetime.now(IST).strftime("%Y-%m-%d")
     repo = StockOfDayRepository()
@@ -78,7 +78,7 @@ async def get_journal(date_str: str, _: CurrentUser) -> list[dict]:
 @router.post("/generate", dependencies=[_admin_only])
 async def trigger_generate(_: CurrentUser) -> dict:
     """Manually trigger today's SotD pick generation (admin only)."""
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone
     IST = timezone(timedelta(hours=5, minutes=30))
     today = datetime.now(IST).strftime("%Y-%m-%d")
 

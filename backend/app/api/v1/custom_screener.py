@@ -5,13 +5,24 @@ import asyncio
 from functools import partial
 
 import structlog
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.api.deps import CurrentUser
-from app.domain.models.screener import CRITERIA_FIELDS, OPERATORS, UNIVERSES, SavedScreen, ScreenerCriterion
+from app.domain.models.screener import (
+    CRITERIA_FIELDS,
+    OPERATORS,
+    UNIVERSES,
+    SavedScreen,
+    ScreenerCriterion,
+)
 from app.infra.db.repositories import screener_repo
-from app.infra.scanner.universe import NIFTY_INDICES, NIFTY_50, NIFTY_100, NIFTY_MIDCAP_150, NIFTY_SMALLCAP_250
+from app.infra.scanner.universe import (
+    NIFTY_50,
+    NIFTY_100,
+    NIFTY_MIDCAP_150,
+    NIFTY_SMALLCAP_250,
+)
 
 router = APIRouter(prefix="/screener", tags=["custom-screener"])
 log = structlog.get_logger()
@@ -28,7 +39,6 @@ _UNIVERSE_MAP: dict[str, list[str]] = {
 def _fetch_symbol_data(symbol: str) -> dict | None:
     """Fetch technical + fundamental data for one symbol."""
     try:
-        import numpy as np
         import pandas as pd
         import yfinance as yf
 

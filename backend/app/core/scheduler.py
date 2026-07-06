@@ -9,7 +9,7 @@ The scheduler is disabled automatically when ENVIRONMENT=testing.
 """
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import structlog
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -48,6 +48,7 @@ async def _resolve_btst_outcomes() -> None:
     """10:00 IST weekdays: resolve yesterday's Intraday pick outcomes."""
     try:
         from datetime import date, timedelta
+
         from app.services.golden_stock_service import resolve_btst_outcomes
         yesterday = (date.today() - timedelta(days=1)).isoformat()
         count = await resolve_btst_outcomes(yesterday)
@@ -69,6 +70,7 @@ async def _resolve_btst_pick_outcomes() -> None:
     """15:35 IST weekdays: resolve yesterday's BTST picks against today's close."""
     try:
         from datetime import date, timedelta
+
         from app.services.btst_service import resolve_btst_outcomes
         yesterday = (date.today() - timedelta(days=1)).isoformat()
         count = await resolve_btst_outcomes(yesterday)
@@ -180,7 +182,7 @@ async def run_full_scan() -> None:
         await repo.save_scores(valid)
         await repo.save_news(news_items)
 
-        _last_scan_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        _last_scan_at = datetime.now(UTC).replace(tzinfo=None)
         _last_scan_count = len(valid)
         log.info("scheduler.scan.done", scored=len(valid), skipped=len(NSE_UNIVERSE) - len(valid))
         from app.api.v1.discovery import invalidate_picks_cache

@@ -1,6 +1,6 @@
 """HTML email report for Golden Stock Intraday picks."""
 
-from app.infra.scanner.golden_stock_scanner import IntradayCandidate, GoldenStockScan
+from app.infra.scanner.golden_stock_scanner import GoldenStockScan, IntradayCandidate
 
 
 def _score_bar(score: int, max_score: int, color: str) -> str:

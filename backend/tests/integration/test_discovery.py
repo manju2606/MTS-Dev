@@ -68,6 +68,7 @@ async def token(client: AsyncClient) -> str:
 @pytest.fixture
 async def admin_token(client: AsyncClient) -> str:
     from sqlalchemy import update
+
     from app.infra.db.models import UserORM
     from tests.conftest import TestSession
 
@@ -205,9 +206,8 @@ async def test_sentiment_scorer() -> None:
 
 
 async def test_breakout_patterns() -> None:
-    from unittest.mock import MagicMock
-    from app.infra.discovery.breakout_scanner import detect_patterns, compute_technical_score
     from app.domain.models.quote import Quote
+    from app.infra.discovery.breakout_scanner import compute_technical_score, detect_patterns
 
     quote = MagicMock(spec=Quote)
     quote.price = 1000.0

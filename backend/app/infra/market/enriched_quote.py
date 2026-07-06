@@ -8,13 +8,13 @@ import time
 import yfinance as yf
 
 from app.infra.scanner.universe import (
-    SYMBOL_SECTOR,
     NIFTY_50,
-    NIFTY_NEXT_50,
     NIFTY_MIDCAP_50,
     NIFTY_MIDCAP_100,
+    NIFTY_NEXT_50,
     NIFTY_SMALLCAP_50,
     NIFTY_SMALLCAP_100,
+    SYMBOL_SECTOR,
 )
 
 # ── Static company names ──────────────────────────────────────────────────────

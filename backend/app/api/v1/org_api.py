@@ -163,7 +163,7 @@ async def admin_set_plan(org_id: str, body: UpdatePlanRequest, current_user: Cur
     if current_user.role != UserRole.ADMIN:
         raise HTTPException(403, detail="Admin only")
     if body.plan not in PLAN_LIMITS:
-        raise HTTPException(400, detail=f"Invalid plan")
+        raise HTTPException(400, detail="Invalid plan")
     repo = OrgRepository()
     updated = await repo.update_plan(org_id, body.plan)
     if not updated:

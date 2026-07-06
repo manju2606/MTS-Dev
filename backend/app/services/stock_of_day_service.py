@@ -9,12 +9,11 @@ Orchestrates:
 """
 
 import asyncio
-from datetime import date, datetime, timezone, timedelta
-from uuid import uuid4
+from datetime import datetime, timedelta, timezone
 
 import structlog
 
-from app.domain.models.stock_of_day import AUTO_TRADE_THRESHOLD, StockOfDay
+from app.domain.models.stock_of_day import StockOfDay
 from app.infra.db.repositories.stock_of_day_repo import StockOfDayRepository
 
 log = structlog.get_logger()
@@ -295,12 +294,13 @@ async def _auto_place_trade(sotd: StockOfDay, cfg) -> None:  # type: ignore[type
     )
 
     try:
-        from app.core.config import settings
-        from app.domain.models.trade import Trade, TradeMode, TradeSignal, TradeStatus
-        from app.infra.db.repositories.trade_repo import SQLTradeRepository
-        from app.infra.db.models import UserORM
         from sqlalchemy import select
         from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+        from app.core.config import settings
+        from app.domain.models.trade import Trade, TradeMode, TradeSignal, TradeStatus
+        from app.infra.db.models import UserORM
+        from app.infra.db.repositories.trade_repo import SQLTradeRepository
 
         engine = create_async_engine(settings.DATABASE_URL)
         Session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
@@ -378,10 +378,12 @@ async def _close_paper_trade(trade_id: str, exit_price: float) -> None:
     """Close the linked paper trade at the given price."""
     try:
         from uuid import UUID
+
+        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
         from app.core.config import settings
         from app.domain.models.trade import TradeStatus
         from app.infra.db.repositories.trade_repo import SQLTradeRepository
-        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
         engine = create_async_engine(settings.DATABASE_URL)
         Session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
@@ -408,10 +410,12 @@ async def _add_to_sotd_watchlist(sotd: StockOfDay) -> None:
     and add today's pick to it (skip if already present)."""
     try:
         from uuid import uuid4 as _uuid4
-        from app.core.config import settings
-        from app.infra.db.models import UserORM
+
         from sqlalchemy import select, text
         from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+        from app.core.config import settings
+        from app.infra.db.models import UserORM
 
         engine = create_async_engine(settings.DATABASE_URL)
         Session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)

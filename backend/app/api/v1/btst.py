@@ -46,8 +46,9 @@ async def get_scan_by_date(date_str: str, _: CurrentUser) -> dict:
 @router.post("/scan", dependencies=[_admin_only])
 async def trigger_scan(_: CurrentUser) -> dict:
     """Manually trigger a BTST scan (admin only). Runs the full scan pipeline."""
-    from app.services.btst_service import run_and_save_btst
     import dataclasses
+
+    from app.services.btst_service import run_and_save_btst
     scan = await run_and_save_btst()
     return dataclasses.asdict(scan)
 

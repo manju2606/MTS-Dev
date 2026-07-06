@@ -153,6 +153,7 @@ async def test_place_order_viewer_forbidden(client: AsyncClient) -> None:
 
     # Downgrade to viewer via DB
     from sqlalchemy import update
+
     from app.infra.db.models import UserORM
     from tests.conftest import TestSession
 

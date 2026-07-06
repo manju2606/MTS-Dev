@@ -83,7 +83,7 @@ async def upstox_connect(body: UpstoxConnectRequest, current_user: CurrentUser) 
             detail="UPSTOX_API_KEY / UPSTOX_API_SECRET not configured",
         )
     try:
-        from app.infra.brokers.upstox import exchange_code, UpstoxBroker
+        from app.infra.brokers.upstox import UpstoxBroker, exchange_code
         access_token = await exchange_code(
             settings.UPSTOX_API_KEY,
             settings.UPSTOX_API_SECRET,

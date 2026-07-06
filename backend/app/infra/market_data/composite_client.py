@@ -12,7 +12,7 @@ tracked per-symbol so transient failures don't permanently disable a source.
 
 import asyncio
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import structlog
 
@@ -76,10 +76,10 @@ def get_all_source_health() -> list[dict]:
 
 
 def _build_priority(order: list[str]) -> list[tuple[str, MarketDataClient]]:
-    from app.infra.market_data.yfinance_client     import YFinanceClient
-    from app.infra.market_data.nse_india_client    import NseIndiaClient
-    from app.infra.market_data.moneycontrol_client import MoneyControlClient
     from app.infra.market_data.google_finance_client import GoogleFinanceClient
+    from app.infra.market_data.moneycontrol_client import MoneyControlClient
+    from app.infra.market_data.nse_india_client import NseIndiaClient
+    from app.infra.market_data.yfinance_client import YFinanceClient
 
     _MAP: dict[str, MarketDataClient] = {
         "nse_india":    NseIndiaClient(),

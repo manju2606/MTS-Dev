@@ -129,10 +129,11 @@ async def _send_position_email(alert: PositionAlert) -> None:
 
 async def run_position_check() -> None:
     """Check every open trade against current market prices."""
-    from app.core.config import settings
-    from app.infra.market_data.yfinance_client import YFinanceClient
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+    from app.core.config import settings
     from app.infra.db.repositories.trade_repo import SQLTradeRepository
+    from app.infra.market_data.yfinance_client import YFinanceClient
 
     engine = create_async_engine(settings.DATABASE_URL)
     Session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)

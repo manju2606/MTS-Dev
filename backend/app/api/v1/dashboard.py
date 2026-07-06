@@ -74,7 +74,7 @@ def _upcoming_fo_expiry(from_date: date) -> list[dict]:
         if d >= from_date:
             events.append({
                 "date": d.isoformat(),
-                "event": f"NSE F&O Expiry",
+                "event": "NSE F&O Expiry",
                 "category": "market",
             })
         month += 1

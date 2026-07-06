@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID, uuid4
 
-
 INDICATORS = ["rsi", "macd", "macd_hist", "sma20_ratio", "sma50_ratio",
               "bb_position", "atr_pct", "vol_ratio", "price", "volume"]
 

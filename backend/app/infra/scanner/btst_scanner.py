@@ -21,7 +21,7 @@ it slots in alongside the other factors below.
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import partial
 
 import numpy as np

@@ -1,8 +1,6 @@
 """Admin audit log — read-only access for admins."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 from fastapi import APIRouter, Query
 
 from app.api.deps import CurrentUser, require_role

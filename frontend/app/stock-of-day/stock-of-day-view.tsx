@@ -464,7 +464,7 @@ export function StockOfDayView() {
     tokenRef.current = t
     listWatchlists(t).then(setWatchlists).catch(() => {})
     load()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">

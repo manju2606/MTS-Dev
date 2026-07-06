@@ -87,7 +87,7 @@ async def price_stream(websocket: WebSocket, token: str = ""):
         while True:
             try:
                 raw = await asyncio.wait_for(websocket.receive_text(), timeout=_STREAM_INTERVAL + 1)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # No message — keep streaming
                 if not streaming and symbols:
                     streaming = True

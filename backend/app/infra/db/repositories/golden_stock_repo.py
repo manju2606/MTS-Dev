@@ -11,7 +11,7 @@ import structlog
 from bson import ObjectId
 
 from app.core.config import settings
-from app.infra.scanner.golden_stock_scanner import IntradayCandidate, GoldenStockScan
+from app.infra.scanner.golden_stock_scanner import GoldenStockScan
 
 log = structlog.get_logger()
 

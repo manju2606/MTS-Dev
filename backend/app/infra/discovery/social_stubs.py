@@ -11,7 +11,6 @@ credentials:
   Google Trends: Uses pytrends (free, but rate-limited)
 """
 
-from datetime import datetime
 
 import structlog
 

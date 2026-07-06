@@ -2688,6 +2688,12 @@ export async function getGoldenStockHistory(token: string, limit = 30): Promise<
   return r.json()
 }
 
+export async function getGoldenStockByDate(token: string, date: string): Promise<GoldenStockScan> {
+  const r = await fetch(`${BASE}/api/v1/golden-stock/history/${date}`, { headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
 export async function triggerGoldenStockScan(token: string): Promise<GoldenStockScan> {
   const r = await fetch(`${BASE}/api/v1/golden-stock/scan`, { method: 'POST', headers: authHeaders(token) })
   if (!r.ok) throw new Error(await r.text())
@@ -2696,6 +2702,99 @@ export async function triggerGoldenStockScan(token: string): Promise<GoldenStock
 
 export async function getGoldenStockPerformance(token: string): Promise<Record<string, unknown>> {
   const r = await fetch(`${BASE}/api/v1/golden-stock/performance`, { headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+// ── BTST (Buy Today, Sell Tomorrow) ──────────────────────────────────────────
+
+export type BTSTPick = {
+  rank: number
+  symbol: string
+  name: string
+  sector: string
+  entry_price: number
+  stop_loss: number
+  target_1: number
+  target_2: number
+  risk_reward: number
+  confidence_score: number
+  breakout_score: number
+  relative_strength_score: number
+  volume_score: number
+  news_score: number
+  fo_score: number
+  reasons: string[]
+  current_price: number
+  change_pct: number
+  rsi: number
+  volume_ratio: number
+  breakout_consolidation: boolean
+  consolidation_days: number
+  relative_strength_5d: number
+  relative_strength_20d: number
+  news_sentiment: number | null
+  news_mentions: number
+  pcr: number | null
+  fo_bullish: boolean
+  above_sma20: boolean
+  above_sma50: boolean
+  outcome?: string | null
+  actual_close?: number | null
+  actual_pct?: number | null
+  resolved_at?: string | null
+}
+
+export type BTSTScanResult = {
+  id?: string
+  scan_date: string
+  scan_time: string
+  universe_scanned: number
+  passed_filter: number
+  nifty_ret_5d: number
+  nifty_ret_20d: number
+  picks: BTSTPick[]
+  created_at?: string
+}
+
+export type BTSTHistoryItem = {
+  id: string
+  scan_date: string
+  scan_time: string
+  universe_scanned: number
+  passed_filter: number
+  pick_count: number
+  top_symbol: string
+  top_score: number
+  created_at?: string
+}
+
+export async function getBTSTLatest(token: string): Promise<BTSTScanResult> {
+  const r = await fetch(`${BASE}/api/v1/btst/latest`, { headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+export async function getBTSTHistory(token: string, limit = 30): Promise<BTSTHistoryItem[]> {
+  const r = await fetch(`${BASE}/api/v1/btst/history?limit=${limit}`, { headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+export async function getBTSTByDate(token: string, date: string): Promise<BTSTScanResult> {
+  const r = await fetch(`${BASE}/api/v1/btst/history/${date}`, { headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+export async function triggerBTSTScan(token: string): Promise<BTSTScanResult> {
+  const r = await fetch(`${BASE}/api/v1/btst/scan`, { method: 'POST', headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+export async function getBTSTPerformance(token: string): Promise<Record<string, unknown>> {
+  const r = await fetch(`${BASE}/api/v1/btst/performance`, { headers: authHeaders(token) })
   if (!r.ok) throw new Error(await r.text())
   return r.json()
 }

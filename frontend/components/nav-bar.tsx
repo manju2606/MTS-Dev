@@ -88,9 +88,6 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/discovery',    label: 'Discovery',     icon: 'compass',     desc: 'Stock discovery engine' },
       { href: '/heatmap',      label: 'Heat Map',      icon: 'squares',    desc: 'NSE-style market heat map' },
       { href: '/forecast',      label: 'Forecast',       icon: 'trendingUp', desc: 'ML price predictions: day, week, month' },
-      { href: '/stock-of-day',    label: 'Stock of Day',   icon: 'star',       desc: 'AI top pick · auto paper trade · SL/target tracking' },
-      { href: '/golden-stock',    label: 'Golden Stock',   icon: 'trendingUp', desc: 'Intraday picks · AI-scored · Fundamental + Technical' },
-      { href: '/reports',        label: 'Reports',        icon: 'fileText', desc: 'Hourly scan email reports' },
       { href: '/options',        label: 'Options Chain',  icon: 'layers',   desc: 'NSE/BSE options chain, PCR & max pain' },
       { href: '/calendar',       label: 'Economic Calendar', icon: 'calendar', desc: 'F&O expiries, RBI MPC, earnings & holidays' },
       { href: '/screener',       label: 'Custom Screener', icon: 'sliders', desc: 'Multi-factor stock screen across Nifty universes' },
@@ -102,6 +99,9 @@ const NAV_GROUPS: NavGroup[] = [
     roles: ['trader', 'admin'],
     items: [
       { href: '/watchlists', label: 'Watchlists',       icon: 'list',       desc: 'Track stocks with live quotes' },
+      { href: '/stock-of-day', label: 'Stock of Day',   icon: 'star',       desc: 'AI top pick · auto paper trade · SL/target tracking' },
+      { href: '/golden-stock', label: 'Golden Stock',   icon: 'trendingUp', desc: 'Intraday picks · AI-scored · Fundamental + Technical' },
+      { href: '/btst',       label: 'BTST',             icon: 'trendingUp', desc: 'Buy Today, Sell Tomorrow · Breakout + relative strength + news' },
       { href: '/paper',      label: 'Paper Trading',    icon: 'clipboard',  desc: 'Simulated trades, zero risk' },
       { href: '/live',       label: 'Live Trading',     icon: 'zap',        desc: 'Execute real orders' },
       { href: '/broker',     label: 'Broker',           icon: 'link',       desc: 'Zerodha / simulated setup' },
@@ -120,6 +120,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/portfolio',           label: 'Paper Trading',        icon: 'clipboard',  desc: 'P&L and analysis of paper trades' },
       { href: '/portfolio/assistant', label: 'Portfolio Assistant',  icon: 'sparkles',   desc: 'Track real holdings · AI analysis · chat' },
       { href: '/tax',                 label: 'Tax Report',           icon: 'fileText',   desc: 'STCG / LTCG breakdown & CSV export' },
+      { href: '/reports',             label: 'Reports',              icon: 'fileText',   desc: 'Hourly scan email reports' },
     ],
   },
   {

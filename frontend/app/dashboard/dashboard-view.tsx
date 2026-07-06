@@ -719,7 +719,8 @@ export default function DashboardView() {
             href="/paper" />
           <StatCard label="Active Alerts" value={alerts.length}
             sub="price alerts"
-            accent={alerts.length > 0 ? 'text-amber-600 dark:text-amber-400' : undefined} />
+            accent={alerts.length > 0 ? 'text-amber-600 dark:text-amber-400' : undefined}
+            href="/alerts" />
           <StatCard label="Universe" value={status?.universe_size ?? '—'}
             sub="NSE/BSE stocks scanned" />
         </div>

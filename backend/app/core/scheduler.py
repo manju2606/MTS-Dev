@@ -36,7 +36,7 @@ def last_scan_info() -> tuple[datetime | None, int]:
 
 
 async def _run_golden_stock_scan() -> None:
-    """15:00 IST weekdays: run Golden Stock Intraday scan once per day."""
+    """Every 15 min, 09:30-15:00 IST weekdays: run Golden Stock Intraday scan."""
     try:
         from app.services.golden_stock_service import run_and_save_golden_stock
         await run_and_save_golden_stock()
@@ -54,6 +54,27 @@ async def _resolve_btst_outcomes() -> None:
         log.info("scheduler.btst_resolve.done", date=yesterday, updated=count)
     except Exception as exc:
         log.error("scheduler.btst_resolve.error", error=str(exc))
+
+
+async def _run_btst_scan() -> None:
+    """14:00 IST weekdays: run the BTST (Buy Today, Sell Tomorrow) scan."""
+    try:
+        from app.services.btst_service import run_and_save_btst
+        await run_and_save_btst()
+    except Exception as exc:
+        log.error("scheduler.btst_scan.error", error=str(exc))
+
+
+async def _resolve_btst_pick_outcomes() -> None:
+    """15:35 IST weekdays: resolve yesterday's BTST picks against today's close."""
+    try:
+        from datetime import date, timedelta
+        from app.services.btst_service import resolve_btst_outcomes
+        yesterday = (date.today() - timedelta(days=1)).isoformat()
+        count = await resolve_btst_outcomes(yesterday)
+        log.info("scheduler.btst_pick_resolve.done", date=yesterday, updated=count)
+    except Exception as exc:
+        log.error("scheduler.btst_pick_resolve.error", error=str(exc))
 
 
 async def _run_sotd_generate() -> None:
@@ -289,18 +310,28 @@ def start_scheduler() -> None:
         misfire_grace_time=None,
     )
 
-    # Golden Stock Intraday scan once daily at 15:00 IST (just before market close)
+    # Golden Stock Intraday scan every 15 min, 09:30-15:00 IST (Mon-Fri)
     _scheduler.add_job(
         _run_golden_stock_scan,
-        CronTrigger(
-            day_of_week="mon-fri",
-            hour=15,
-            minute=0,
-            second=0,
-            timezone="Asia/Kolkata",
-        ),
-        id="golden_stock_scan",
-        name="Golden Stock Intraday Scan",
+        CronTrigger(day_of_week="mon-fri", hour=9, minute="30,45", second=0, timezone="Asia/Kolkata"),
+        id="golden_stock_scan_open",
+        name="Golden Stock Intraday Scan (09:30-09:45)",
+        max_instances=1,
+        misfire_grace_time=None,
+    )
+    _scheduler.add_job(
+        _run_golden_stock_scan,
+        CronTrigger(day_of_week="mon-fri", hour="10-14", minute="0,15,30,45", second=0, timezone="Asia/Kolkata"),
+        id="golden_stock_scan_mid",
+        name="Golden Stock Intraday Scan (10:00-14:45)",
+        max_instances=1,
+        misfire_grace_time=None,
+    )
+    _scheduler.add_job(
+        _run_golden_stock_scan,
+        CronTrigger(day_of_week="mon-fri", hour=15, minute=0, second=0, timezone="Asia/Kolkata"),
+        id="golden_stock_scan_close",
+        name="Golden Stock Intraday Scan (15:00)",
         max_instances=1,
         misfire_grace_time=None,
     )
@@ -311,6 +342,26 @@ def start_scheduler() -> None:
         CronTrigger(day_of_week="mon-fri", hour=10, minute=0, second=0, timezone="Asia/Kolkata"),
         id="btst_resolve",
         name="Resolve Intraday Pick Outcomes",
+        max_instances=1,
+        misfire_grace_time=None,
+    )
+
+    # BTST scan once daily at 14:00 IST (Mon-Fri)
+    _scheduler.add_job(
+        _run_btst_scan,
+        CronTrigger(day_of_week="mon-fri", hour=14, minute=0, second=0, timezone="Asia/Kolkata"),
+        id="btst_scan",
+        name="BTST Scan (14:00)",
+        max_instances=1,
+        misfire_grace_time=None,
+    )
+
+    # Resolve yesterday's BTST pick outcomes at 15:35 IST, against today's close
+    _scheduler.add_job(
+        _resolve_btst_pick_outcomes,
+        CronTrigger(day_of_week="mon-fri", hour=15, minute=35, second=0, timezone="Asia/Kolkata"),
+        id="btst_pick_resolve",
+        name="Resolve BTST Pick Outcomes",
         max_instances=1,
         misfire_grace_time=None,
     )

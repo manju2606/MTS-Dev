@@ -4,13 +4,13 @@ import { useEffect, useRef, useState } from 'react'
 import { NavBar } from '@/components/nav-bar'
 import { AddToWatchlistBtn } from '@/components/add-to-watchlist-btn'
 import {
-  getGoldenStockLatest,
-  getGoldenStockHistory,
-  getGoldenStockByDate,
-  triggerGoldenStockScan,
+  getBTSTLatest,
+  getBTSTHistory,
+  getBTSTByDate,
+  triggerBTSTScan,
   listWatchlists,
 } from '@/lib/api'
-import type { IntradayCandidate, GoldenStockScan, GoldenStockHistoryItem, Watchlist } from '@/lib/api'
+import type { BTSTPick, BTSTScanResult, BTSTHistoryItem, Watchlist } from '@/lib/api'
 
 function fmt(n: number) {
   return n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -71,7 +71,7 @@ function Badge({ label, variant }: { label: string; variant: 'indigo' | 'emerald
   )
 }
 
-function PickCard({ pick, token, watchlists }: { pick: IntradayCandidate; token: string; watchlists: Watchlist[] }) {
+function PickCard({ pick, token, watchlists }: { pick: BTSTPick; token: string; watchlists: Watchlist[] }) {
   const sym = pick.symbol.replace('.NS', '').replace('.BO', '')
   const changePos = pick.change_pct >= 0
 
@@ -88,10 +88,10 @@ function PickCard({ pick, token, watchlists }: { pick: IntradayCandidate; token:
           </div>
           <p className="mt-0.5 text-xs text-zinc-500">{pick.name} &middot; {pick.sector}</p>
           <div className="mt-1.5 flex flex-wrap gap-1">
-            {pick.macd_bullish && <Badge label="MACD" variant="indigo" />}
-            {pick.near_day_high && <Badge label="Near High" variant="amber" />}
+            {pick.breakout_consolidation && <Badge label={`Breakout · ${pick.consolidation_days}D base`} variant="indigo" />}
+            {pick.news_mentions > 0 && <Badge label="News" variant="amber" />}
+            {pick.fo_bullish && <Badge label="F&O Bullish" variant="emerald" />}
             {pick.above_sma50 && <Badge label="SMA50+" variant="emerald" />}
-            {pick.above_sma20 && <Badge label="SMA20+" variant="emerald" />}
           </div>
         </div>
         <div className="shrink-0 text-right">
@@ -101,27 +101,35 @@ function PickCard({ pick, token, watchlists }: { pick: IntradayCandidate; token:
       </div>
 
       <div className="mb-4">
-        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Confidence Score</p>
+        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">AI Confidence Score</p>
         <ConfidenceBar score={pick.confidence_score} />
         <div className="mt-2 space-y-1">
           <div className="flex items-center justify-between text-[10px] text-zinc-500">
-            <span>Fundamental</span>
-            <ScoreBar value={pick.fundamental_score} max={30} color="#4f46e5" />
+            <span>Breakout</span>
+            <ScoreBar value={pick.breakout_score} max={40} color="#4f46e5" />
           </div>
           <div className="flex items-center justify-between text-[10px] text-zinc-500">
-            <span>Technical</span>
-            <ScoreBar value={pick.technical_score} max={50} color="#0891b2" />
+            <span>Rel. Strength</span>
+            <ScoreBar value={pick.relative_strength_score} max={20} color="#0891b2" />
           </div>
           <div className="flex items-center justify-between text-[10px] text-zinc-500">
-            <span>Momentum</span>
-            <ScoreBar value={pick.momentum_score} max={20} color="#059669" />
+            <span>Volume</span>
+            <ScoreBar value={pick.volume_score} max={15} color="#059669" />
+          </div>
+          <div className="flex items-center justify-between text-[10px] text-zinc-500">
+            <span>News</span>
+            <ScoreBar value={pick.news_score} max={15} color="#d97706" />
+          </div>
+          <div className="flex items-center justify-between text-[10px] text-zinc-500">
+            <span>F&amp;O</span>
+            <ScoreBar value={pick.fo_score} max={10} color="#7c3aed" />
           </div>
         </div>
       </div>
 
       <div className="mb-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
         <div className="rounded-lg bg-zinc-50 p-2 dark:bg-zinc-800">
-          <p className="text-[10px] text-zinc-400">Entry</p>
+          <p className="text-[10px] text-zinc-400">Entry (Today)</p>
           <p className="font-bold text-zinc-900 dark:text-zinc-50">&#8377;{fmt(pick.entry_price)}</p>
         </div>
         <div className="rounded-lg bg-red-50 p-2 dark:bg-red-950/20">
@@ -129,11 +137,11 @@ function PickCard({ pick, token, watchlists }: { pick: IntradayCandidate; token:
           <p className="font-bold text-red-600">&#8377;{fmt(pick.stop_loss)}</p>
         </div>
         <div className="rounded-lg bg-emerald-50 p-2 dark:bg-emerald-950/20">
-          <p className="text-[10px] text-emerald-400">Target 1</p>
+          <p className="text-[10px] text-emerald-400">Exit T1 (Tomorrow)</p>
           <p className="font-bold text-emerald-600">&#8377;{fmt(pick.target_1)}</p>
         </div>
         <div className="rounded-lg bg-emerald-50 p-2 dark:bg-emerald-950/20">
-          <p className="text-[10px] text-emerald-400">Target 2</p>
+          <p className="text-[10px] text-emerald-400">Exit T2</p>
           <p className="font-bold text-emerald-600">&#8377;{fmt(pick.target_2)}</p>
         </div>
       </div>
@@ -146,18 +154,23 @@ function PickCard({ pick, token, watchlists }: { pick: IntradayCandidate; token:
           RSI {pick.rsi.toFixed(0)}
         </span>
         <span className="rounded bg-zinc-100 px-2 py-1 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-          ADX {pick.adx.toFixed(0)}
-        </span>
-        <span className="rounded bg-zinc-100 px-2 py-1 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
           Vol {pick.volume_ratio.toFixed(1)}x
         </span>
+        <span className="rounded bg-zinc-100 px-2 py-1 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+          RS(5D) {pick.relative_strength_5d >= 0 ? '+' : ''}{pick.relative_strength_5d.toFixed(1)}%
+        </span>
+        {pick.pcr != null && (
+          <span className="rounded bg-zinc-100 px-2 py-1 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+            PCR {pick.pcr.toFixed(2)}
+          </span>
+        )}
       </div>
 
       {pick.reasons.length > 0 && (
         <ul className="mb-4 space-y-0.5">
           {pick.reasons.map((r, i) => (
             <li key={i} className="flex items-start gap-1.5 text-xs text-zinc-600 dark:text-zinc-300">
-              <span className="mt-0.5 text-amber-500">&#9679;</span>
+              <span className="mt-0.5 text-indigo-500">&#9679;</span>
               {r}
             </li>
           ))}
@@ -186,14 +199,14 @@ function PickCard({ pick, token, watchlists }: { pick: IntradayCandidate; token:
   )
 }
 
-function ScanOverview({ scan }: { scan: GoldenStockScan }) {
+function ScanOverview({ scan }: { scan: BTSTScanResult }) {
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
       {[
         { label: 'Universe', value: scan.universe_scanned, color: 'text-indigo-600' },
         { label: 'Pass 1 Filter', value: scan.passed_filter, color: 'text-amber-600' },
-        { label: 'Intraday Picks', value: scan.picks.length, color: 'text-emerald-600' },
-        { label: 'Last Scan', value: fmtTime(scan.scan_time), color: 'text-zinc-600', isText: true },
+        { label: 'BTST Picks', value: scan.picks.length, color: 'text-emerald-600' },
+        { label: 'Nifty (5D/20D)', value: `${scan.nifty_ret_5d >= 0 ? '+' : ''}${scan.nifty_ret_5d.toFixed(1)}% / ${scan.nifty_ret_20d >= 0 ? '+' : ''}${scan.nifty_ret_20d.toFixed(1)}%`, color: 'text-zinc-600', isText: true },
       ].map(({ label, value, color, isText }) => (
         <div key={label} className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
           <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">{label}</p>
@@ -214,7 +227,7 @@ const HISTORY_RANGES: { label: string; limit: number }[] = [
 function HistoryTable({
   history, selectedDate, onSelect,
 }: {
-  history: GoldenStockHistoryItem[]
+  history: BTSTHistoryItem[]
   selectedDate: string | null
   onSelect: (date: string) => void
 }) {
@@ -264,13 +277,13 @@ function HistoryTable({
 function EmptyState({ onScan, scanning }: { onScan: () => void; scanning: boolean }) {
   return (
     <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-zinc-300 bg-zinc-50 py-20 dark:border-zinc-700 dark:bg-zinc-900">
-      <div className="mb-4 text-5xl">&#128293;</div>
-      <h3 className="mb-2 text-lg font-semibold text-zinc-700 dark:text-zinc-200">No Intraday scan yet</h3>
-      <p className="mb-6 text-sm text-zinc-500">Run a scan to find today's top intraday candidates.</p>
+      <div className="mb-4 text-5xl">&#127769;</div>
+      <h3 className="mb-2 text-lg font-semibold text-zinc-700 dark:text-zinc-200">No BTST scan yet</h3>
+      <p className="mb-6 text-sm text-zinc-500">Run a scan to find today&apos;s top overnight candidates.</p>
       <button
         onClick={onScan}
         disabled={scanning}
-        className="rounded-lg bg-amber-500 px-6 py-2.5 text-sm font-semibold text-white hover:bg-amber-600 disabled:opacity-50"
+        className="rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
       >
         {scanning ? 'Scanning...' : 'Run Scan Now'}
       </button>
@@ -278,9 +291,9 @@ function EmptyState({ onScan, scanning }: { onScan: () => void; scanning: boolea
   )
 }
 
-export function GoldenStockView() {
-  const [scan, setScan] = useState<GoldenStockScan | null>(null)
-  const [history, setHistory] = useState<GoldenStockHistoryItem[]>([])
+export function BTSTView() {
+  const [scan, setScan] = useState<BTSTScanResult | null>(null)
+  const [history, setHistory] = useState<BTSTHistoryItem[]>([])
   const [historyLimit, setHistoryLimit] = useState(30)
   const [loading, setLoading] = useState(true)
   const [scanning, setScanning] = useState(false)
@@ -288,7 +301,7 @@ export function GoldenStockView() {
   const [watchlists, setWatchlists] = useState<Watchlist[]>([])
   const [userRole, setUserRole] = useState<string>('')
   const [viewedDate, setViewedDate] = useState<string | null>(null)
-  const [viewedScan, setViewedScan] = useState<GoldenStockScan | null>(null)
+  const [viewedScan, setViewedScan] = useState<BTSTScanResult | null>(null)
   const [viewLoading, setViewLoading] = useState(false)
   const tokenRef = useRef('')
 
@@ -299,8 +312,8 @@ export function GoldenStockView() {
     setError(null)
     try {
       const [latestResult, histResult, wlResult] = await Promise.allSettled([
-        getGoldenStockLatest(token),
-        getGoldenStockHistory(token, historyLimit),
+        getBTSTLatest(token),
+        getBTSTHistory(token, historyLimit),
         listWatchlists(token),
       ])
       if (latestResult.status === 'fulfilled') setScan(latestResult.value)
@@ -317,7 +330,7 @@ export function GoldenStockView() {
     const token = tokenRef.current
     if (!token) return
     try {
-      setHistory(await getGoldenStockHistory(token, limit))
+      setHistory(await getBTSTHistory(token, limit))
     } catch (e) {
       setError((e as Error).message)
     }
@@ -335,7 +348,7 @@ export function GoldenStockView() {
     setViewLoading(true)
     setError(null)
     try {
-      setViewedScan(await getGoldenStockByDate(token, date))
+      setViewedScan(await getBTSTByDate(token, date))
     } catch (e) {
       setError((e as Error).message)
       setViewedDate(null)
@@ -355,7 +368,7 @@ export function GoldenStockView() {
     setScanning(true)
     setError(null)
     try {
-      const result = await triggerGoldenStockScan(token)
+      const result = await triggerBTSTScan(token)
       setScan(result)
       backToLatest()
       await loadHistory(historyLimit)
@@ -383,27 +396,34 @@ export function GoldenStockView() {
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
-      <NavBar active="Golden Stock" />
+      <NavBar active="BTST" />
       <div className="mx-auto max-w-7xl px-4 py-8">
 
         <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">
-              Golden Stock &mdash; Intraday
+              BTST &mdash; Buy Today, Sell Tomorrow
             </h1>
             <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-              AI-scored intraday picks &nbsp;&middot;&nbsp; Scans ~750 NSE stocks &nbsp;&middot;&nbsp; Updated daily at 3:00 PM IST
+              AI-scored overnight picks &nbsp;&middot;&nbsp; Scans ~750 NSE stocks &nbsp;&middot;&nbsp; Updated daily at 2:00 PM IST
             </p>
           </div>
           {isAdmin && (
             <button
               onClick={handleScan}
               disabled={scanning || loading}
-              className="shrink-0 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600 disabled:opacity-50"
+              className="shrink-0 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
             >
               {scanning ? 'Scanning...' : 'Run Scan Now'}
             </button>
           )}
+        </div>
+
+        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-300">
+          No stock can reliably guarantee an overnight gap-up. Picks favor stocks breaking out of a tight
+          multi-week consolidation with high volume, strength relative to Nifty, and positive news flow.
+          FII/DII cash-market flow isn&apos;t available as a live data source in this build, so it is not
+          part of the score.
         </div>
 
         {error && (
@@ -456,13 +476,14 @@ export function GoldenStockView() {
                 {displayScan.picks.length === 0 ? (
                   <div className="rounded-2xl border border-amber-200 bg-amber-50 px-6 py-10 text-center dark:border-amber-800 dark:bg-amber-950/20">
                     <p className="text-sm font-medium text-amber-700 dark:text-amber-300">
-                      Scan ran but no stocks passed the Intraday hard filters (score &ge; 45, vol &ge; 1.5x, near day high, above SMA20).
+                      Scan ran but no stocks passed the BTST hard filters (genuine consolidation breakout,
+                      score &ge; 45, above SMA20, positive relative strength vs Nifty).
                     </p>
                     {isAdmin && !viewedDate && (
                       <button
                         onClick={handleScan}
                         disabled={scanning}
-                        className="mt-4 rounded-lg bg-amber-500 px-5 py-2 text-sm font-semibold text-white hover:bg-amber-600 disabled:opacity-50"
+                        className="mt-4 rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
                       >
                         Run Another Scan
                       </button>
@@ -471,7 +492,7 @@ export function GoldenStockView() {
                 ) : (
                   <div>
                     <h2 className="mb-3 text-sm font-semibold text-zinc-800 dark:text-zinc-200">
-                      Top {displayScan.picks.length} Intraday Picks &nbsp;
+                      Top {displayScan.picks.length} BTST Picks &nbsp;
                       <span className="font-normal text-zinc-400">&middot; {displayScan.scan_date}</span>
                     </h2>
                     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -503,7 +524,7 @@ export function GoldenStockView() {
                         onClick={() => { setHistoryLimit(r.limit); loadHistory(r.limit) }}
                         className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors ${
                           historyLimit === r.limit
-                            ? 'bg-amber-500 text-white'
+                            ? 'bg-indigo-600 text-white'
                             : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400'
                         }`}
                       >

@@ -17,12 +17,17 @@ def verify_password(plain: str, hashed: str) -> bool:
     return bcrypt.checkpw(plain.encode(), hashed.encode())
 
 
-def create_access_token(subject: Any, expires_delta: timedelta | None = None) -> str:
+def create_access_token(
+    subject: Any, role: str | None = None, expires_delta: timedelta | None = None
+) -> str:
     expire = datetime.now(UTC) + (
         expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
+    payload: dict[str, Any] = {"sub": str(subject), "exp": expire}
+    if role is not None:
+        payload["role"] = role
     return jwt.encode(
-        {"sub": str(subject), "exp": expire},
+        payload,
         settings.SECRET_KEY,
         algorithm=settings.ALGORITHM,
     )

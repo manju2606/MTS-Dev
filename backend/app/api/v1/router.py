@@ -8,6 +8,7 @@ from app.api.v1 import (
     auth,
     backtest,
     broker,
+    btst,
     calendar,
     custom_screener,
     dashboard,
@@ -75,3 +76,4 @@ router.include_router(options.router)
 router.include_router(calendar.router)
 router.include_router(custom_screener.router)
 router.include_router(golden_stock.router)
+router.include_router(btst.router)

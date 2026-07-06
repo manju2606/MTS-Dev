@@ -60,7 +60,7 @@ async def login(body: LoginRequest, db: DBSession) -> TokenResponse:
     user = await repo.get_by_email(body.email)
     if not user or not verify_password(body.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    token = create_access_token(user.id)
+    token = create_access_token(user.id, role=user.role.value)
     return TokenResponse(access_token=token)
 
 
@@ -246,10 +246,15 @@ _log = structlog.get_logger()
 
 
 async def _seed_default_watchlists(db, user_id: UUID) -> None:
-    """Create Nifty 50 and Stock of the Day watchlists for a new user."""
+    """Create My Watchlist, Nifty 50, and Stock of the Day watchlists for a new user."""
     from sqlalchemy import text
     try:
         uid = str(user_id)
+        # My Watchlist
+        await db.execute(
+            text("INSERT INTO watchlists (id, user_id, name, created_at) VALUES (:id, :uid, 'My Watchlist', NOW()) ON CONFLICT ON CONSTRAINT uq_watchlist_user_name DO NOTHING"),
+            {"id": str(uuid4()), "uid": uid},
+        )
         # Nifty 50
         wl_id = str(uuid4())
         await db.execute(

@@ -1,11 +1,11 @@
-"""Golden Stock — Intraday service.
+"""BTST (Buy Today, Sell Tomorrow) service.
 
 Orchestrates:
-  1. Run the two-pass scan (runs once at 15:00 IST)
-  2. Save results to MongoDB
-  3. Create an Intraday watchlist in PostgreSQL for admin users (top 1 pick only)
-  4. Send email with all top picks
-  5. Resolve next-day outcomes (called at 10:00 IST the following day)
+  1. Run the BTST scan (once daily at 14:00 IST)
+  2. Save results to MongoDB (one document per day)
+  3. Add the top pick to each admin's persistent "BTST Watchlist"
+  4. Send email with all top picks (LTP, score, entry/exit, SL, etc.)
+  5. Resolve the previous day's picks against actual next-day closing price
 """
 
 import asyncio
@@ -13,8 +13,8 @@ from datetime import datetime, timezone, timedelta
 
 import structlog
 
-from app.infra.scanner.golden_stock_scanner import GoldenStockScan, run_golden_stock_scan
-from app.infra.db.repositories.golden_stock_repo import GoldenStockRepository
+from app.infra.scanner.btst_scanner import BTSTScan, run_btst_scan
+from app.infra.db.repositories.btst_repo import BTSTRepository
 
 log = structlog.get_logger()
 
@@ -23,30 +23,30 @@ IST = timezone(timedelta(hours=5, minutes=30))
 
 # ── Public entrypoints ────────────────────────────────────────────────────────
 
-async def run_and_save_golden_stock() -> GoldenStockScan:
-    """Run scan, save to MongoDB, create watchlist, send email."""
-    scan = await run_golden_stock_scan()
-    repo = GoldenStockRepository()
+async def run_and_save_btst() -> BTSTScan:
+    """Run scan, save to MongoDB, update watchlist, send email."""
+    scan = await run_btst_scan()
+    repo = BTSTRepository()
     await repo.save_scan(scan)
-    log.info("golden_stock.saved", picks=len(scan.picks), date=scan.scan_date)
+    log.info("btst.saved", picks=len(scan.picks), date=scan.scan_date)
 
     await asyncio.gather(
-        _create_intraday_watchlist(scan),
-        _send_intraday_email(scan),
+        _update_btst_watchlist(scan),
+        _send_btst_email(scan),
         return_exceptions=True,
     )
     return scan
 
 
 async def resolve_btst_outcomes(target_date: str) -> int:
-    """Resolve yesterday's Intraday picks by fetching actual closing prices.
+    """Resolve yesterday's BTST picks using the actual next-day closing price.
 
     Returns the number of picks updated.
     """
-    repo = GoldenStockRepository()
+    repo = BTSTRepository()
     doc = await repo.get_scan_by_date(target_date)
     if not doc:
-        log.warning("golden_stock.resolve.no_scan", date=target_date)
+        log.warning("btst.resolve.no_scan", date=target_date)
         return 0
 
     scan_id = doc.get("id", "")
@@ -83,23 +83,21 @@ async def resolve_btst_outcomes(target_date: str) -> int:
             await repo.update_pick_outcome(scan_id, sym, actual_close, round(actual_pct, 2))
             updated += 1
             log.info(
-                "golden_stock.resolve.updated",
-                symbol=sym,
-                actual_close=actual_close,
-                actual_pct=actual_pct,
+                "btst.resolve.updated", symbol=sym,
+                actual_close=actual_close, actual_pct=actual_pct,
             )
         except Exception as exc:
-            log.warning("golden_stock.resolve.error", symbol=sym, error=str(exc))
+            log.warning("btst.resolve.error", symbol=sym, error=str(exc))
 
     await asyncio.gather(*[_resolve_pick(p) for p in picks], return_exceptions=True)
-    log.info("golden_stock.resolve.done", date=target_date, updated=updated)
+    log.info("btst.resolve.done", date=target_date, updated=updated)
     return updated
 
 
-# ── Watchlist creation ────────────────────────────────────────────────────────
+# ── Watchlist ─────────────────────────────────────────────────────────────────
 
-async def _create_intraday_watchlist(scan: GoldenStockScan) -> None:
-    """Add the top pick to each admin's persistent "Intraday Watchlist" (accumulates across the day)."""
+async def _update_btst_watchlist(scan: BTSTScan) -> None:
+    """Add the top pick to each admin's persistent "BTST Watchlist" (accumulates)."""
     if not scan.picks:
         return
     try:
@@ -112,17 +110,14 @@ async def _create_intraday_watchlist(scan: GoldenStockScan) -> None:
         engine = create_async_engine(settings.DATABASE_URL)
         Session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
-        wl_name = "Intraday Watchlist"
+        wl_name = "BTST Watchlist"
         top_pick = scan.picks[0]
 
         async with Session() as session:
             result = await session.execute(
-                select(UserORM)
-                .where(UserORM.role == "admin", UserORM.is_active.is_(True))
-                .limit(5)
+                select(UserORM).where(UserORM.role == "admin", UserORM.is_active.is_(True)).limit(5)
             )
             admins = result.scalars().all()
-
             if not admins:
                 result = await session.execute(
                     select(UserORM).where(UserORM.is_active.is_(True)).limit(1)
@@ -152,58 +147,51 @@ async def _create_intraday_watchlist(scan: GoldenStockScan) -> None:
                 await session.execute(
                     text(
                         "INSERT INTO watchlist_items (id, user_id, watchlist_id, symbol, exchange, added_at) "
-                        "VALUES (:id, :uid, :wlid, :sym, 'NSE', NOW()) "
-                        "ON CONFLICT DO NOTHING"
+                        "VALUES (:id, :uid, :wlid, :sym, 'NSE', NOW()) ON CONFLICT DO NOTHING"
                     ),
-                    {
-                        "id": str(uuid4()),
-                        "uid": uid,
-                        "wlid": wl_id,
-                        "sym": top_pick.symbol,
-                    },
+                    {"id": str(uuid4()), "uid": uid, "wlid": wl_id, "sym": top_pick.symbol},
                 )
 
             await session.commit()
 
         await engine.dispose()
-        log.info("golden_stock.watchlist.updated", name=wl_name, top_pick=top_pick.symbol)
+        log.info("btst.watchlist.updated", name=wl_name, top_pick=top_pick.symbol)
     except Exception as exc:
-        log.warning("golden_stock.watchlist.error", error=str(exc))
+        log.warning("btst.watchlist.error", error=str(exc))
 
 
 # ── Email ─────────────────────────────────────────────────────────────────────
 
-async def _send_intraday_email(scan: GoldenStockScan) -> None:
+async def _send_btst_email(scan: BTSTScan) -> None:
     if not scan.picks:
         return
     try:
         from app.core.config import settings
         from app.infra.email.client import send_email
-        from app.infra.email.golden_stock_report import golden_stock_email_html
+        from app.infra.email.btst_report import btst_email_html
         from app.infra.db.repositories.email_list_repo import EmailListRepository
 
         email_repo = EmailListRepository()
         managed = await email_repo.list_active_emails()
         fallback = settings.REPORT_TO_EMAIL or settings.SMTP_USER
         recipients = managed if managed else ([fallback] if fallback else [])
-
         if not recipients:
             return
 
-        html = golden_stock_email_html(scan)
+        html = btst_email_html(scan)
         top_sym = scan.picks[0].symbol.replace(".NS", "") if scan.picks else "—"
         top_score = scan.picks[0].confidence_score if scan.picks else 0
         subject = (
-            f"Golden Stock Intraday: {top_sym} · Score {top_score} · "
-            f"{len(scan.picks)} picks · {scan.scan_date}"
+            f"BTST Pick: {top_sym} · Score {top_score} · "
+            f"{len(scan.picks)} candidates · {scan.scan_date}"
         )
 
         for to in recipients:
             try:
                 await send_email(to=to, subject=subject, html=html)
             except Exception as exc:
-                log.warning("golden_stock.email.failed", to=to, error=str(exc))
+                log.warning("btst.email.failed", to=to, error=str(exc))
 
-        log.info("golden_stock.email.sent", recipients=len(recipients))
+        log.info("btst.email.sent", recipients=len(recipients))
     except Exception as exc:
-        log.error("golden_stock.email.error", error=str(exc))
+        log.error("btst.email.error", error=str(exc))

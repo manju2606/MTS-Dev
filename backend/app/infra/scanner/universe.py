@@ -74,6 +74,27 @@ for _sector, _syms in SECTORS.items():
             SYMBOL_SECTOR[_s] = _sector
 
 
+# Fill in real NSE industry labels (from India_Stock_Master.csv) for any
+# symbol outside the curated SECTORS dict above -- e.g. stocks that are only
+# in NIFTY_ALL's broader universe, not the ~150-stock sector taxonomy.
+# The curated label always wins where both exist, so existing consumers
+# (e.g. INFY -> "IT") don't see their labels change.
+_SEGMENT_ONLY_MARKERS = {"EQUITY", "SME", "ETF"}
+
+
+def _augment_sector_map_from_master(symbol_sector: dict[str, str]) -> None:
+    from app.infra.market.stock_master import load_stock_master
+
+    for _row in load_stock_master():
+        _sym = _row["yahoo_symbol"]
+        _sec = _row["sector"]
+        if _sym not in symbol_sector and _sec and _sec not in _SEGMENT_ONLY_MARKERS:
+            symbol_sector[_sym] = _sec
+
+
+_augment_sector_map_from_master(SYMBOL_SECTOR)
+
+
 # ── Nifty Index Universes ──────────────────────────────────────────────────────
 
 def _dedup(lst: list[str]) -> list[str]:

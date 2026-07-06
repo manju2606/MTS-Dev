@@ -27,6 +27,11 @@ class StockMasterRow(TypedDict):
     exchange: str
     previous_symbol: str
     previous_name: str
+    in_nifty50: bool
+    in_nifty_next50: bool
+    in_nifty100: bool
+    in_nifty200: bool
+    in_nifty500: bool
 
 
 @lru_cache(maxsize=1)
@@ -47,6 +52,11 @@ def load_stock_master() -> list[StockMasterRow]:
                 "exchange": raw["exchange"],
                 "previous_symbol": raw.get("previous_symbol") or "",
                 "previous_name": raw.get("previous_company_name") or "",
+                "in_nifty50": raw.get("in_nifty50", "").strip().lower() == "true",
+                "in_nifty_next50": raw.get("in_nifty_next50", "").strip().lower() == "true",
+                "in_nifty100": raw.get("in_nifty100", "").strip().lower() == "true",
+                "in_nifty200": raw.get("in_nifty200", "").strip().lower() == "true",
+                "in_nifty500": raw.get("in_nifty500", "").strip().lower() == "true",
             })
     log.info("stock_master.loaded", count=len(rows), path=str(CSV_PATH))
     return rows

@@ -86,7 +86,24 @@ def _dedup(lst: list[str]) -> list[str]:
     return out
 
 
-NIFTY_50: list[str] = [
+def _index_symbols(flag: str, fallback: list[str]) -> list[str]:
+    """Real NSE index constituents from India_Stock_Master.csv, keyed by one
+    of its in_niftyXX flag columns. Falls back to the hand-typed list above
+    if the master file isn't present in this checkout.
+    """
+    from app.infra.market.stock_master import load_stock_master
+
+    master = load_stock_master()
+    if not master:
+        return fallback
+    symbols = [row["yahoo_symbol"] for row in master if row[flag]]  # type: ignore[literal-required]
+    return symbols or fallback
+
+
+# Static fallbacks, used only if data/India_Stock_Master.csv isn't present
+# in this checkout (see _index_symbols below) -- kept hand-typed so index
+# membership is never completely unavailable.
+_NIFTY_50_FALLBACK: list[str] = [
     "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS",
     "HINDUNILVR.NS", "ITC.NS", "SBIN.NS", "BHARTIARTL.NS", "KOTAKBANK.NS",
     "LT.NS", "AXISBANK.NS", "ASIANPAINT.NS", "MARUTI.NS", "NESTLEIND.NS",
@@ -99,7 +116,7 @@ NIFTY_50: list[str] = [
     "HDFCLIFE.NS", "BAJAJ-AUTO.NS", "UPL.NS", "VEDL.NS", "M&M.NS", "JIOFIN.NS",
 ]
 
-NIFTY_NEXT_50: list[str] = [
+_NIFTY_NEXT_50_FALLBACK: list[str] = [
     "SIEMENS.NS", "ABB.NS", "HAVELLS.NS", "PIDILITIND.NS", "BERGEPAINT.NS",
     "COLPAL.NS", "DABUR.NS", "GODREJCP.NS", "MARICO.NS", "EMAMILTD.NS",
     "TATAPOWER.NS", "ADANIGREEN.NS", "DMART.NS", "NAUKRI.NS", "INDIGO.NS",
@@ -111,6 +128,9 @@ NIFTY_NEXT_50: list[str] = [
     "TATAELXSI.NS", "KPITTECH.NS", "UNIONBANK.NS", "CANBK.NS", "PNB.NS",
     "BANKBARODA.NS", "IDFCFIRSTB.NS", "FEDERALBNK.NS", "AUBANK.NS", "SRF.NS",
 ]
+
+NIFTY_50: list[str] = _index_symbols("in_nifty50", _NIFTY_50_FALLBACK)
+NIFTY_NEXT_50: list[str] = _index_symbols("in_nifty_next50", _NIFTY_NEXT_50_FALLBACK)
 
 NIFTY_MIDCAP_50: list[str] = [
     "POLYCAB.NS", "TRENT.NS", "IRCTC.NS", "ZOMATO.NS", "DELHIVERY.NS",
@@ -244,11 +264,17 @@ NIFTY_MICROCAP_250: list[str] = _dedup(NIFTY_SMALLCAP_250 + [
 ])
 
 # ── Derived composite indices ──────────────────────────────────────────────────
+# NIFTY_100/200/500 prefer real index membership from India_Stock_Master.csv;
+# the _dedup(...) composition is only the fallback if that file is missing.
 
-NIFTY_100: list[str]             = _dedup(NIFTY_50 + NIFTY_NEXT_50)
-NIFTY_200: list[str]             = _dedup(NIFTY_100 + NIFTY_MIDCAP_100)
+NIFTY_100: list[str]             = _index_symbols("in_nifty100", _dedup(NIFTY_50 + NIFTY_NEXT_50))
+NIFTY_200: list[str]             = _index_symbols(
+    "in_nifty200", _dedup(NIFTY_100 + NIFTY_MIDCAP_100)
+)
 NIFTY_LARGEMIDCAP_250: list[str] = _dedup(NIFTY_100 + NIFTY_MIDCAP_150)
-NIFTY_500: list[str]             = _dedup(NIFTY_200 + NIFTY_MIDCAP_150 + NIFTY_SMALLCAP_250)
+NIFTY_500: list[str]             = _index_symbols(
+    "in_nifty500", _dedup(NIFTY_200 + NIFTY_MIDCAP_150 + NIFTY_SMALLCAP_250)
+)
 NIFTY_ALL: list[str]             = _dedup(NIFTY_500 + NIFTY_MICROCAP_250)
 
 # ── Index registry (used by research API & frontend) ──────────────────────────

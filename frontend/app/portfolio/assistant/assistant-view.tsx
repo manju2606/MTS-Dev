@@ -9,11 +9,13 @@ import {
   getAssistantSentiment, getAssistantAISignals,
   getBrokerStatus, getBrokerPositions,
   listPortfolios, createPortfolio, deletePortfolio, listWatchlists,
+  searchStocks,
 } from '@/lib/api'
 import type {
   AssistantAnalysis, Holding, AssistantAlert, SizingRow,
   FundamentalRow, TimelineData, TaxData, DividendRow, CorrelationData, Portfolio,
   SentimentRow, AISignalRow, BrokerPosition, BrokerStatus, Watchlist,
+  StockSearchResult,
 } from '@/lib/api'
 import { AddToWatchlistBtn } from '@/components/add-to-watchlist-btn'
 
@@ -226,6 +228,63 @@ function NewPortfolioModal({ token, onCreated, onCancel }: {
 
 // ── Add Holding Form ───────────────────────────────────────────────────────────
 
+function SymbolAutocomplete({ token, value, onChange, onPick }: {
+  token: string
+  value: string
+  onChange: (v: string) => void
+  onPick: (r: StockSearchResult) => void
+}) {
+  const [suggestions, setSuggestions] = useState<StockSearchResult[]>([])
+  const searchRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const boxRef = useRef<HTMLDivElement>(null)
+
+  function handleChange(val: string) {
+    onChange(val)
+    if (searchRef.current) clearTimeout(searchRef.current)
+    if (val.trim().length < 1) { setSuggestions([]); return }
+    searchRef.current = setTimeout(() => {
+      searchStocks(token, val).then(setSuggestions).catch(() => setSuggestions([]))
+    }, 250)
+  }
+
+  function handlePick(r: StockSearchResult) {
+    onChange(r.symbol.replace('.NS', '').replace('.BO', ''))
+    setSuggestions([])
+    onPick(r)
+  }
+
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setSuggestions([])
+    }
+    document.addEventListener('mousedown', onClickOutside)
+    return () => document.removeEventListener('mousedown', onClickOutside)
+  }, [])
+
+  return (
+    <div ref={boxRef} className="relative sm:col-span-1">
+      <input value={value} onChange={e => handleChange(e.target.value)} placeholder="Symbol (e.g. SBIN)" required
+        autoComplete="off"
+        className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
+      {suggestions.length > 0 && (
+        <ul className="absolute left-0 top-full z-50 mt-1 w-64 max-w-[80vw] rounded-lg border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+          {suggestions.map(r => (
+            <li key={r.symbol}>
+              <button type="button" onClick={() => handlePick(r)}
+                className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-indigo-50 dark:hover:bg-indigo-950/40">
+                <span className="font-semibold text-zinc-900 dark:text-zinc-100">
+                  {r.symbol.replace('.NS', '').replace('.BO', '')}
+                </span>
+                <span className="ml-2 truncate text-zinc-400">{r.name}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 function AddHoldingForm({ token, portfolioId, onAdded }: { token: string; portfolioId: string; onAdded: () => void }) {
   const [sym, setSym] = useState('')
   const [qty, setQty] = useState('')
@@ -247,8 +306,7 @@ function AddHoldingForm({ token, portfolioId, onAdded }: { token: string; portfo
 
   return (
     <form onSubmit={submit} className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-      <input value={sym} onChange={e => setSym(e.target.value)} placeholder="Symbol (e.g. SBIN)" required
-        className="rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 sm:col-span-1" />
+      <SymbolAutocomplete token={token} value={sym} onChange={setSym} onPick={r => setSym(r.symbol.replace('.NS', '').replace('.BO', ''))} />
       <input value={qty} onChange={e => setQty(e.target.value)} placeholder="Qty" type="number" min="1" required
         className="rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
       <input value={price} onChange={e => setPrice(e.target.value)} placeholder="Avg Price ₹" type="number" min="0.01" step="0.01" required

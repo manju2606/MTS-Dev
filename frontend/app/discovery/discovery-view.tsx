@@ -64,7 +64,7 @@ function CompositeBar({ score }: { score: number }) {
 function ExpandedRow({ s, onClose }: { s: StockScore; onClose: () => void }) {
   return (
     <tr>
-      <td colSpan={10} className="bg-zinc-50 px-6 py-5 dark:bg-zinc-900">
+      <td colSpan={11} className="bg-zinc-50 px-6 py-5 dark:bg-zinc-900">
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           <div>
             <p className="mb-2 text-xs font-semibold text-zinc-400">Price Levels</p>
@@ -357,6 +357,7 @@ export default function DiscoveryView() {
                         { h: 'T3',     key: null },
                         { h: 'R:R',    key: 'risk_reward_ratio' as SortKey },
                         { h: 'Hold',   key: null },
+                        { h: '',       key: null },
                       ]).map(({ h, key }) => (
                         <th
                           key={h}
@@ -426,6 +427,17 @@ export default function DiscoveryView() {
                             {s.risk_reward_ratio.toFixed(2)}
                           </td>
                           <td className="px-3 py-2.5 text-xs text-zinc-600 dark:text-zinc-400">{s.holding_period}</td>
+                          <td className="px-3 py-2.5">
+                            {!['NEUTRAL', 'SELL', 'STRONG_SELL'].includes(s.signal) && (
+                              <Link
+                                href={`/trade?symbol=${encodeURIComponent(s.symbol)}`}
+                                onClick={e => e.stopPropagation()}
+                                className="inline-block rounded-lg bg-indigo-600 px-2.5 py-1 text-[10px] font-semibold text-white hover:bg-indigo-500"
+                              >
+                                Trade Now →
+                              </Link>
+                            )}
+                          </td>
                         </tr>
                         {expandedId === s.id && (
                           <ExpandedRow key={`${s.id}-exp`} s={s} onClose={() => setExpandedId(null)} />

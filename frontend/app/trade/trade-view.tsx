@@ -154,6 +154,14 @@ function IndicatorPanel({ q }: { q: WatchlistQuote }) {
 
 // ── AI recommendation card ─────────────────────────────────────────────────────
 
+function pnlFromEntry(entry: number, price: number, signal: 'BUY' | 'SELL' | 'HOLD') {
+  const dir = signal === 'SELL' ? -1 : 1
+  const pts = (price - entry) * dir
+  const pct = (pts / entry) * 100
+  const sign = pts >= 0 ? '+' : ''
+  return `${sign}${pts.toFixed(2)} (${sign}${pct.toFixed(1)}%)`
+}
+
 function AICard({ rec, loading }: { rec: AIRecommendation | null; loading: boolean }) {
   if (loading) {
     return (
@@ -183,10 +191,12 @@ function AICard({ rec, loading }: { rec: AIRecommendation | null; loading: boole
         <div className="rounded-lg bg-red-50 p-2 dark:bg-red-950/20">
           <p className="text-[10px] text-red-400">Stop Loss</p>
           <p className="font-bold text-red-600">{fmtINR(rec.stop_loss)}</p>
+          <p className="text-[10px] text-red-400">{pnlFromEntry(rec.entry_price, rec.stop_loss, rec.signal)}</p>
         </div>
         <div className="rounded-lg bg-emerald-50 p-2 dark:bg-emerald-950/20">
           <p className="text-[10px] text-emerald-400">Target</p>
           <p className="font-bold text-emerald-600">{fmtINR(rec.target)}</p>
+          <p className="text-[10px] text-emerald-500">{pnlFromEntry(rec.entry_price, rec.target, rec.signal)}</p>
         </div>
         <div className="rounded-lg bg-white p-2 dark:bg-zinc-900">
           <p className="text-[10px] text-zinc-400">R:R &middot; Hold</p>

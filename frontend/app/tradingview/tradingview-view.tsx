@@ -129,6 +129,14 @@ function IndicatorGrid({ q }: { q: WatchlistQuote }) {
   )
 }
 
+function pnlFromEntry(entry: number, price: number, signal: 'BUY' | 'SELL' | 'HOLD') {
+  const dir = signal === 'SELL' ? -1 : 1
+  const pts = (price - entry) * dir
+  const pct = (pts / entry) * 100
+  const sign = pts >= 0 ? '+' : ''
+  return `${sign}${pts.toFixed(2)} pts (${sign}${pct.toFixed(1)}%)`
+}
+
 function AIStrip({ rec }: { rec: AIRecommendation | null }) {
   if (!rec) return null
   return (
@@ -136,8 +144,12 @@ function AIStrip({ rec }: { rec: AIRecommendation | null }) {
       <span className={`rounded-full px-3 py-1 text-xs font-bold ${SIGNAL_CLS[rec.signal]}`}>{rec.signal}</span>
       <span className="text-xs text-zinc-500">Confidence <b className="text-indigo-700 dark:text-indigo-300">{Math.round(rec.confidence * 100)}%</b></span>
       <span className="text-xs text-zinc-500">Entry <b>{fmtINR(rec.entry_price)}</b></span>
-      <span className="text-xs text-red-500">SL <b>{fmtINR(rec.stop_loss)}</b></span>
-      <span className="text-xs text-emerald-600">Target <b>{fmtINR(rec.target)}</b></span>
+      <span className="text-xs text-red-500">
+        SL <b>{fmtINR(rec.stop_loss)}</b> <span className="text-red-400">{pnlFromEntry(rec.entry_price, rec.stop_loss, rec.signal)}</span>
+      </span>
+      <span className="text-xs text-emerald-600">
+        Target <b>{fmtINR(rec.target)}</b> <span className="text-emerald-500">{pnlFromEntry(rec.entry_price, rec.target, rec.signal)}</span>
+      </span>
       <span className="text-xs text-zinc-500">R:R <b>{rec.risk_reward_ratio.toFixed(2)}x</b> &middot; {rec.holding_period}</span>
     </div>
   )

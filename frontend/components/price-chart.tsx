@@ -121,6 +121,14 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
 
         // AI buy/sell levels overlay — entry/stop-loss/target lines + a signal marker
         if (aiLevels && aiLevels.signal !== 'HOLD') {
+          const dir = aiLevels.signal === 'BUY' ? 1 : -1
+          const fmtPnl = (price: number) => {
+            const pts = (price - aiLevels.entry) * dir
+            const pct = (pts / aiLevels.entry) * 100
+            const sign = pts >= 0 ? '+' : ''
+            return `${sign}${pts.toFixed(2)} (${sign}${pct.toFixed(1)}%)`
+          }
+
           candleSeries.createPriceLine({
             price: aiLevels.entry,
             color: '#4f46e5',
@@ -135,7 +143,7 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
             lineWidth: 2,
             lineStyle: LineStyle.Dashed,
             axisLabelVisible: true,
-            title: 'Stop Loss',
+            title: `Stop Loss ${fmtPnl(aiLevels.stopLoss)}`,
           })
           candleSeries.createPriceLine({
             price: aiLevels.target,
@@ -143,7 +151,7 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
             lineWidth: 2,
             lineStyle: LineStyle.Dashed,
             axisLabelVisible: true,
-            title: 'Target',
+            title: `Target ${fmtPnl(aiLevels.target)}`,
           })
 
           const lastBar = data[data.length - 1]

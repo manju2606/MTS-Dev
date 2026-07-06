@@ -6,11 +6,12 @@ import Link from 'next/link'
 import { NavBar } from '@/components/nav-bar'
 import {
   getMe, getTopPicks, getDiscoveryStatus, listTrades, listAlerts, getQuote, getMarketOverview,
-  getSotDToday, listWatchlists, addItemToWatchlist,
+  getSotDToday, listWatchlists, addItemToWatchlist, getGoldenStockLatest, getBTSTLatest,
 } from '@/lib/api'
 import type {
   User, StockScore, DiscoveryStatus, Trade, AlertRule,
   IndexQuote, EconomicEvent, MarketOverviewData, StockOfDay, Watchlist,
+  GoldenStockScan, BTSTScanResult,
 } from '@/lib/api'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -555,6 +556,116 @@ function SotDDashCard({ sotd, ltp, token, watchlists }: {
   )
 }
 
+// ── Golden Stock — Intraday compact card ──────────────────────────────────────
+
+function GoldenStockDashCard({ scan, token, watchlists }: {
+  scan: GoldenStockScan | null
+  token?: string
+  watchlists?: Watchlist[]
+}) {
+  if (!scan || scan.picks.length === 0) {
+    return (
+      <div className="flex items-center justify-between rounded-xl border border-dashed border-zinc-300 bg-white px-4 py-3 dark:border-zinc-700 dark:bg-zinc-900">
+        <div className="flex items-center gap-2">
+          <span className="text-base">🔥</span>
+          <div>
+            <p className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">Golden Stock — Intraday</p>
+            <p className="text-[10px] text-zinc-400">Scans every 15 min &middot; 9:30 AM–3:00 PM IST</p>
+          </div>
+        </div>
+        <Link href="/golden-stock" className="text-[10px] font-semibold text-amber-600 hover:underline dark:text-amber-400">
+          View →
+        </Link>
+      </div>
+    )
+  }
+
+  const top = scan.picks[0]
+  const sym = top.symbol.replace(/\.(NS|BO)$/, '')
+
+  return (
+    <div className="flex flex-wrap items-center gap-4 rounded-xl border border-amber-100 bg-gradient-to-r from-amber-50 to-orange-50 px-4 py-3 dark:border-amber-900/50 dark:from-amber-950/30 dark:to-orange-950/20">
+      <div className="flex items-center gap-2 shrink-0">
+        <span className="text-base">🔥</span>
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wide text-amber-500">Golden Stock — Intraday</p>
+          <p className="text-sm font-extrabold text-zinc-900 dark:text-zinc-50">{sym}</p>
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-4 text-xs">
+        <div><p className="text-[9px] text-zinc-400">Entry</p><p className="font-mono font-semibold">₹{top.entry_price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p></div>
+        <div><p className="text-[9px] text-zinc-400">SL</p><p className="font-mono font-semibold text-red-600 dark:text-red-400">₹{top.stop_loss.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p></div>
+        <div><p className="text-[9px] text-zinc-400">Target</p><p className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">₹{top.target_1.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p></div>
+        <div><p className="text-[9px] text-zinc-400">Score</p><p className="font-bold text-amber-600">{top.confidence_score}</p></div>
+        <div><p className="text-[9px] text-zinc-400">Picks Today</p><p className="font-bold text-zinc-700 dark:text-zinc-300">{scan.picks.length}</p></div>
+      </div>
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        {token && watchlists && watchlists.length > 0 && (
+          <AddToWatchlistBtn symbol={top.symbol} token={token} watchlists={watchlists} />
+        )}
+        <Link href="/golden-stock" className="rounded-lg bg-amber-500 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-amber-600">
+          Details →
+        </Link>
+      </div>
+    </div>
+  )
+}
+
+// ── BTST compact card ──────────────────────────────────────────────────────────
+
+function BTSTDashCard({ scan, token, watchlists }: {
+  scan: BTSTScanResult | null
+  token?: string
+  watchlists?: Watchlist[]
+}) {
+  if (!scan || scan.picks.length === 0) {
+    return (
+      <div className="flex items-center justify-between rounded-xl border border-dashed border-zinc-300 bg-white px-4 py-3 dark:border-zinc-700 dark:bg-zinc-900">
+        <div className="flex items-center gap-2">
+          <span className="text-base">🌙</span>
+          <div>
+            <p className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">BTST — Buy Today, Sell Tomorrow</p>
+            <p className="text-[10px] text-zinc-400">Scans daily at 2:00 PM IST</p>
+          </div>
+        </div>
+        <Link href="/btst" className="text-[10px] font-semibold text-indigo-600 hover:underline dark:text-indigo-400">
+          View →
+        </Link>
+      </div>
+    )
+  }
+
+  const top = scan.picks[0]
+  const sym = top.symbol.replace(/\.(NS|BO)$/, '')
+
+  return (
+    <div className="flex flex-wrap items-center gap-4 rounded-xl border border-indigo-100 bg-gradient-to-r from-indigo-50 to-violet-50 px-4 py-3 dark:border-indigo-900/50 dark:from-indigo-950/30 dark:to-violet-950/20">
+      <div className="flex items-center gap-2 shrink-0">
+        <span className="text-base">🌙</span>
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wide text-indigo-400">BTST</p>
+          <p className="text-sm font-extrabold text-zinc-900 dark:text-zinc-50">{sym}</p>
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-4 text-xs">
+        <div><p className="text-[9px] text-zinc-400">Entry (Today)</p><p className="font-mono font-semibold">₹{top.entry_price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p></div>
+        <div><p className="text-[9px] text-zinc-400">SL</p><p className="font-mono font-semibold text-red-600 dark:text-red-400">₹{top.stop_loss.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p></div>
+        <div><p className="text-[9px] text-zinc-400">Exit (Tomorrow)</p><p className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">₹{top.target_1.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p></div>
+        <div><p className="text-[9px] text-zinc-400">Score</p><p className="font-bold text-indigo-600">{top.confidence_score}</p></div>
+        <div><p className="text-[9px] text-zinc-400">Picks Today</p><p className="font-bold text-zinc-700 dark:text-zinc-300">{scan.picks.length}</p></div>
+      </div>
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        {token && watchlists && watchlists.length > 0 && (
+          <AddToWatchlistBtn symbol={top.symbol} token={token} watchlists={watchlists} />
+        )}
+        <Link href="/btst" className="rounded-lg bg-indigo-600 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-indigo-700">
+          Details →
+        </Link>
+      </div>
+    </div>
+  )
+}
+
 // ── Main view ─────────────────────────────────────────────────────────────────
 
 export default function DashboardView() {
@@ -568,6 +679,8 @@ export default function DashboardView() {
   const [alerts, setAlerts]     = useState<AlertRule[]>([])
   const [market, setMarket]     = useState<MarketOverviewData | null>(null)
   const [sotd, setSotd]         = useState<StockOfDay | null>(null)
+  const [goldenStock, setGoldenStock] = useState<GoldenStockScan | null>(null)
+  const [btst, setBtst]         = useState<BTSTScanResult | null>(null)
   const [sortKey, setSortKey]   = useState<SortKey>('signal')
   const [sortDir, setSortDir]   = useState<SortDir>('desc')
   const [sigFilter, setSigFilter] = useState<string>('All')
@@ -584,6 +697,8 @@ export default function DashboardView() {
       if (c.status) setStatus(c.status)
       if (c.market) setMarket(c.market)
       if (c.sotd !== undefined) setSotd(c.sotd)
+      if (c.goldenStock !== undefined) setGoldenStock(c.goldenStock)
+      if (c.btst !== undefined) setBtst(c.btst)
       if (c.trades) setTrades(c.trades)
       if (c.alerts) setAlerts(c.alerts)
     } catch { /* ignore corrupt cache */ }
@@ -591,13 +706,15 @@ export default function DashboardView() {
 
   const load = useCallback(async (token: string) => {
     // Critical data first — renders SotD, picks, trades without waiting for market-overview
-    const [me, p, s, t, a, sotdRes] = await Promise.all([
+    const [me, p, s, t, a, sotdRes, gsRes, btstRes] = await Promise.all([
       getMe(token),
       getTopPicks(token, 50, undefined, 0),
       getDiscoveryStatus(token),
       listTrades(token, 'open').catch(() => [] as Trade[]),
       listAlerts(token).catch(() => [] as AlertRule[]),
       getSotDToday(token).catch(() => null),
+      getGoldenStockLatest(token).catch(() => null),
+      getBTSTLatest(token).catch(() => null),
     ])
     const openTrades = (t as Trade[]).filter((tr: Trade) => tr.status === 'open')
     const activeAlerts = (a as AlertRule[]).filter((al: AlertRule) => !al.triggered)
@@ -607,10 +724,13 @@ export default function DashboardView() {
     setTrades(openTrades)
     setAlerts(activeAlerts)
     if (sotdRes !== null) setSotd(sotdRes?.data ?? null)
+    setGoldenStock(gsRes)
+    setBtst(btstRes)
 
     try {
       localStorage.setItem(CACHE_KEY, JSON.stringify({
         picks: p, status: s, sotd: sotdRes?.data ?? null,
+        goldenStock: gsRes, btst: btstRes,
         trades: openTrades, alerts: activeAlerts,
       }))
     } catch { /* storage full */ }
@@ -725,9 +845,11 @@ export default function DashboardView() {
             sub="NSE/BSE stocks scanned" />
         </div>
 
-        {/* Stock of the Day banner */}
-        <div className="mb-5">
+        {/* Stock of the Day / Golden Stock / BTST banners */}
+        <div className="mb-5 space-y-3">
           <SotDDashCard sotd={sotd} ltp={sotdLtp} token={tokenRef.current} watchlists={watchlists} />
+          <GoldenStockDashCard scan={goldenStock} token={tokenRef.current} watchlists={watchlists} />
+          <BTSTDashCard scan={btst} token={tokenRef.current} watchlists={watchlists} />
         </div>
 
         {/* Market context row: Sentiment | Global | Economic Events */}
@@ -908,6 +1030,10 @@ export default function DashboardView() {
               <p className="mb-3 text-xs font-semibold text-zinc-400 uppercase tracking-wide">Quick Access</p>
               <div className="grid grid-cols-2 gap-2">
                 {[
+                  { href: '/tradingview', label: 'TradingView' },
+                  { href: '/trade', label: 'Quick Trade' },
+                  { href: '/golden-stock', label: 'Golden Stock' },
+                  { href: '/btst', label: 'BTST' },
                   { href: '/discovery', label: 'Discovery' },
                   { href: '/forecast', label: 'Forecast' },
                   { href: '/alerts', label: 'Alerts' },

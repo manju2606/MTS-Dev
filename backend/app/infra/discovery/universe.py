@@ -121,6 +121,7 @@ NSE_UNIVERSE: list[tuple[str, str]] = [
     # Infrastructure / Energy
     ("ADANIGREEN.NS",  "Adani Green Energy"),
     ("ADANIPOWER.NS",  "Adani Power"),
+    ("ADANIENSOL.NS",  "Adani Energy Solutions"),
     ("NHPC.NS",        "NHPC"),
     ("SJVN.NS",        "SJVN"),
     ("SUZLON.NS",      "Suzlon Energy"),

@@ -12,12 +12,14 @@ from app.api.deps import CurrentUser, MarketDataDep, WatchlistDep, require_role
 from app.core.limiter import limiter
 from app.domain.models.user import UserRole
 from app.domain.models.watchlist import WatchlistItem
+from app.infra.discovery.universe import NSE_UNIVERSE
 from app.infra.scanner.market_scanner import SCAN_CATALOG, run_market_scan
 from app.infra.scanner.universe import SECTORS
 
 _SYMBOL_SECTOR: dict[str, str] = {
     sym: sector for sector, syms in SECTORS.items() for sym in syms
 }
+_SYMBOL_NAME: dict[str, str] = dict(NSE_UNIVERSE)
 
 router = APIRouter(prefix="/scanner", tags=["scanner"])
 
@@ -528,13 +530,21 @@ async def search_stocks(
     query = q.strip().upper()
     if len(query) < 2:
         return []
+    query_compact = query.replace(" ", "")
     results = []
     for sym, sector in _SYMBOL_SECTOR.items():
-        name = sym.replace(".NS", "").replace(".BO", "")
-        if query in name or query in sym.upper():
+        ticker = sym.replace(".NS", "").replace(".BO", "")
+        display_name = _SYMBOL_NAME.get(sym, ticker)
+        name_upper = display_name.upper()
+        if (
+            query in name_upper
+            or query in sym.upper()
+            or query_compact in name_upper.replace(" ", "")
+            or query_compact in ticker
+        ):
             results.append({
                 "symbol": sym,
-                "name": name,
+                "name": display_name,
                 "sector": sector,
                 "exchange": "NSE" if sym.endswith(".NS") else "BSE",
             })

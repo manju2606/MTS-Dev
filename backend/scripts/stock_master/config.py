@@ -7,7 +7,11 @@ nseindia.com itself uses. Nothing here is a mirror or third-party copy.
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-DATA_DIR = REPO_ROOT / "data"
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+# Lives inside backend/ (not repo-root data/) so it's part of the backend's
+# own file tree: visible via the dev docker-compose volume mount
+# (./backend:/app) and copied into the prod image by `COPY . .`.
+DATA_DIR = BACKEND_ROOT / "data"
 RAW_CACHE_DIR = DATA_DIR / "raw"
 OUTPUT_CSV = DATA_DIR / "India_Stock_Master.csv"
 REPORT_JSON = DATA_DIR / "stock_master_report.json"

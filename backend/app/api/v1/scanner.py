@@ -13,6 +13,7 @@ from app.core.limiter import limiter
 from app.domain.models.user import UserRole
 from app.domain.models.watchlist import WatchlistItem
 from app.infra.discovery.universe import NSE_UNIVERSE
+from app.infra.market.stock_master import load_stock_master
 from app.infra.scanner.market_scanner import SCAN_CATALOG, run_market_scan
 from app.infra.scanner.universe import SECTORS
 
@@ -526,11 +527,56 @@ async def search_stocks(
     q: str,
     current_user: CurrentUser,
 ) -> list[dict]:
-    """Full-text search over NSE/BSE universe (symbol + name)."""
+    """Full-text search over the NSE stock universe (symbol + company name).
+
+    Backed by data/India_Stock_Master.csv (~2,700 NSE Equity/SME/ETF
+    symbols from official NSE archive data). Falls back to the smaller
+    hand-curated sector universe if that file isn't present in this
+    checkout, so search degrades rather than breaking.
+    """
     query = q.strip().upper()
     if len(query) < 2:
         return []
     query_compact = query.replace(" ", "")
+
+    master = load_stock_master()
+    if master:
+        scored: list[tuple[int, str, dict]] = []
+        for row in master:
+            ticker = row["symbol"]
+            name_upper = row["name"].upper()
+            name_compact = name_upper.replace(" ", "")
+            prev_ticker = row["previous_symbol"]
+            prev_name_upper = row["previous_name"].upper()
+
+            if ticker == query:
+                score = 0
+            elif ticker.startswith(query_compact):
+                score = 1
+            elif name_upper.startswith(query):
+                score = 2
+            elif query_compact in ticker:
+                score = 3
+            elif query in name_upper or query_compact in name_compact:
+                score = 4
+            elif prev_ticker == query or query in prev_name_upper:
+                score = 5
+            else:
+                continue
+
+            display_name = row["name"]
+            if score == 5 and prev_name_upper:
+                display_name = f"{display_name} (formerly {row['previous_name']})"
+
+            scored.append((score, ticker, {
+                "symbol": row["yahoo_symbol"],
+                "name": display_name,
+                "sector": row["sector"],
+                "exchange": row["exchange"],
+            }))
+        scored.sort(key=lambda t: (t[0], t[1]))
+        return [item for _, _, item in scored[:12]]
+
     results = []
     for sym, sector in _SYMBOL_SECTOR.items():
         ticker = sym.replace(".NS", "").replace(".BO", "")

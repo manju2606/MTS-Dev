@@ -2620,3 +2620,81 @@ export async function listAuditLog(
   if (!res.ok) return { total: 0, events: [] }
   return res.json()
 }
+
+// ── Phase 8: Golden Stock — BTST ──────────────────────────────────────────────
+
+export type BTSTCandidate = {
+  rank: number
+  symbol: string
+  name: string
+  sector: string
+  entry_price: number
+  stop_loss: number
+  target_1: number
+  target_2: number
+  risk_reward: number
+  confidence_score: number
+  fundamental_score: number
+  technical_score: number
+  momentum_score: number
+  reasons: string[]
+  current_price: number
+  change_pct: number
+  rsi: number
+  adx: number
+  volume_ratio: number
+  macd_bullish: boolean
+  near_day_high: boolean
+  above_sma20: boolean
+  above_sma50: boolean
+  outcome?: string | null
+  actual_close?: number | null
+  actual_pct?: number | null
+  resolved_at?: string | null
+}
+
+export type GoldenStockScan = {
+  id?: string
+  scan_date: string
+  scan_time: string
+  universe_scanned: number
+  passed_filter: number
+  picks: BTSTCandidate[]
+  created_at?: string
+}
+
+export type GoldenStockHistoryItem = {
+  id: string
+  scan_date: string
+  scan_time: string
+  universe_scanned: number
+  passed_filter: number
+  pick_count: number
+  top_symbol: string
+  top_score: number
+  created_at?: string
+}
+
+export async function getGoldenStockLatest(token: string): Promise<GoldenStockScan> {
+  const r = await fetch(`${BASE}/api/v1/golden-stock/latest`, { headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+export async function getGoldenStockHistory(token: string, limit = 30): Promise<GoldenStockHistoryItem[]> {
+  const r = await fetch(`${BASE}/api/v1/golden-stock/history?limit=${limit}`, { headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+export async function triggerGoldenStockScan(token: string): Promise<GoldenStockScan> {
+  const r = await fetch(`${BASE}/api/v1/golden-stock/scan`, { method: 'POST', headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+export async function getGoldenStockPerformance(token: string): Promise<Record<string, unknown>> {
+  const r = await fetch(`${BASE}/api/v1/golden-stock/performance`, { headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}

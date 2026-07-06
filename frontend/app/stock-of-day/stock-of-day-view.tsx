@@ -5,9 +5,10 @@ import { useEffect, useRef, useState } from 'react'
 import { NavBar } from '@/components/nav-bar'
 import {
   getSotDHistory, getSotDJournal, getSotDToday,
-  triggerSotDGenerate, getQuote,
+  triggerSotDGenerate, getQuote, listWatchlists,
 } from '@/lib/api'
-import type { SotDJournalEntry, StockOfDay } from '@/lib/api'
+import type { SotDJournalEntry, StockOfDay, Watchlist } from '@/lib/api'
+import { AddToWatchlistBtn } from '@/components/add-to-watchlist-btn'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -74,12 +75,14 @@ function ScoreGauge({ score }: { score: number }) {
 // ── Today's Pick card ─────────────────────────────────────────────────────────
 
 function TodayCard({
-  sotd, ltp, onGenerate, generating,
+  sotd, ltp, onGenerate, generating, token, watchlists,
 }: {
   sotd: StockOfDay | null
   ltp: number | null
   onGenerate: () => void
   generating: boolean
+  token: string
+  watchlists: Watchlist[]
 }) {
   if (!sotd) {
     return (
@@ -247,6 +250,11 @@ function TodayCard({
             >
               📋 Paper Trades
             </Link>
+            {watchlists.length > 0 && (
+              <div className="flex items-center justify-center rounded-lg border border-violet-200 bg-violet-50 px-3 dark:border-violet-800 dark:bg-violet-950/30">
+                <AddToWatchlistBtn symbol={sotd.symbol} token={token} watchlists={watchlists} />
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -301,7 +309,7 @@ function JournalTimeline({ entries }: { entries: SotDJournalEntry[] }) {
 
 // ── History table ─────────────────────────────────────────────────────────────
 
-function HistoryTable({ history }: { history: StockOfDay[] }) {
+function HistoryTable({ history, token, watchlists }: { history: StockOfDay[]; token: string; watchlists: Watchlist[] }) {
   if (!history.length) return (
     <p className="py-8 text-center text-sm text-zinc-400">No history yet — picks generate daily at 09:30 IST</p>
   )
@@ -310,7 +318,7 @@ function HistoryTable({ history }: { history: StockOfDay[] }) {
       <table className="w-full text-xs">
         <thead>
           <tr className="border-b border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/50">
-            {['Date', 'Symbol', 'Sector', 'Score', 'Entry ₹', 'SL ₹', 'Target ₹', 'R:R', 'Status', 'Exit ₹', 'P&L'].map(h => (
+            {['Date', 'Symbol', 'Sector', 'Score', 'Entry ₹', 'SL ₹', 'Target ₹', 'R:R', 'Status', 'Exit ₹', 'P&L', ''].map(h => (
               <th key={h} className="px-3 py-2.5 text-left font-semibold text-zinc-500 dark:text-zinc-400">{h}</th>
             ))}
           </tr>
@@ -352,6 +360,9 @@ function HistoryTable({ history }: { history: StockOfDay[] }) {
                 <td className="px-3 py-2 font-mono text-zinc-700 dark:text-zinc-300">{row.exit_price ? `₹${fmt(row.exit_price)}` : '—'}</td>
                 <td className={`px-3 py-2 font-bold font-mono ${pnlColor}`}>
                   {pnl != null ? `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}%` : '—'}
+                </td>
+                <td className="px-3 py-2">
+                  <AddToWatchlistBtn symbol={row.symbol} token={token} watchlists={watchlists} />
                 </td>
               </tr>
             )
@@ -400,6 +411,7 @@ export function StockOfDayView() {
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [watchlists, setWatchlists] = useState<Watchlist[]>([])
   const tokenRef = useRef('')
 
   async function load() {
@@ -450,6 +462,7 @@ export function StockOfDayView() {
   useEffect(() => {
     const t = localStorage.getItem('mts_token') ?? ''
     tokenRef.current = t
+    listWatchlists(t).then(setWatchlists).catch(() => {})
     load()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -491,7 +504,7 @@ export function StockOfDayView() {
         ) : (
           <div className="space-y-6">
             {/* Today's pick */}
-            <TodayCard sotd={today} ltp={ltp} onGenerate={handleGenerate} generating={generating} />
+            <TodayCard sotd={today} ltp={ltp} onGenerate={handleGenerate} generating={generating} token={tokenRef.current} watchlists={watchlists} />
 
             {/* Journal for today */}
             {journal.length > 0 && (
@@ -509,7 +522,7 @@ export function StockOfDayView() {
               <h3 className="mb-3 text-sm font-semibold text-zinc-800 dark:text-zinc-200">
                 Pick History &amp; P&amp;L Tracking
               </h3>
-              <HistoryTable history={history} />
+              <HistoryTable history={history} token={tokenRef.current} watchlists={watchlists} />
             </div>
 
           </div>

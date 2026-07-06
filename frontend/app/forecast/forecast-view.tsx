@@ -1,12 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { NavBar } from '@/components/nav-bar'
-import { getForecast, getForecastHistory, getTopPicks, runMarketScan } from '@/lib/api'
+import { getForecast, getForecastHistory, getTopPicks, listWatchlists, runMarketScan } from '@/lib/api'
 import type {
   ForecastAccuracyRecord, ForecastResult, HorizonForecast,
-  ModelForecast, ScanResultItem, StockScore,
+  ModelForecast, ScanResultItem, StockScore, Watchlist,
 } from '@/lib/api'
+import { AddToWatchlistBtn } from '@/components/add-to-watchlist-btn'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -369,11 +370,15 @@ export function ForecastView() {
   const [scanPicks, setScanPicks]       = useState<Record<string, ScanResultItem[]>>({})
   const [scanLoading, setScanLoading]   = useState(true)
   const [activeTab, setActiveTab]       = useState<PickTab>('ai')
+  const [watchlists, setWatchlists]     = useState<Watchlist[]>([])
+  const tokenRef                        = useRef('')
 
   // Load AI picks immediately, scanner picks in background
   useEffect(() => {
     const token = localStorage.getItem('mts_token') ?? ''
     if (!token) return
+    tokenRef.current = token
+    listWatchlists(token).then(setWatchlists).catch(() => {})
 
     // AI picks — fast (MongoDB cache)
     getTopPicks(token, 30, undefined, 50)
@@ -508,7 +513,10 @@ export function ForecastView() {
             <div className="mt-6 rounded-xl border border-zinc-200 bg-white px-5 py-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs font-medium text-zinc-400 dark:text-zinc-500">{result.symbol}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs font-medium text-zinc-400 dark:text-zinc-500">{result.symbol}</p>
+                    <AddToWatchlistBtn symbol={result.symbol} token={tokenRef.current} watchlists={watchlists} />
+                  </div>
                   <h2 className="mt-0.5 text-lg font-bold text-zinc-900 dark:text-zinc-50">{result.name}</h2>
                 </div>
                 <div className="text-right">

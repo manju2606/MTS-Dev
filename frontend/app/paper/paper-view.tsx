@@ -5,9 +5,10 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { NavBar } from '@/components/nav-bar'
 import {
   closeTrade, getJournalEntry, getMe, getQuote,
-  getSotDSettings, listTrades, placeTrade, saveJournalEntry, searchStocks, updateSotDSettings,
+  getSotDSettings, listTrades, listWatchlists, placeTrade, saveJournalEntry, searchStocks, updateSotDSettings,
 } from '@/lib/api'
-import type { JournalEntry, PlaceTradeBody, SotDSettings, StockSearchResult, Trade, User } from '@/lib/api'
+import type { JournalEntry, PlaceTradeBody, SotDSettings, StockSearchResult, Trade, User, Watchlist } from '@/lib/api'
+import { AddToWatchlistBtn } from '@/components/add-to-watchlist-btn'
 
 // ── Symbol search dropdown ────────────────────────────────────────────────────
 
@@ -201,6 +202,8 @@ export default function PaperView() {
   const [formLoading, setFormLoading] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
+  const [watchlists, setWatchlists] = useState<Watchlist[]>([])
+
   // Auto-trading toggle
   const [sotdSettings, setSotdSettings] = useState<SotDSettings | null>(null)
   const [autoTradeToggling, setAutoTradeToggling] = useState(false)
@@ -238,6 +241,7 @@ export default function PaperView() {
     }
 
     getSotDSettings(t).then(setSotdSettings).catch(() => {})
+    listWatchlists(t).then(setWatchlists).catch(() => {})
 
     listTrades(t)
       .then(async (all) => {
@@ -733,9 +737,10 @@ export default function PaperView() {
                       </p>
                     )}
 
-                    {/* Close button */}
-                    {user?.role !== 'viewer' && (
-                      <div className="mt-4 flex justify-end">
+                    {/* Actions row */}
+                    <div className="mt-4 flex items-center justify-between">
+                      <AddToWatchlistBtn symbol={trade.symbol} token={tokenRef.current} watchlists={watchlists} />
+                      {user?.role !== 'viewer' && (
                         <button
                           onClick={() => handleClose(trade.id)}
                           disabled={closing === trade.id}
@@ -743,8 +748,8 @@ export default function PaperView() {
                         >
                           {closing === trade.id ? 'Closing…' : 'Close Position'}
                         </button>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                 )
               })}
@@ -764,6 +769,7 @@ export default function PaperView() {
                     <th className={TH_R}>P&amp;L</th>
                     <th className={TH_R}>R:R</th>
                     <th className={TH_R}>Closed</th>
+                    <th className={TH} />
                     <th className={TH} />
                   </tr>
                 </thead>
@@ -819,6 +825,9 @@ export default function PaperView() {
                             >
                               Journal
                             </button>
+                          </td>
+                          <td className="px-3 py-3">
+                            <AddToWatchlistBtn symbol={trade.symbol} token={tokenRef.current} watchlists={watchlists} />
                           </td>
                         </tr>
 

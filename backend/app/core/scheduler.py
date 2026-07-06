@@ -35,6 +35,27 @@ def last_scan_info() -> tuple[datetime | None, int]:
     return _last_scan_at, _last_scan_count
 
 
+async def _run_golden_stock_scan() -> None:
+    """15:00 IST weekdays: run Golden Stock Intraday scan once per day."""
+    try:
+        from app.services.golden_stock_service import run_and_save_golden_stock
+        await run_and_save_golden_stock()
+    except Exception as exc:
+        log.error("scheduler.golden_stock.error", error=str(exc))
+
+
+async def _resolve_btst_outcomes() -> None:
+    """10:00 IST weekdays: resolve yesterday's BTST pick outcomes."""
+    try:
+        from datetime import date, timedelta
+        from app.services.golden_stock_service import resolve_btst_outcomes
+        yesterday = (date.today() - timedelta(days=1)).isoformat()
+        count = await resolve_btst_outcomes(yesterday)
+        log.info("scheduler.btst_resolve.done", date=yesterday, updated=count)
+    except Exception as exc:
+        log.error("scheduler.btst_resolve.error", error=str(exc))
+
+
 async def _run_sotd_generate() -> None:
     """09:30 IST weekdays: pick the day's best stock and optionally auto-trade it."""
     from app.services.stock_of_day_service import generate_and_save_daily_pick
@@ -264,6 +285,32 @@ def start_scheduler() -> None:
         ),
         id="forecast_accuracy_resolver",
         name="Resolve Forecast Accuracy",
+        max_instances=1,
+        misfire_grace_time=None,
+    )
+
+    # Golden Stock Intraday scan once daily at 15:00 IST (just before market close)
+    _scheduler.add_job(
+        _run_golden_stock_scan,
+        CronTrigger(
+            day_of_week="mon-fri",
+            hour=15,
+            minute=0,
+            second=0,
+            timezone="Asia/Kolkata",
+        ),
+        id="golden_stock_scan",
+        name="Golden Stock Intraday Scan",
+        max_instances=1,
+        misfire_grace_time=None,
+    )
+
+    # Resolve yesterday's Intraday pick outcomes at 10:00 IST (after previous day settlement)
+    _scheduler.add_job(
+        _resolve_btst_outcomes,
+        CronTrigger(day_of_week="mon-fri", hour=10, minute=0, second=0, timezone="Asia/Kolkata"),
+        id="btst_resolve",
+        name="Resolve Intraday Pick Outcomes",
         max_instances=1,
         misfire_grace_time=None,
     )

@@ -8,13 +8,14 @@ import {
   getAssistantFundamentals, getAssistantTimeline, getAssistantTax, getAssistantDividends, getAssistantCorrelation,
   getAssistantSentiment, getAssistantAISignals,
   getBrokerStatus, getBrokerPositions,
-  listPortfolios, createPortfolio, deletePortfolio,
+  listPortfolios, createPortfolio, deletePortfolio, listWatchlists,
 } from '@/lib/api'
 import type {
   AssistantAnalysis, Holding, AssistantAlert, SizingRow,
   FundamentalRow, TimelineData, TaxData, DividendRow, CorrelationData, Portfolio,
-  SentimentRow, AISignalRow, BrokerPosition, BrokerStatus,
+  SentimentRow, AISignalRow, BrokerPosition, BrokerStatus, Watchlist,
 } from '@/lib/api'
+import { AddToWatchlistBtn } from '@/components/add-to-watchlist-btn'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -402,7 +403,7 @@ function OverviewTab({ data }: { data: AssistantAnalysis }) {
   )
 }
 
-function HoldingsTab({ data, token, onRefresh }: { data: AssistantAnalysis; token: string; onRefresh: () => void }) {
+function HoldingsTab({ data, token, watchlists, onRefresh }: { data: AssistantAnalysis; token: string; watchlists: Watchlist[]; onRefresh: () => void }) {
   const [deleting, setDeleting] = useState<string | null>(null)
 
   async function remove(id: string) {
@@ -417,7 +418,7 @@ function HoldingsTab({ data, token, onRefresh }: { data: AssistantAnalysis; toke
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-zinc-100 dark:border-zinc-800">
-            {['Symbol', 'Qty', 'Avg Price', 'CMP', 'Invested', 'Curr Value', 'P&L', 'AI Signal', 'Recommendation', ''].map(h => (
+            {['Symbol', 'Qty', 'Avg Price', 'CMP', 'Invested', 'Curr Value', 'P&L', 'AI Signal', 'Recommendation', '', ''].map(h => (
               <th key={h} className="px-3 py-3 text-left text-xs font-medium text-zinc-500">{h}</th>
             ))}
           </tr>
@@ -454,6 +455,9 @@ function HoldingsTab({ data, token, onRefresh }: { data: AssistantAnalysis; toke
                   </span>
                   <p className="mt-0.5 text-[10px] text-zinc-400 max-w-[140px]">{h.rec_reason}</p>
                 </div>
+              </td>
+              <td className="px-3 py-3">
+                <AddToWatchlistBtn symbol={h.symbol} token={token} watchlists={watchlists} />
               </td>
               <td className="px-3 py-3">
                 <button onClick={() => remove(h.id)} disabled={deleting === h.id}
@@ -1521,6 +1525,7 @@ export default function AssistantView() {
   const [portfolios, setPortfolios]   = useState<Portfolio[]>([])
   const [activePortfolioId, setActivePortfolioId] = useState('default')
   const [showNewPortfolio, setShowNewPortfolio]   = useState(false)
+  const [watchlists, setWatchlists]   = useState<Watchlist[]>([])
 
   async function loadPortfolios(token: string) {
     const ps = await listPortfolios(token).catch(() => [] as Portfolio[])
@@ -1543,6 +1548,7 @@ export default function AssistantView() {
     const t = localStorage.getItem('mts_token')
     if (!t) { router.replace('/login'); return }
     tokenRef.current = t
+    listWatchlists(t).then(setWatchlists).catch(() => {})
     loadPortfolios(t).then(ps => {
       const pid = ps.length > 0 ? ps[0].portfolio_id : 'default'
       setActivePortfolioId(pid)
@@ -1672,7 +1678,7 @@ export default function AssistantView() {
             </div>
 
             {tab === 'overview'    && <OverviewTab data={data} />}
-            {tab === 'holdings'   && <HoldingsTab data={data} token={tokenRef.current} onRefresh={refresh} />}
+            {tab === 'holdings'   && <HoldingsTab data={data} token={tokenRef.current} watchlists={watchlists} onRefresh={refresh} />}
             {tab === 'allocation' && <AllocationTab data={data} portfolioId={activePortfolioId} />}
             {tab === 'risk'       && <RiskTab data={data} />}
             {tab === 'performance'&& <PerformanceTab data={data} portfolioId={activePortfolioId} />}

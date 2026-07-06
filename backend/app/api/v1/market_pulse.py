@@ -10,7 +10,7 @@ from fastapi import APIRouter, Query
 from app.api.deps import AIDep, CurrentUser, MarketDataDep
 from app.infra.ai.technical import fetch_indicators
 from app.infra.scanner.market_scanner import ScanResult, scan
-from app.infra.scanner.universe import FULL_UNIVERSE, SYMBOL_SECTOR
+from app.infra.scanner.universe import NIFTY_500, SYMBOL_SECTOR
 
 router = APIRouter(prefix="/market-pulse", tags=["market-pulse"])
 
@@ -174,7 +174,7 @@ async def market_pulse_scan(
     sector: str = Query(default="all"),
 ) -> dict:
     # Step 1 — quick scan full universe
-    universe = [s for s in FULL_UNIVERSE if sector == "all" or SYMBOL_SECTOR.get(s) == sector]
+    universe = [s for s in NIFTY_500 if sector == "all" or SYMBOL_SECTOR.get(s) == sector]
     all_results = await scan(universe=universe, filter_type="both", limit=len(universe))
 
     # Market overview

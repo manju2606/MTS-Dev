@@ -81,12 +81,57 @@ class WatchlistAddRequest(BaseModel):
 
 
 _PERIOD_INTERVAL: dict[str, tuple[str, str]] = {
+    "1m": ("1d", "1m"),      # finest available — yfinance has no sub-minute data
+    "1D": ("1d", "5m"),
+    "5m": ("5d", "5m"),
+    "5D": ("5d", "15m"),
+    "15m": ("5d", "15m"),
+    "30m": ("1mo", "30m"),
     "1W": ("5d", "1h"),
+    "1h": ("3mo", "60m"),
     "1M": ("1mo", "1d"),
     "3M": ("3mo", "1d"),
     "6M": ("6mo", "1d"),
     "1Y": ("1y", "1d"),
 }
+
+# 45-min bars aren't a native yfinance interval (only 1/2/5/15/30/60/90-min and
+# daily+ exist) — build them honestly by aggregating real 15-min bars 3-at-a-time,
+# never merging across a day boundary.
+_RESAMPLE_FROM: dict[str, tuple[str, str, int]] = {
+    "45m": ("1mo", "15m", 3),
+}
+
+
+def _resample_bars(bars: list[dict], factor: int) -> list[dict]:
+    from datetime import datetime, timezone
+
+    def _merge(chunk: list[dict]) -> dict:
+        return {
+            "time": chunk[0]["time"],
+            "open": chunk[0]["open"],
+            "high": max(b["high"] for b in chunk),
+            "low": min(b["low"] for b in chunk),
+            "close": chunk[-1]["close"],
+            "volume": sum(b["volume"] for b in chunk),
+        }
+
+    out: list[dict] = []
+    chunk: list[dict] = []
+    last_day = None
+    for b in bars:
+        day = datetime.fromtimestamp(b["time"], tz=timezone.utc).date()
+        if last_day is not None and day != last_day and chunk:
+            out.append(_merge(chunk))
+            chunk = []
+        chunk.append(b)
+        last_day = day
+        if len(chunk) == factor:
+            out.append(_merge(chunk))
+            chunk = []
+    if chunk:
+        out.append(_merge(chunk))
+    return out
 
 
 def _safe_f(v: object) -> float:
@@ -128,15 +173,20 @@ def _fetch_history_sync(symbol: str, period: str, interval: str) -> list[dict]:
 async def get_history(
     symbol: str,
     current_user: CurrentUser,
-    period: str = Query(default="1M", pattern="^(1W|1M|3M|6M|1Y)$"),
+    period: str = Query(default="1M", pattern="^(1m|1D|5m|5D|15m|30m|45m|1W|1h|1M|3M|6M|1Y)$"),
 ) -> list[dict]:
     norm = symbol.upper()
     if not (norm.endswith(".NS") or norm.endswith(".BO")):
         norm = f"{norm}.NS"
-    yf_period, yf_interval = _PERIOD_INTERVAL.get(period, ("1mo", "1d"))
     loop = asyncio.get_running_loop()
     try:
-        data = await loop.run_in_executor(None, _fetch_history_sync, norm, yf_period, yf_interval)
+        if period in _RESAMPLE_FROM:
+            yf_period, yf_interval, factor = _RESAMPLE_FROM[period]
+            raw = await loop.run_in_executor(None, _fetch_history_sync, norm, yf_period, yf_interval)
+            data = _resample_bars(raw, factor)
+        else:
+            yf_period, yf_interval = _PERIOD_INTERVAL.get(period, ("1mo", "1d"))
+            data = await loop.run_in_executor(None, _fetch_history_sync, norm, yf_period, yf_interval)
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -164,6 +214,21 @@ async def get_quote(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
         ) from exc
+
+
+@router.get("/quote-detail/{symbol}")
+@limiter.limit("30/minute")
+async def get_quote_detail(request: Request, symbol: str, current_user: CurrentUser) -> dict:
+    """Full enriched indicator set (RSI, MACD, SMA20/50/200, Bollinger Bands, trend,
+    volume ratio, 52-week range, etc.) for a single arbitrary symbol — same data
+    used by the watchlist quotes table, cached 60s."""
+    from app.infra.market.enriched_quote import fetch_enriched_quotes
+
+    sym = _normalise(symbol)
+    results = await fetch_enriched_quotes([sym])
+    if not results:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No data for {sym}")
+    return results[0]
 
 
 # ── Watchlist management (multi-watchlist) ────────────────────────────────────

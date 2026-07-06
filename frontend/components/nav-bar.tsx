@@ -99,6 +99,8 @@ const NAV_GROUPS: NavGroup[] = [
     roles: ['trader', 'admin'],
     items: [
       { href: '/watchlists', label: 'Watchlists',       icon: 'list',       desc: 'Track stocks with live quotes' },
+      { href: '/tradingview', label: 'TradingView',     icon: 'trendingUp', desc: 'Candlestick chart, volume, RSI/MACD/SMA/Bollinger + AI signal' },
+      { href: '/trade',      label: 'Quick Trade',      icon: 'zap',        desc: 'Pick a stock, see indicators + AI signal, place a paper trade' },
       { href: '/stock-of-day', label: 'Stock of Day',   icon: 'star',       desc: 'AI top pick · auto paper trade · SL/target tracking' },
       { href: '/golden-stock', label: 'Golden Stock',   icon: 'trendingUp', desc: 'Intraday picks · AI-scored · Fundamental + Technical' },
       { href: '/btst',       label: 'BTST',             icon: 'trendingUp', desc: 'Buy Today, Sell Tomorrow · Breakout + relative strength + news' },

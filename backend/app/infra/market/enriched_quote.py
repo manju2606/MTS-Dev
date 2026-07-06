@@ -267,7 +267,10 @@ def _fetch_sync(symbols: list[str]) -> list[dict]:
     except Exception:
         return [{"symbol": s, "error": "Download failed"} for s in symbols]
 
-    multi = len(symbols) > 1
+    # yf.download(..., group_by="ticker") returns MultiIndex columns (ticker, field)
+    # even for a single symbol — indexing must follow the actual column shape, not
+    # the symbol count.
+    multi = isinstance(df.columns, pd.MultiIndex)
 
     def _series(col: str, sym: str) -> pd.Series:
         try:

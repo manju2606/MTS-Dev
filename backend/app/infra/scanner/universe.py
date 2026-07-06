@@ -5,6 +5,7 @@ SECTORS: dict[str, list[str]] = {
         "HDFCBANK.NS", "ICICIBANK.NS", "SBIN.NS", "KOTAKBANK.NS", "AXISBANK.NS",
         "INDUSINDBK.NS", "BANDHANBNK.NS", "FEDERALBNK.NS", "IDFCFIRSTB.NS", "AUBANK.NS",
         "PNB.NS", "CANBK.NS", "BANKBARODA.NS", "UNIONBANK.NS", "RBLBANK.NS",
+        "YESBANK.NS", "UCOBANK.NS", "MAHABANK.NS",
     ],
     "IT": [
         "TCS.NS", "INFY.NS", "WIPRO.NS", "HCLTECH.NS", "TECHM.NS",
@@ -39,7 +40,7 @@ SECTORS: dict[str, list[str]] = {
     "Infra": [
         "LT.NS", "ADANIPORTS.NS", "ADANIENT.NS", "ULTRACEMCO.NS", "GRASIM.NS",
         "AMBUJACEM.NS", "ACC.NS", "SIEMENS.NS", "ABB.NS", "HAVELLS.NS",
-        "BHEL.NS", "IRFC.NS", "RVNL.NS", "IRCON.NS",
+        "BHEL.NS", "IRFC.NS", "RVNL.NS", "IRCON.NS", "HAL.NS", "BEL.NS",
     ],
     "Finance": [
         "BAJFINANCE.NS", "BAJAJFINSV.NS", "HDFCLIFE.NS", "SBILIFE.NS", "ICICIPRULI.NS",
@@ -134,6 +135,7 @@ NIFTY_MIDCAP_100: list[str] = _dedup(NIFTY_MIDCAP_50 + [
     "RELAXO.NS", "BATA.NS", "RAYMOND.NS", "TRIDENT.NS", "VARDHMAN.NS",
     "WELSPUNIND.NS", "TORNTPOWER.NS", "CESC.NS", "JSWENERGY.NS", "NHPC.NS",
     "SJVN.NS", "HUDCO.NS", "NBCC.NS", "IRCON.NS", "RVNL.NS",
+    "YESBANK.NS", "UCOBANK.NS", "MAHABANK.NS", "HAL.NS", "BEL.NS",
 ])
 
 NIFTY_MIDCAP_150: list[str] = _dedup(NIFTY_MIDCAP_100 + [

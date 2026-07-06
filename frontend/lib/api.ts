@@ -388,6 +388,14 @@ export type WatchlistQuote = {
   error: string | null
 }
 
+export async function getQuoteDetail(token: string, symbol: string): Promise<WatchlistQuote> {
+  const res = await fetch(`${BASE}/api/v1/scanner/quote-detail/${encodeURIComponent(symbol)}`, {
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
 export async function getWatchlistQuotes(token: string, watchlistId: string): Promise<WatchlistQuote[]> {
   const res = await fetch(`${BASE}/api/v1/scanner/watchlists/${watchlistId}/quotes`, {
     headers: authHeaders(token),
@@ -973,7 +981,7 @@ export type HistoryBar = {
   volume: number
 }
 
-export type ChartPeriod = '1W' | '1M' | '3M' | '6M' | '1Y'
+export type ChartPeriod = '1m' | '1D' | '5m' | '5D' | '15m' | '30m' | '45m' | '1W' | '1h' | '1M' | '3M' | '6M' | '1Y'
 
 export async function getHistory(
   token: string,

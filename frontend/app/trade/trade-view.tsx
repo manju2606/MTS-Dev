@@ -343,22 +343,42 @@ function TradeTicket({
         </p>
       )}
 
-      {checkResult && (
-        <div className={`mb-3 rounded-lg px-3 py-2 text-xs ${
-          checkResult.passed
-            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300'
-            : 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-300'
-        }`}>
-          {checkResult.passed ? 'Risk check passed.' : (
-            <ul className="list-inside list-disc">
-              {checkResult.violations.map((v, i) => <li key={i}>{v}</li>)}
-            </ul>
-          )}
-          {checkResult.max_quantity != null && (
-            <p className="mt-1 font-semibold">Suggested max quantity: {checkResult.max_quantity}</p>
-          )}
-        </div>
-      )}
+      {checkResult && (() => {
+        const dir = signal === 'BUY' ? 1 : -1
+        const slAmt = (stopLoss - entry) * dir * quantity
+        const slPct = entry > 0 ? ((stopLoss - entry) / entry) * 100 * dir : 0
+        const tgtAmt = (target - entry) * dir * quantity
+        const tgtPct = entry > 0 ? ((target - entry) / entry) * 100 * dir : 0
+        const fmtSigned = (n: number) => `${n >= 0 ? '+' : '-'}₹${Math.abs(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        const fmtPct = (n: number) => `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`
+
+        return (
+          <div className={`mb-3 rounded-lg px-3 py-2 text-xs ${
+            checkResult.passed
+              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300'
+              : 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-300'
+          }`}>
+            {checkResult.passed ? 'Risk check passed.' : (
+              <ul className="list-inside list-disc">
+                {checkResult.violations.map((v, i) => <li key={i}>{v}</li>)}
+              </ul>
+            )}
+            {checkResult.max_quantity != null && (
+              <p className="mt-1 font-semibold">Suggested max quantity: {checkResult.max_quantity}</p>
+            )}
+            <div className="mt-2 grid grid-cols-2 gap-2 border-t border-black/5 pt-2 dark:border-white/10">
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-red-500 dark:text-red-400">At Stop Loss (qty {quantity})</p>
+                <p className="font-bold text-red-600 dark:text-red-400">{fmtSigned(slAmt)} <span className="font-normal">({fmtPct(slPct)})</span></p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-emerald-600 dark:text-emerald-400">At Target (qty {quantity})</p>
+                <p className="font-bold text-emerald-600 dark:text-emerald-400">{fmtSigned(tgtAmt)} <span className="font-normal">({fmtPct(tgtPct)})</span></p>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {placeError && (
         <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-300">

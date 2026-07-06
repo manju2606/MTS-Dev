@@ -270,7 +270,7 @@ function ResultRow({ r }: { r: ScanResultItem }) {
             className="text-[10px] font-semibold text-indigo-500 hover:text-indigo-700 whitespace-nowrap">
             Forecast →
           </Link>
-          <Link href={`/paper?symbol=${r.symbol}&signal=${r.signal === 'SELL' ? 'SELL' : 'BUY'}`}
+          <Link href={`/trade?symbol=${encodeURIComponent(r.symbol)}`}
             className="text-[10px] font-semibold text-emerald-600 hover:text-emerald-800 whitespace-nowrap dark:text-emerald-400">
             Trade →
           </Link>

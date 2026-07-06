@@ -456,7 +456,7 @@ function WatchlistsPanel({ token }: { token: string }) {
                             <div className="flex items-center gap-2">
                               <Link href={`/forecast?symbol=${sym}`}
                                 className="text-[10px] font-semibold text-indigo-500 hover:text-indigo-700">Forecast →</Link>
-                              <Link href={`/paper?symbol=${item.symbol}&signal=BUY`}
+                              <Link href={`/trade?symbol=${encodeURIComponent(item.symbol)}`}
                                 className="text-[10px] font-semibold text-emerald-600 hover:text-emerald-800 dark:text-emerald-400">Trade →</Link>
                               <button onClick={() => handleRemove(item.symbol)}
                                 className="text-[10px] font-semibold text-red-400 hover:text-red-600">✕</button>

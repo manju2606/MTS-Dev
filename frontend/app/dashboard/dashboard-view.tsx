@@ -966,7 +966,7 @@ export default function DashboardView() {
                             <td className="px-3 py-2">
                               <div className="flex flex-col gap-1">
                                 {!['NEUTRAL', 'SELL', 'STRONG_SELL'].includes(s.signal) && (
-                                  <Link href={`/paper?symbol=${encodeURIComponent(s.symbol)}&signal=${s.signal.replace('STRONG_', '')}`}
+                                  <Link href={`/trade?symbol=${encodeURIComponent(s.symbol)}`}
                                     className="text-[10px] font-semibold text-indigo-500 hover:text-indigo-700 whitespace-nowrap">
                                     Trade →
                                   </Link>

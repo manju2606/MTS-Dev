@@ -10,6 +10,7 @@ import {
   getDiscoveryNews,
   triggerDiscoveryScan,
   getMe,
+  getQuote,
 } from '@/lib/api'
 import type { StockScore, DiscoveryStatus, DiscoveryNewsItem, User } from '@/lib/api'
 
@@ -63,7 +64,7 @@ function CompositeBar({ score }: { score: number }) {
 function ExpandedRow({ s, onClose }: { s: StockScore; onClose: () => void }) {
   return (
     <tr>
-      <td colSpan={9} className="bg-zinc-50 px-6 py-5 dark:bg-zinc-900">
+      <td colSpan={10} className="bg-zinc-50 px-6 py-5 dark:bg-zinc-900">
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           <div>
             <p className="mb-2 text-xs font-semibold text-zinc-400">Price Levels</p>
@@ -160,6 +161,7 @@ export default function DiscoveryView() {
   const [scanning, setScanning] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [ltps, setLtps] = useState<Record<string, number>>({})
   // Track filter requests so we don't race
   const filterRef = useRef<FilterType>('All')
 
@@ -210,6 +212,15 @@ export default function DiscoveryView() {
       .then(items => setNews(items))
       .catch(() => setNews([]))
   }, [tab])
+
+  useEffect(() => {
+    if (!picks || picks.length === 0) return
+    const token = tokenRef.current
+    const prices: Record<string, number> = {}
+    Promise.allSettled(picks.map(async r => {
+      try { const q = await getQuote(token, r.symbol); prices[r.symbol] = q.price } catch { /* skip */ }
+    })).then(() => setLtps({ ...prices }))
+  }, [picks])
 
   function handleSort(key: SortKey) {
     if (sortKey === key) setSortDir(d => d === 'desc' ? 'asc' : 'desc')
@@ -338,6 +349,7 @@ export default function DiscoveryView() {
                         { h: 'Symbol', key: null },
                         { h: 'Score',  key: 'score' as SortKey },
                         { h: 'Signal', key: 'signal' as SortKey },
+                        { h: 'LTP',    key: null },
                         { h: 'Entry',  key: 'entry_price' as SortKey },
                         { h: 'Stop',   key: 'stop_loss' as SortKey },
                         { h: 'T1',     key: null },
@@ -380,6 +392,16 @@ export default function DiscoveryView() {
                           <td className="px-3 py-2.5"><CompositeBar score={s.score} /></td>
                           <td className="px-3 py-2.5">
                             <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${SIGNAL_STYLES[s.signal] ?? ''}`}>{s.signal}</span>
+                          </td>
+                          <td className="px-3 py-2.5 font-mono text-xs">
+                            {ltps[s.symbol] ? (
+                              <>
+                                <span className="font-semibold text-zinc-900 dark:text-zinc-50">₹{ltps[s.symbol].toFixed(2)}</span>
+                                <span className={`ml-1 text-[10px] font-medium ${ltps[s.symbol] >= s.entry_price ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                                  {ltps[s.symbol] >= s.entry_price ? '+' : ''}{(((ltps[s.symbol] - s.entry_price) / s.entry_price) * 100).toFixed(1)}%
+                                </span>
+                              </>
+                            ) : <span className="text-zinc-300 dark:text-zinc-600">—</span>}
                           </td>
                           <td className="px-3 py-2.5 font-mono text-xs font-semibold text-zinc-900 dark:text-zinc-50">₹{s.entry_price.toFixed(2)}</td>
                           <td className="px-3 py-2.5 font-mono text-xs font-semibold text-red-600 dark:text-red-400">

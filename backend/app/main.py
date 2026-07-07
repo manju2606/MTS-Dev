@@ -12,7 +12,13 @@ from app.core.config import settings
 from app.core.limiter import limiter
 from app.core.logging import configure_logging
 from app.core.security import decode_token
+from app.core.sentry import init_sentry
 from app.infra.market_data.yfinance_client import YFinanceClient
+
+# Called before the FastAPI app is created so Sentry's Starlette/FastAPI
+# integrations can patch things before the app object exists. No-ops if
+# SENTRY_DSN isn't set.
+init_sentry()
 
 
 @asynccontextmanager

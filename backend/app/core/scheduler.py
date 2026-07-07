@@ -12,8 +12,11 @@ import asyncio
 from datetime import UTC, datetime
 
 import structlog
+from apscheduler.events import EVENT_JOB_ERROR, JobExecutionEvent
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+
+from app.core.config import settings
 
 log = structlog.get_logger()
 
@@ -257,9 +260,22 @@ async def run_full_scan() -> None:
         _scan_running = False
 
 
+def _on_job_error(event: JobExecutionEvent) -> None:
+    """APScheduler swallows job exceptions into its own event system by
+    default -- a job silently failing every run would otherwise never surface
+    anywhere except a grep through container logs. Report to Sentry (no-op if
+    SENTRY_DSN unset) and log loudly either way."""
+    log.error("scheduler.job_error", job_id=event.job_id, error=str(event.exception))
+    if settings.SENTRY_DSN and event.exception is not None:
+        import sentry_sdk
+
+        sentry_sdk.capture_exception(event.exception)
+
+
 def start_scheduler() -> None:
     global _scheduler
     _scheduler = AsyncIOScheduler(timezone="Asia/Kolkata")
+    _scheduler.add_listener(_on_job_error, EVENT_JOB_ERROR)
 
     # Full scan every 5 minutes during market hours
     _scheduler.add_job(

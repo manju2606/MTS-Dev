@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     DEBUG: bool = False
 
+    # Observability — Sentry error tracking (optional; no-ops if unset)
+    SENTRY_DSN: str | None = None
+
     # Phase 2
     ANTHROPIC_API_KEY: str | None = None
     PAPER_CAPITAL: float = 100_000.0  # default paper trading capital in INR

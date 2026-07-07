@@ -11,6 +11,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # Baked in at build time — set via fly.toml [build.args] or --build-arg
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ARG NEXT_PUBLIC_SENTRY_DSN
+ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN
 RUN npm run build
 
 FROM node:20-alpine AS runner

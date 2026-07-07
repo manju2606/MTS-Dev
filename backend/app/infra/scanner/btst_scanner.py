@@ -88,6 +88,21 @@ class BTSTScan:
 # ── Technical helpers (self-contained; mirrors golden_stock_scanner) ──────────
 
 
+def _compute_atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> float:
+    """Wilder's ATR — used to size stop-loss/target to the stock's own volatility
+    instead of a flat percentage."""
+    try:
+        tr = pd.concat(
+            [high - low, (high - close.shift()).abs(), (low - close.shift()).abs()],
+            axis=1,
+        ).max(axis=1)
+        atr = tr.ewm(span=period, adjust=False).mean()
+        val = float(atr.iloc[-1]) if not atr.empty else 0.0
+        return val if not np.isnan(val) else 0.0
+    except Exception:
+        return 0.0
+
+
 def _compute_rsi(close: pd.Series, period: int = 14) -> float:
     try:
         delta = close.diff()
@@ -186,6 +201,8 @@ def _pass1_batch_download(symbols: list[str]) -> list[dict]:
                 continue
 
             close = df["Close"].dropna()
+            high_s = df["High"].dropna()
+            low_s = df["Low"].dropna()
             volume = df["Volume"].dropna()
             if len(close) < 30:
                 continue
@@ -225,6 +242,8 @@ def _pass1_batch_download(symbols: list[str]) -> list[dict]:
                 {
                     "symbol": sym,
                     "close": close,
+                    "high": high_s,
+                    "low": low_s,
                     "current": current,
                     "sma20": sma20,
                     "sma50": sma50,
@@ -313,6 +332,8 @@ def _score_candidate(
     ret_20d = cand["ret_20d"]
     change_pct = cand["change_pct"]
     close = cand["close"]
+    high_s = cand["high"]
+    low_s = cand["low"]
     breakout = cand["breakout"]
     cons_days = cand["cons_days"]
 
@@ -390,10 +411,15 @@ def _score_candidate(
     if rel_5d <= 0 and rel_20d <= 0:
         return None
 
+    # Entry / SL / Target — sized to the stock's own ATR-14, not a flat %.
+    # BTST holds overnight, so allow a slightly wider band than same-session Intraday.
     entry = round(current, 2)
-    stop_loss = round(entry * 0.97, 2)
-    target_1 = round(entry * 1.05, 2)
-    target_2 = round(entry * 1.08, 2)
+    atr = _compute_atr(high_s, low_s, close)
+    atr_pct = (atr / current * 100) if current > 0 and atr > 0 else 3.0
+    atr_pct = min(max(atr_pct, 1.5), 6.0)
+    stop_loss = round(entry * (1 - atr_pct / 100), 2)
+    target_1 = round(entry * (1 + 2 * atr_pct / 100), 2)
+    target_2 = round(entry * (1 + 3 * atr_pct / 100), 2)
     risk = entry - stop_loss
     risk_reward = round((target_1 - entry) / max(risk, 0.01), 2)
 

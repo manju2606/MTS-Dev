@@ -67,6 +67,22 @@ class GoldenStockScan:
 # ── ADX calculation ───────────────────────────────────────────────────────────
 
 
+def _compute_atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> float:
+    """Wilder's ATR — used to size stop-loss/target to the stock's own volatility
+    instead of a flat percentage (a fixed 5% intraday target is unrealistic for a
+    low-beta large-cap and too tight for a genuinely volatile small-cap)."""
+    try:
+        tr = pd.concat(
+            [high - low, (high - close.shift()).abs(), (low - close.shift()).abs()],
+            axis=1,
+        ).max(axis=1)
+        atr = tr.ewm(span=period, adjust=False).mean()
+        val = float(atr.iloc[-1]) if not atr.empty else 0.0
+        return val if not np.isnan(val) else 0.0
+    except Exception:
+        return 0.0
+
+
 def _compute_adx(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> float:
     try:
         tr = pd.concat(
@@ -405,11 +421,17 @@ def _score_candidate(cand: dict, info: dict) -> IntradayCandidate | None:
     if not above_sma20:
         return None
 
-    # ── Entry / SL / Target ───────────────────────────────────────────────────
+    # ── Entry / SL / Target — sized to the stock's own ATR-14, not a flat % ────
+    # Same-session hold: 1x/1.5x/2x ATR keeps the target within what a stock
+    # actually tends to move in a single day (a flat 5% is unrealistic for a
+    # low-beta large-cap and too tight for a genuinely volatile small-cap).
     entry = round(current, 2)
-    stop_loss = round(entry * 0.975, 2)
-    target_1 = round(entry * 1.05, 2)
-    target_2 = round(entry * 1.08, 2)
+    atr = _compute_atr(high_s, low_s, close)
+    atr_pct = (atr / current * 100) if current > 0 and atr > 0 else 2.5
+    atr_pct = min(max(atr_pct, 1.0), 5.0)  # clamp: avoid degenerate too-tight/too-wide bands
+    stop_loss = round(entry * (1 - atr_pct / 100), 2)
+    target_1 = round(entry * (1 + 1.5 * atr_pct / 100), 2)
+    target_2 = round(entry * (1 + 2 * atr_pct / 100), 2)
     risk = entry - stop_loss
     risk_reward = round((target_1 - entry) / max(risk, 0.01), 2)
 

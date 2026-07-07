@@ -9,6 +9,8 @@ guide needs to answer is finite and well-known, so this is fast, free, and
 always available regardless of whether an AI provider key is configured.
 """
 
+from uuid import UUID
+
 from fastapi import APIRouter, Body
 
 from app.api.deps import CurrentUser, TradeDep
@@ -410,6 +412,88 @@ async def _live_context(current_user: CurrentUser, trade_repo: TradeDep) -> str 
     )
 
 
+def _bare(symbol: str) -> str:
+    return symbol.replace(".NS", "").replace(".BO", "")
+
+
+async def _list_open_trades(trade_repo: TradeDep, user_id: UUID) -> str:
+    trades = await trade_repo.list_by_user(user_id, TradeStatus.OPEN)
+    if not trades:
+        return "You have no open positions right now."
+    lines = [f"You have {len(trades)} open position(s):", ""]
+    for t in trades:
+        lines.append(
+            f"• **{_bare(t.symbol)}** ({t.signal.value}) — Entry ₹{t.entry_price:.2f}, "
+            f"SL ₹{t.stop_loss:.2f}, Target ₹{t.target:.2f}, Qty {t.quantity}"
+        )
+    return "\n".join(lines)
+
+
+async def _list_pending_trades(trade_repo: TradeDep, user_id: UUID) -> str:
+    trades = await trade_repo.list_by_user(user_id, TradeStatus.PENDING)
+    if not trades:
+        return "You have no pending LIMIT orders right now."
+    lines = [f"You have {len(trades)} pending order(s):", ""]
+    for t in trades:
+        lines.append(
+            f"• **{_bare(t.symbol)}** ({t.signal.value}) — will open at ₹{t.entry_price:.2f}, "
+            f"SL ₹{t.stop_loss:.2f}, Target ₹{t.target:.2f}, Qty {t.quantity}"
+        )
+    return "\n".join(lines)
+
+
+async def _list_closed_trades(trade_repo: TradeDep, user_id: UUID) -> str:
+    trades = await trade_repo.list_by_user(user_id, TradeStatus.CLOSED)
+    if not trades:
+        return "You have no closed trades yet."
+    recent = trades[:10]
+    lines = [f"Your last {len(recent)} closed trade(s):", ""]
+    for t in recent:
+        pnl = t.pnl if t.pnl is not None else 0.0
+        sign = "+" if pnl >= 0 else ""
+        lines.append(
+            f"• **{_bare(t.symbol)}** ({t.signal.value}) — Entry ₹{t.entry_price:.2f} → "
+            f"Exit ₹{(t.exit_price or 0):.2f}, P&L {sign}₹{pnl:.2f}"
+        )
+    return "\n".join(lines)
+
+
+async def _list_holdings(user_id: UUID) -> str:
+    from app.infra.db.repositories.holdings_repo import HoldingsRepository
+
+    repo = HoldingsRepository()
+    holdings = await repo.list_holdings(str(user_id), "default")
+    if not holdings:
+        return "You have no holdings in Portfolio Assistant yet."
+    lines = [f"Your Portfolio Assistant holdings ({len(holdings)}):", ""]
+    for h in holdings:
+        lines.append(f"• **{_bare(h['symbol'])}** — Qty {h['qty']} @ avg ₹{h['avg_price']:.2f}")
+    return "\n".join(lines)
+
+
+_ACTION_VERBS = ("show", "list", "what are my", "give me", "display", "see my", "check my")
+
+_ACTION_INTENTS: list[tuple[tuple[str, ...], str]] = [
+    (("open order", "open position", "open trade"), "open"),
+    (("pending order", "pending trade"), "pending"),
+    (("closed trade", "trade history", "past trades"), "closed"),
+    (("my holdings", "portfolio holdings"), "holdings"),
+]
+
+
+def _match_action(q: str) -> str | None:
+    """Distinguishes "show me my open orders" (fetch real data) from "what is
+    a pending order" (explain the concept, handled by the static topics
+    below) — only trigger a live data fetch when there's an explicit
+    show/list-style verb alongside the noun."""
+    if not any(v in q for v in _ACTION_VERBS):
+        return None
+    for nouns, action in _ACTION_INTENTS:
+        if any(n in q for n in nouns):
+            return action
+    return None
+
+
 @router.post("/chat")
 async def agent_chat(
     current_user: CurrentUser,
@@ -424,6 +508,28 @@ async def agent_chat(
 
     if any(kw in q for kw in _GREETING_KEYWORDS) and len(q) < 60:
         return {"answer": _OVERVIEW, "suggestions": _DEFAULT_SUGGESTIONS}
+
+    action = _match_action(q)
+    if action == "open":
+        return {
+            "answer": await _list_open_trades(trade_repo, current_user.id),
+            "suggestions": ["Show me my pending orders", "Show me my closed trades"],
+        }
+    if action == "pending":
+        return {
+            "answer": await _list_pending_trades(trade_repo, current_user.id),
+            "suggestions": ["Show me my open orders", "How do pending orders work?"],
+        }
+    if action == "closed":
+        return {
+            "answer": await _list_closed_trades(trade_repo, current_user.id),
+            "suggestions": ["Show me my open orders"],
+        }
+    if action == "holdings":
+        return {
+            "answer": await _list_holdings(current_user.id),
+            "suggestions": ["What does the Summary tab show?"],
+        }
 
     topic = _match_topic(q)
     if topic is None:

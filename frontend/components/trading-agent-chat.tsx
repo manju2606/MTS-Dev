@@ -1,9 +1,19 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { askTradingAgent } from '@/lib/api'
 
 type ChatMessage = { role: 'user' | 'agent'; text: string; suggestions?: string[] }
+
+// Lightweight **bold** support — the knowledge base uses it for emphasis and
+// symbol names; no need for a full markdown renderer for a chat bubble.
+function renderChatText(text: string) {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
+    part.startsWith('**') && part.endsWith('**')
+      ? <strong key={i}>{part.slice(2, -2)}</strong>
+      : <Fragment key={i}>{part}</Fragment>
+  )
+}
 
 const GREETING: ChatMessage = {
   role: 'agent',
@@ -72,7 +82,7 @@ export function TradingAgentChat() {
                         : 'rounded-bl-sm bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-100'
                     }`}
                   >
-                    {m.text}
+                    {renderChatText(m.text)}
                   </div>
                   {m.role === 'agent' && m.suggestions && m.suggestions.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1.5">

@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import math
 from dataclasses import asdict
 from datetime import UTC
@@ -18,9 +19,7 @@ from app.infra.market.stock_master import load_stock_master
 from app.infra.scanner.market_scanner import SCAN_CATALOG, run_market_scan
 from app.infra.scanner.universe import SECTORS
 
-_SYMBOL_SECTOR: dict[str, str] = {
-    sym: sector for sector, syms in SECTORS.items() for sym in syms
-}
+_SYMBOL_SECTOR: dict[str, str] = {sym: sector for sector, syms in SECTORS.items() for sym in syms}
 _SYMBOL_NAME: dict[str, str] = dict(NSE_UNIVERSE)
 
 router = APIRouter(prefix="/scanner", tags=["scanner"])
@@ -29,6 +28,7 @@ _trader_or_admin = Depends(require_role(UserRole.ADMIN, UserRole.TRADER))
 
 
 # ── Market scanner ────────────────────────────────────────────────────────────
+
 
 @router.get("/scan-catalog")
 async def scan_catalog(current_user: CurrentUser) -> list[dict]:
@@ -48,6 +48,7 @@ async def market_scan(
         return await run_market_scan(scan_type, limit)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
 
 _DEFAULT_SYMBOLS = [
     "RELIANCE.NS",
@@ -85,7 +86,7 @@ class WatchlistAddRequest(BaseModel):
 
 
 _PERIOD_INTERVAL: dict[str, tuple[str, str]] = {
-    "1m": ("1d", "1m"),      # finest available — yfinance has no sub-minute data
+    "1m": ("1d", "1m"),  # finest available — yfinance has no sub-minute data
     "1D": ("1d", "5m"),
     "5m": ("5d", "5m"),
     "5D": ("5d", "15m"),
@@ -160,18 +161,21 @@ def _fetch_history_sync(symbol: str, period: str, interval: str) -> list[dict]:
         v = int(_safe_f(row.get("Volume")))
         if o == 0 or c == 0:
             continue
-        out.append({
-            "time": int(ts.timestamp()),
-            "open": round(o, 2),
-            "high": round(h, 2),
-            "low": round(lo, 2),
-            "close": round(c, 2),
-            "volume": v,
-        })
+        out.append(
+            {
+                "time": int(ts.timestamp()),
+                "open": round(o, 2),
+                "high": round(h, 2),
+                "low": round(lo, 2),
+                "close": round(c, 2),
+                "volume": v,
+            }
+        )
     return out
 
 
 # ── Market data ───────────────────────────────────────────────────────────────
+
 
 @router.get("/history/{symbol}")
 async def get_history(
@@ -186,11 +190,15 @@ async def get_history(
     try:
         if period in _RESAMPLE_FROM:
             yf_period, yf_interval, factor = _RESAMPLE_FROM[period]
-            raw = await loop.run_in_executor(None, _fetch_history_sync, norm, yf_period, yf_interval)
+            raw = await loop.run_in_executor(
+                None, _fetch_history_sync, norm, yf_period, yf_interval
+            )
             data = _resample_bars(raw, factor)
         else:
             yf_period, yf_interval = _PERIOD_INTERVAL.get(period, ("1mo", "1d"))
-            data = await loop.run_in_executor(None, _fetch_history_sync, norm, yf_period, yf_interval)
+            data = await loop.run_in_executor(
+                None, _fetch_history_sync, norm, yf_period, yf_interval
+            )
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -205,7 +213,10 @@ async def get_history(
 
 
 @router.get("/quotes/{symbol}")
-@limiter.limit("30/minute")
+# Dashboard alone fires ~50+ of these individually on load (one per AI pick
+# row plus the SotD/Golden Stock/BTST cards) -- 30/minute silently dropped
+# most of them, showing LTP as blank with no visible error.
+@limiter.limit("150/minute")
 async def get_quote(
     request: Request, symbol: str, current_user: CurrentUser, market_data: MarketDataDep
 ) -> dict:
@@ -237,6 +248,7 @@ async def get_quote_detail(request: Request, symbol: str, current_user: CurrentU
 
 # ── Watchlist management (multi-watchlist) ────────────────────────────────────
 
+
 @router.get("/watchlists")
 async def list_watchlists(current_user: CurrentUser, repo: WatchlistDep) -> list[dict]:
     wls = await repo.list_watchlists(current_user.id)
@@ -261,10 +273,9 @@ async def list_watchlists(current_user: CurrentUser, repo: WatchlistDep) -> list
 async def _prewarm_quote_cache(symbols: list[str]) -> None:
     """Background task: populate per-symbol quote cache for all watchlist symbols."""
     from app.infra.market.enriched_quote import fetch_enriched_quotes
-    try:
+
+    with contextlib.suppress(Exception):
         await fetch_enriched_quotes(symbols)
-    except Exception:
-        pass
 
 
 @router.post("/watchlists", status_code=status.HTTP_201_CREATED, dependencies=[_trader_or_admin])
@@ -405,9 +416,7 @@ async def remove_item_from_watchlist(
 ) -> None:
     removed = await repo.remove_item(watchlist_id, current_user.id, _normalise(symbol))
     if not removed:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Symbol not in watchlist"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Symbol not in watchlist")
 
 
 @router.post("/watchlists/{watchlist_id}/seed-defaults", dependencies=[_trader_or_admin])
@@ -448,6 +457,7 @@ async def seed_watchlist_defaults(
 
 
 # ── Legacy endpoints (backward-compat) ───────────────────────────────────────
+
 
 @router.get("/watchlist")
 async def get_watchlist(current_user: CurrentUser, repo: WatchlistDep) -> list[dict]:
@@ -511,9 +521,7 @@ async def seed_default_watchlist(
     status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[_trader_or_admin],
 )
-async def remove_from_watchlist(
-    symbol: str, current_user: CurrentUser, repo: WatchlistDep
-) -> None:
+async def remove_from_watchlist(symbol: str, current_user: CurrentUser, repo: WatchlistDep) -> None:
     normalised = _normalise(symbol)
     removed = await repo.remove(current_user.id, normalised)
     if not removed:
@@ -569,12 +577,18 @@ async def search_stocks(
             if score == 5 and prev_name_upper:
                 display_name = f"{display_name} (formerly {row['previous_name']})"
 
-            scored.append((score, ticker, {
-                "symbol": row["yahoo_symbol"],
-                "name": display_name,
-                "sector": row["sector"],
-                "exchange": row["exchange"],
-            }))
+            scored.append(
+                (
+                    score,
+                    ticker,
+                    {
+                        "symbol": row["yahoo_symbol"],
+                        "name": display_name,
+                        "sector": row["sector"],
+                        "exchange": row["exchange"],
+                    },
+                )
+            )
         scored.sort(key=lambda t: (t[0], t[1]))
         return [item for _, _, item in scored[:12]]
 
@@ -589,10 +603,12 @@ async def search_stocks(
             or query_compact in name_upper.replace(" ", "")
             or query_compact in ticker
         ):
-            results.append({
-                "symbol": sym,
-                "name": display_name,
-                "sector": sector,
-                "exchange": "NSE" if sym.endswith(".NS") else "BSE",
-            })
+            results.append(
+                {
+                    "symbol": sym,
+                    "name": display_name,
+                    "sector": sector,
+                    "exchange": "NSE" if sym.endswith(".NS") else "BSE",
+                }
+            )
     return results[:12]

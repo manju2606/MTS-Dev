@@ -231,7 +231,13 @@ function TodayCard({
             </p>
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href={`/trade?symbol=${encodeURIComponent(sotd.symbol)}`}
+              className="flex-1 rounded-lg bg-amber-500 py-2 text-center text-xs font-bold text-white hover:bg-amber-600"
+            >
+              💹 Trade Now
+            </Link>
             <Link
               href={`/forecast?symbol=${sym}`}
               className="flex-1 rounded-lg border border-indigo-200 bg-indigo-50 py-2 text-center text-xs font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-300"
@@ -362,7 +368,15 @@ function HistoryTable({ history, token, watchlists }: { history: StockOfDay[]; t
                   {pnl != null ? `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}%` : '—'}
                 </td>
                 <td className="px-3 py-2">
-                  <AddToWatchlistBtn symbol={row.symbol} token={token} watchlists={watchlists} />
+                  <div className="flex items-center gap-2">
+                    <AddToWatchlistBtn symbol={row.symbol} token={token} watchlists={watchlists} />
+                    <Link
+                      href={`/trade?symbol=${encodeURIComponent(row.symbol)}`}
+                      className="rounded-lg bg-amber-500 px-2.5 py-1 text-[10px] font-bold text-white hover:bg-amber-600"
+                    >
+                      Trade Now →
+                    </Link>
+                  </div>
                 </td>
               </tr>
             )

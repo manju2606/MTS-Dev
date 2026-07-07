@@ -169,6 +169,10 @@ function SentimentCard({ picks, status }: { picks: StockScore[] | null; status: 
           </span>
         </div>
       </div>
+
+      <Link href="/sentiment-forecast" className="mt-3 block text-right text-[11px] font-semibold text-indigo-600 hover:underline dark:text-indigo-400">
+        Week-ahead forecast & accuracy →
+      </Link>
     </div>
   )
 }
@@ -473,6 +477,43 @@ function AddToWatchlistBtn({ symbol, token, watchlists }: {
   )
 }
 
+// ── Shared layout pieces for the SotD / Golden Stock / BTST compact cards ─────
+// All three use the same label-column width and the same 6-column metric grid
+// (Entry, LTP, SL, Target, Score, Status) so they line up neatly when stacked.
+
+const DASH_CARD_LABEL_COL = 'flex w-full shrink-0 items-center gap-2 sm:w-[196px]'
+const DASH_CARD_METRIC_GRID = 'grid flex-1 grid-cols-3 gap-x-4 gap-y-2 text-xs sm:grid-cols-6'
+
+function DashCardMetric({ label, value, valueClass }: { label: string; value: React.ReactNode; valueClass?: string }) {
+  return (
+    <div>
+      <p className="text-[9px] text-zinc-400">{label}</p>
+      <p className={`font-mono text-xs font-semibold ${valueClass ?? 'text-zinc-900 dark:text-zinc-50'}`}>{value}</p>
+    </div>
+  )
+}
+
+function DashCardLtp({ ltp, entryPrice }: { ltp: number | null | undefined; entryPrice: number }) {
+  const diff = ltp != null ? ((ltp - entryPrice) / entryPrice) * 100 : null
+  return (
+    <div>
+      <p className="text-[9px] text-zinc-400">LTP</p>
+      {ltp != null ? (
+        <p className="font-mono text-xs font-semibold text-zinc-900 dark:text-zinc-50">
+          ₹{ltp.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+          {diff != null && (
+            <span className={`ml-1 text-[10px] font-medium ${diff >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+              ({diff >= 0 ? '+' : ''}{diff.toFixed(1)}%)
+            </span>
+          )}
+        </p>
+      ) : (
+        <p className="font-mono text-xs text-zinc-300 dark:text-zinc-600">—</p>
+      )}
+    </div>
+  )
+}
+
 // ── Stock of the Day compact card ─────────────────────────────────────────────
 
 function SotDDashCard({ sotd, ltp, token, watchlists }: {
@@ -499,55 +540,35 @@ function SotDDashCard({ sotd, ltp, token, watchlists }: {
   }
 
   const sym = sotd.symbol.replace(/\.(NS|BO)$/, '')
-  const pnl = sotd.pnl_pct
-  const pnlColor = pnl == null ? '' : pnl >= 0 ? 'text-emerald-600' : 'text-red-500'
   const statusColor: Record<string, string> = {
     WATCHING: 'text-amber-600', TRADING: 'text-blue-600 animate-pulse',
     TARGET_HIT: 'text-emerald-600', STOP_HIT: 'text-red-600', EXPIRED: 'text-zinc-500',
   }
-  const ltpDiff = ltp != null ? (((ltp - sotd.entry_price) / sotd.entry_price) * 100) : null
 
   return (
     <div className="flex flex-wrap items-center gap-4 rounded-xl border border-indigo-100 bg-gradient-to-r from-indigo-50 to-violet-50 px-4 py-3 dark:border-indigo-900/50 dark:from-indigo-950/30 dark:to-violet-950/20">
-      <div className="flex items-center gap-2 shrink-0">
+      <div className={DASH_CARD_LABEL_COL}>
         <span className="text-base">⭐</span>
         <div>
           <p className="text-[10px] font-bold uppercase tracking-wide text-indigo-400">Stock of the Day</p>
           <p className="text-sm font-extrabold text-zinc-900 dark:text-zinc-50">{sym}</p>
         </div>
       </div>
-      <div className="flex flex-wrap gap-4 text-xs">
-        <div>
-          <p className="text-[9px] text-zinc-400">Entry</p>
-          <p className="font-mono font-semibold">₹{sotd.entry_price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
-        </div>
-        <div>
-          <p className="text-[9px] text-zinc-400">LTP</p>
-          {ltp != null ? (
-            <p className="font-mono font-semibold">
-              ₹{ltp.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-              {ltpDiff != null && (
-                <span className={`ml-1 text-[10px] font-medium ${ltpDiff >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
-                  ({ltpDiff >= 0 ? '+' : ''}{ltpDiff.toFixed(1)}%)
-                </span>
-              )}
-            </p>
-          ) : (
-            <p className="font-mono text-zinc-300 dark:text-zinc-600">—</p>
-          )}
-        </div>
-        <div><p className="text-[9px] text-zinc-400">SL</p><p className="font-mono font-semibold text-red-600 dark:text-red-400">₹{sotd.stop_loss.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p></div>
-        <div><p className="text-[9px] text-zinc-400">Target</p><p className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">₹{sotd.target.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p></div>
-        <div><p className="text-[9px] text-zinc-400">Confidence Score</p><p className="font-bold text-indigo-600">{Math.round(sotd.composite_score)}</p></div>
-        <div><p className="text-[9px] text-zinc-400">Status</p><p className={`font-bold text-[10px] ${statusColor[sotd.status] ?? ''}`}>{sotd.status.replace('_', ' ')}</p></div>
-        {pnl != null && (
-          <div><p className="text-[9px] text-zinc-400">P&L</p><p className={`font-bold font-mono ${pnlColor}`}>{pnl >= 0 ? '+' : ''}{pnl.toFixed(2)}%</p></div>
-        )}
+      <div className={DASH_CARD_METRIC_GRID}>
+        <DashCardMetric label="Entry" value={`₹${sotd.entry_price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`} />
+        <DashCardLtp ltp={ltp} entryPrice={sotd.entry_price} />
+        <DashCardMetric label="SL" value={`₹${sotd.stop_loss.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`} valueClass="text-red-600 dark:text-red-400" />
+        <DashCardMetric label="Target" value={`₹${sotd.target.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`} valueClass="text-emerald-600 dark:text-emerald-400" />
+        <DashCardMetric label="Score" value={Math.round(sotd.composite_score)} valueClass="text-indigo-600" />
+        <DashCardMetric label="Status" value={sotd.status.replace('_', ' ')} valueClass={`text-[10px] font-bold ${statusColor[sotd.status] ?? ''}`} />
       </div>
       <div className="ml-auto flex shrink-0 items-center gap-2">
         {token && watchlists && watchlists.length > 0 && (
           <AddToWatchlistBtn symbol={sotd.symbol} token={token} watchlists={watchlists} />
         )}
+        <Link href={`/trade?symbol=${encodeURIComponent(sotd.symbol)}`} className="rounded-lg bg-white px-3 py-1.5 text-[10px] font-bold text-indigo-700 ring-1 ring-indigo-300 hover:bg-indigo-50 dark:bg-zinc-900 dark:text-indigo-400 dark:ring-indigo-800 dark:hover:bg-indigo-950/40">
+          Trade Now →
+        </Link>
         <Link href="/stock-of-day" className="rounded-lg bg-indigo-600 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-indigo-700">
           Details →
         </Link>
@@ -558,8 +579,9 @@ function SotDDashCard({ sotd, ltp, token, watchlists }: {
 
 // ── Golden Stock — Intraday compact card ──────────────────────────────────────
 
-function GoldenStockDashCard({ scan, token, watchlists }: {
+function GoldenStockDashCard({ scan, ltp, token, watchlists }: {
   scan: GoldenStockScan | null
+  ltp?: number | null
   token?: string
   watchlists?: Watchlist[]
 }) {
@@ -585,24 +607,28 @@ function GoldenStockDashCard({ scan, token, watchlists }: {
 
   return (
     <div className="flex flex-wrap items-center gap-4 rounded-xl border border-amber-100 bg-gradient-to-r from-amber-50 to-orange-50 px-4 py-3 dark:border-amber-900/50 dark:from-amber-950/30 dark:to-orange-950/20">
-      <div className="flex items-center gap-2 shrink-0">
+      <div className={DASH_CARD_LABEL_COL}>
         <span className="text-base">🔥</span>
         <div>
           <p className="text-[10px] font-bold uppercase tracking-wide text-amber-500">Golden Stock — Intraday</p>
           <p className="text-sm font-extrabold text-zinc-900 dark:text-zinc-50">{sym}</p>
         </div>
       </div>
-      <div className="flex flex-wrap gap-4 text-xs">
-        <div><p className="text-[9px] text-zinc-400">Entry</p><p className="font-mono font-semibold">₹{top.entry_price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p></div>
-        <div><p className="text-[9px] text-zinc-400">SL</p><p className="font-mono font-semibold text-red-600 dark:text-red-400">₹{top.stop_loss.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p></div>
-        <div><p className="text-[9px] text-zinc-400">Target</p><p className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">₹{top.target_1.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p></div>
-        <div><p className="text-[9px] text-zinc-400">Score</p><p className="font-bold text-amber-600">{top.confidence_score}</p></div>
-        <div><p className="text-[9px] text-zinc-400">Picks Today</p><p className="font-bold text-zinc-700 dark:text-zinc-300">{scan.picks.length}</p></div>
+      <div className={DASH_CARD_METRIC_GRID}>
+        <DashCardMetric label="Entry" value={`₹${top.entry_price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`} />
+        <DashCardLtp ltp={ltp} entryPrice={top.entry_price} />
+        <DashCardMetric label="SL" value={`₹${top.stop_loss.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`} valueClass="text-red-600 dark:text-red-400" />
+        <DashCardMetric label="Target" value={`₹${top.target_1.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`} valueClass="text-emerald-600 dark:text-emerald-400" />
+        <DashCardMetric label="Score" value={top.confidence_score} valueClass="text-amber-600" />
+        <DashCardMetric label="Picks Today" value={scan.picks.length} valueClass="text-zinc-700 dark:text-zinc-300" />
       </div>
       <div className="ml-auto flex shrink-0 items-center gap-2">
         {token && watchlists && watchlists.length > 0 && (
           <AddToWatchlistBtn symbol={top.symbol} token={token} watchlists={watchlists} />
         )}
+        <Link href={`/trade?symbol=${encodeURIComponent(top.symbol)}`} className="rounded-lg bg-white px-3 py-1.5 text-[10px] font-bold text-amber-700 ring-1 ring-amber-300 hover:bg-amber-50 dark:bg-zinc-900 dark:text-amber-400 dark:ring-amber-800 dark:hover:bg-amber-950/40">
+          Trade Now →
+        </Link>
         <Link href="/golden-stock" className="rounded-lg bg-amber-500 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-amber-600">
           Details →
         </Link>
@@ -613,8 +639,9 @@ function GoldenStockDashCard({ scan, token, watchlists }: {
 
 // ── BTST compact card ──────────────────────────────────────────────────────────
 
-function BTSTDashCard({ scan, token, watchlists }: {
+function BTSTDashCard({ scan, ltp, token, watchlists }: {
   scan: BTSTScanResult | null
+  ltp?: number | null
   token?: string
   watchlists?: Watchlist[]
 }) {
@@ -640,24 +667,28 @@ function BTSTDashCard({ scan, token, watchlists }: {
 
   return (
     <div className="flex flex-wrap items-center gap-4 rounded-xl border border-indigo-100 bg-gradient-to-r from-indigo-50 to-violet-50 px-4 py-3 dark:border-indigo-900/50 dark:from-indigo-950/30 dark:to-violet-950/20">
-      <div className="flex items-center gap-2 shrink-0">
+      <div className={DASH_CARD_LABEL_COL}>
         <span className="text-base">🌙</span>
         <div>
           <p className="text-[10px] font-bold uppercase tracking-wide text-indigo-400">BTST</p>
           <p className="text-sm font-extrabold text-zinc-900 dark:text-zinc-50">{sym}</p>
         </div>
       </div>
-      <div className="flex flex-wrap gap-4 text-xs">
-        <div><p className="text-[9px] text-zinc-400">Entry (Today)</p><p className="font-mono font-semibold">₹{top.entry_price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p></div>
-        <div><p className="text-[9px] text-zinc-400">SL</p><p className="font-mono font-semibold text-red-600 dark:text-red-400">₹{top.stop_loss.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p></div>
-        <div><p className="text-[9px] text-zinc-400">Exit (Tomorrow)</p><p className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">₹{top.target_1.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p></div>
-        <div><p className="text-[9px] text-zinc-400">Score</p><p className="font-bold text-indigo-600">{top.confidence_score}</p></div>
-        <div><p className="text-[9px] text-zinc-400">Picks Today</p><p className="font-bold text-zinc-700 dark:text-zinc-300">{scan.picks.length}</p></div>
+      <div className={DASH_CARD_METRIC_GRID}>
+        <DashCardMetric label="Entry (Today)" value={`₹${top.entry_price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`} />
+        <DashCardLtp ltp={ltp} entryPrice={top.entry_price} />
+        <DashCardMetric label="SL" value={`₹${top.stop_loss.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`} valueClass="text-red-600 dark:text-red-400" />
+        <DashCardMetric label="Exit (Tomorrow)" value={`₹${top.target_1.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`} valueClass="text-emerald-600 dark:text-emerald-400" />
+        <DashCardMetric label="Score" value={top.confidence_score} valueClass="text-indigo-600" />
+        <DashCardMetric label="Picks Today" value={scan.picks.length} valueClass="text-zinc-700 dark:text-zinc-300" />
       </div>
       <div className="ml-auto flex shrink-0 items-center gap-2">
         {token && watchlists && watchlists.length > 0 && (
           <AddToWatchlistBtn symbol={top.symbol} token={token} watchlists={watchlists} />
         )}
+        <Link href={`/trade?symbol=${encodeURIComponent(top.symbol)}`} className="rounded-lg bg-white px-3 py-1.5 text-[10px] font-bold text-indigo-700 ring-1 ring-indigo-300 hover:bg-indigo-50 dark:bg-zinc-900 dark:text-indigo-400 dark:ring-indigo-800 dark:hover:bg-indigo-950/40">
+          Trade Now →
+        </Link>
         <Link href="/btst" className="rounded-lg bg-indigo-600 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-indigo-700">
           Details →
         </Link>
@@ -687,6 +718,8 @@ export default function DashboardView() {
   const [ltps, setLtps]         = useState<Record<string, number>>({})
   const [watchlists, setWatchlists] = useState<Watchlist[]>([])
   const [sotdLtp, setSotdLtp]   = useState<number | null>(null)
+  const [goldenStockLtp, setGoldenStockLtp] = useState<number | null>(null)
+  const [btstLtp, setBtstLtp]   = useState<number | null>(null)
 
   const CACHE_KEY = 'mts_dashboard_cache'
 
@@ -784,6 +817,22 @@ export default function DashboardView() {
     getQuote(t, sotd.symbol).then(q => setSotdLtp(q.price)).catch(() => {})
   }, [sotd])
 
+  useEffect(() => {
+    const top = goldenStock?.picks[0]
+    if (!top) return
+    const t = tokenRef.current
+    if (!t) return
+    getQuote(t, top.symbol).then(q => setGoldenStockLtp(q.price)).catch(() => {})
+  }, [goldenStock])
+
+  useEffect(() => {
+    const top = btst?.picks[0]
+    if (!top) return
+    const t = tokenRef.current
+    if (!t) return
+    getQuote(t, top.symbol).then(q => setBtstLtp(q.price)).catch(() => {})
+  }, [btst])
+
   function handleSort(key: SortKey) {
     if (sortKey === key) setSortDir(d => d === 'desc' ? 'asc' : 'desc')
     else { setSortKey(key); setSortDir('desc') }
@@ -848,8 +897,8 @@ export default function DashboardView() {
         {/* Stock of the Day / Golden Stock / BTST banners */}
         <div className="mb-5 space-y-3">
           <SotDDashCard sotd={sotd} ltp={sotdLtp} token={tokenRef.current} watchlists={watchlists} />
-          <GoldenStockDashCard scan={goldenStock} token={tokenRef.current} watchlists={watchlists} />
-          <BTSTDashCard scan={btst} token={tokenRef.current} watchlists={watchlists} />
+          <GoldenStockDashCard scan={goldenStock} ltp={goldenStockLtp} token={tokenRef.current} watchlists={watchlists} />
+          <BTSTDashCard scan={btst} ltp={btstLtp} token={tokenRef.current} watchlists={watchlists} />
         </div>
 
         {/* Market context row: Sentiment | Global | Economic Events */}

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { NavBar } from '@/components/nav-bar'
 import { AddToWatchlistBtn } from '@/components/add-to-watchlist-btn'
 import {
@@ -194,7 +195,15 @@ function PickCard({ pick, token, watchlists }: { pick: BTSTPick; token: string; 
         </div>
       )}
 
-      <AddToWatchlistBtn symbol={pick.symbol} token={token} watchlists={watchlists} />
+      <div className="flex flex-wrap items-center gap-2">
+        <AddToWatchlistBtn symbol={pick.symbol} token={token} watchlists={watchlists} />
+        <Link
+          href={`/trade?symbol=${encodeURIComponent(pick.symbol)}`}
+          className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
+        >
+          Trade Now →
+        </Link>
+      </div>
     </div>
   )
 }

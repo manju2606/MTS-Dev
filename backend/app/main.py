@@ -4,6 +4,7 @@ from uuid import UUID
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_fastapi_instrumentator import Instrumentator
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -102,6 +103,11 @@ async def audit_middleware(request, call_next):
 
 
 app.include_router(api_v1_router, prefix="/api/v1")
+
+# /metrics is scraped by Prometheus over the internal docker network directly
+# (http://backend:8000/metrics) -- nginx never proxies it, so it isn't
+# reachable from the internet-facing tunnel.
+Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 
 
 @app.get("/health")

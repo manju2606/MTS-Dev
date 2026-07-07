@@ -26,6 +26,69 @@ services:
       - frontend
     restart: unless-stopped
 
+  # ── Observability (step 2): metrics + dashboards ────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./infra/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infra/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    restart: unless-stopped
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER:-mts}:${POSTGRES_PASSWORD:-mts_password}@postgres:5432/${POSTGRES_DB:-mts_dev}?sslmode=disable"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    environment:
+      REDIS_ADDR: "redis://redis:6379"
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  mongodb-exporter:
+    image: percona/mongodb_exporter:0.40
+    command:
+      - "--mongodb.uri=mongodb://mongodb:27017"
+    depends_on:
+      - mongodb
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   mongo_data:
+  prometheus_data:
+  grafana_data:

@@ -22,6 +22,41 @@ _scan_running = False
 _last_scan_at: datetime | None = None
 _last_scan_count = 0
 
+# Held open for the process lifetime once acquired — see try_acquire_scheduler_lock.
+_lock_conn = None
+
+# Arbitrary fixed key for the "only one worker runs the scheduler" advisory lock.
+_SCHEDULER_LOCK_KEY = 727384910
+
+
+async def try_acquire_scheduler_lock() -> bool:
+    """Session-level Postgres advisory lock so only one process runs the
+    scheduler when uvicorn is started with multiple workers — otherwise every
+    cron job fires once per worker (e.g. duplicate hourly reports/emails).
+
+    Fails open (returns True) if the lock check itself errors, since a
+    transient DB hiccup here shouldn't silently disable all scheduled jobs.
+    """
+    import asyncpg
+
+    from app.core.config import settings
+
+    global _lock_conn
+    dsn = settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://").split("?")[0]
+    try:
+        conn = await asyncpg.connect(dsn)
+        acquired = await conn.fetchval("SELECT pg_try_advisory_lock($1)", _SCHEDULER_LOCK_KEY)
+    except Exception as exc:
+        log.warning("scheduler.lock.error", error=str(exc))
+        return True
+
+    if acquired:
+        _lock_conn = conn  # keep the session open to hold the lock for the process lifetime
+        return True
+    await conn.close()
+    log.info("scheduler.lock.skipped", reason="another worker already holds the scheduler lock")
+    return False
+
 
 def get_scheduler() -> AsyncIOScheduler | None:
     return _scheduler
@@ -435,3 +470,10 @@ def stop_scheduler() -> None:
         _scheduler.shutdown(wait=False)
         log.info("scheduler.stopped")
     _scheduler = None
+
+
+async def release_scheduler_lock() -> None:
+    global _lock_conn
+    if _lock_conn is not None:
+        await _lock_conn.close()
+        _lock_conn = None

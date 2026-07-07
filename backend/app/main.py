@@ -19,14 +19,19 @@ from app.infra.market_data.yfinance_client import YFinanceClient
 async def lifespan(app: FastAPI):
     configure_logging()
     if settings.ENVIRONMENT != "testing":
-        from app.core.scheduler import start_scheduler
+        from app.core.scheduler import start_scheduler, try_acquire_scheduler_lock
 
-        start_scheduler()
+        # Only one worker process should run the cron jobs — otherwise every
+        # scheduled job (reports, scans, position checks, ...) fires once per
+        # uvicorn worker.
+        if await try_acquire_scheduler_lock():
+            start_scheduler()
     yield
     if settings.ENVIRONMENT != "testing":
-        from app.core.scheduler import stop_scheduler
+        from app.core.scheduler import release_scheduler_lock, stop_scheduler
 
         stop_scheduler()
+        await release_scheduler_lock()
 
 
 app = FastAPI(

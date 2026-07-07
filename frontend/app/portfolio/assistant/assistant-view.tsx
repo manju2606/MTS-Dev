@@ -6,7 +6,7 @@ import { NavBar } from '@/components/nav-bar'
 import {
   getAssistantAnalysis, addHolding, deleteHolding, importHoldings, askAssistant,
   getAssistantFundamentals, getAssistantTimeline, getAssistantTax, getAssistantDividends, getAssistantCorrelation,
-  getAssistantSentiment, getAssistantAISignals,
+  getAssistantSentiment, getAssistantAISignals, getAssistantSummary,
   getBrokerStatus, getBrokerPositions,
   listPortfolios, createPortfolio, deletePortfolio, listWatchlists,
   searchStocks,
@@ -15,7 +15,7 @@ import type {
   AssistantAnalysis, Holding, AssistantAlert, SizingRow,
   FundamentalRow, TimelineData, TaxData, DividendRow, CorrelationData, Portfolio,
   SentimentRow, AISignalRow, BrokerPosition, BrokerStatus, Watchlist,
-  StockSearchResult,
+  StockSearchResult, AssistantPeriodSummary, SummaryPeriod,
 } from '@/lib/api'
 import { AddToWatchlistBtn } from '@/components/add-to-watchlist-btn'
 
@@ -868,6 +868,167 @@ function TimelineSection({ portfolioId }: { portfolioId: string }) {
   )
 }
 
+// ── Portfolio Summary Tab (Day / Week / Month) ────────────────────────────────
+
+const SUMMARY_PERIODS: { id: SummaryPeriod; label: string }[] = [
+  { id: 'day', label: 'Today' },
+  { id: 'week', label: 'This Week' },
+  { id: 'month', label: 'This Month' },
+]
+
+const SUGGESTION_STYLE: Record<string, string> = {
+  warning: 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300',
+  info: 'border-indigo-200 bg-indigo-50 text-indigo-800 dark:border-indigo-900 dark:bg-indigo-950/30 dark:text-indigo-300',
+  positive: 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300',
+}
+
+const SUGGESTION_ICON: Record<string, string> = { warning: '⚠️', info: '💡', positive: '✅' }
+
+function SummaryTab({ portfolioId }: { portfolioId: string }) {
+  const [period, setPeriod] = useState<SummaryPeriod>('week')
+  const [summary, setSummary] = useState<AssistantPeriodSummary | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const t = typeof window !== 'undefined' ? localStorage.getItem('mts_token') ?? '' : ''
+    if (!t) return
+    setLoading(true)
+    getAssistantSummary(t, portfolioId, period).then(d => { setSummary(d); setLoading(false) }).catch(() => setLoading(false))
+  }, [portfolioId, period])
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-1">
+        {SUMMARY_PERIODS.map(p => (
+          <button key={p.id} onClick={() => setPeriod(p.id)}
+            className={cls(
+              'rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-colors',
+              period === p.id
+                ? 'bg-indigo-600 text-white'
+                : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400',
+            )}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="space-y-4">
+          <div className="h-24 animate-pulse rounded-xl bg-zinc-100 dark:bg-zinc-800" />
+          <div className="h-40 animate-pulse rounded-xl bg-zinc-100 dark:bg-zinc-800" />
+        </div>
+      ) : !summary?.has_data ? (
+        <div className="rounded-xl border border-zinc-200 bg-white px-4 py-12 text-center dark:border-zinc-800 dark:bg-zinc-900">
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">Add holdings to see a performance summary.</p>
+        </div>
+      ) : (
+        <>
+          {/* Headline: portfolio change vs Nifty */}
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+              <p className="text-[11px] uppercase tracking-wide text-zinc-400">Portfolio Change</p>
+              <p className={cls('mt-1 text-2xl font-bold font-mono', pnlColor(summary.portfolio_change_pct ?? 0))}>
+                {(summary.portfolio_change_pct ?? 0) >= 0 ? '+' : ''}{(summary.portfolio_change_pct ?? 0).toFixed(2)}%
+              </p>
+              <p className="mt-0.5 text-xs text-zinc-400">
+                {fmtCr(summary.portfolio_value_start ?? 0)} → {fmtCr(summary.portfolio_value_now ?? 0)}
+              </p>
+            </div>
+            <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+              <p className="text-[11px] uppercase tracking-wide text-zinc-400">Nifty50 Change</p>
+              <p className={cls('mt-1 text-2xl font-bold font-mono', pnlColor(summary.nifty_change_pct ?? 0))}>
+                {summary.nifty_change_pct != null ? `${summary.nifty_change_pct >= 0 ? '+' : ''}${summary.nifty_change_pct.toFixed(2)}%` : '—'}
+              </p>
+              <p className="mt-0.5 text-xs text-zinc-400">{summary.start_date} → {summary.end_date}</p>
+            </div>
+            <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+              <p className="text-[11px] uppercase tracking-wide text-zinc-400">vs Nifty50</p>
+              <p className={cls('mt-1 text-2xl font-bold font-mono', pnlColor(summary.relative_pct ?? 0))}>
+                {summary.relative_pct != null ? `${summary.relative_pct >= 0 ? '+' : ''}${summary.relative_pct.toFixed(2)}%` : '—'}
+              </p>
+              <p className="mt-0.5 text-xs text-zinc-400">
+                {summary.relative_pct != null ? (summary.relative_pct >= 0 ? 'Outperforming' : 'Underperforming') : 'No benchmark data'}
+              </p>
+            </div>
+          </div>
+
+          {/* Suggestions */}
+          <div className="space-y-2">
+            {(summary.suggestions ?? []).map((s, i) => (
+              <div key={i} className={cls('rounded-lg border px-3.5 py-2.5 text-sm', SUGGESTION_STYLE[s.severity])}>
+                <span className="mr-2">{SUGGESTION_ICON[s.severity]}</span>{s.text}
+              </div>
+            ))}
+          </div>
+
+          {/* Winners / Losers */}
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+              <p className="mb-3 text-xs font-medium uppercase tracking-wider text-emerald-500">Up This Period</p>
+              {(summary.winners ?? []).length === 0 ? <p className="text-sm text-zinc-400">Nothing up this period.</p> : (
+                <div className="space-y-2">
+                  {(summary.winners ?? []).map(h => (
+                    <div key={h.symbol} className="flex items-center justify-between">
+                      <div>
+                        <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">{h.symbol.replace(/\.(NS|BO)$/, '')}</span>
+                        <span className="ml-2 text-xs text-zinc-400">{h.sector}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">+{h.change_pct.toFixed(2)}%</span>
+                        <span className="block text-xs text-zinc-400">₹{h.price_start.toFixed(2)} → ₹{h.price_now.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+              <p className="mb-3 text-xs font-medium uppercase tracking-wider text-red-400">Down This Period</p>
+              {(summary.losers ?? []).length === 0 ? <p className="text-sm text-zinc-400">Nothing down this period.</p> : (
+                <div className="space-y-2">
+                  {(summary.losers ?? []).map(h => (
+                    <div key={h.symbol} className="flex items-center justify-between">
+                      <div>
+                        <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">{h.symbol.replace(/\.(NS|BO)$/, '')}</span>
+                        <span className="ml-2 text-xs text-zinc-400">{h.sector}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-sm font-bold text-red-500">{h.change_pct.toFixed(2)}%</span>
+                        <span className="block text-xs text-zinc-400">₹{h.price_start.toFixed(2)} → ₹{h.price_now.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Sector moves */}
+          {(summary.sector_moves ?? []).length > 0 && (
+            <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+              <p className="mb-3 text-xs font-medium uppercase tracking-wider text-zinc-400">Sector Moves</p>
+              <div className="space-y-2">
+                {(summary.sector_moves ?? []).map(s => (
+                  <div key={s.sector} className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-zinc-700 dark:text-zinc-200">{s.sector}</span>
+                      <span className="text-xs text-zinc-400">{s.weight_pct.toFixed(0)}% of portfolio</span>
+                    </div>
+                    <span className={cls('font-mono font-semibold', pnlColor(s.change_pct))}>
+                      {s.change_pct >= 0 ? '+' : ''}{s.change_pct.toFixed(2)}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
 // ── Research Tab ─────────────────────────────────────────────────────────────
 
 function FundamentalsSection({ portfolioId }: { portfolioId: string }) {
@@ -1561,7 +1722,7 @@ function AssistantTab({ token, portfolioId }: { token: string; portfolioId: stri
 
 // ── Main View ─────────────────────────────────────────────────────────────────
 
-type Tab = 'overview' | 'holdings' | 'allocation' | 'risk' | 'performance' | 'research' | 'assistant'
+type Tab = 'overview' | 'holdings' | 'allocation' | 'risk' | 'performance' | 'research' | 'summary' | 'assistant'
 
 const TABS: { id: Tab; label: string; count?: (d: AssistantAnalysis) => number }[] = [
   { id: 'overview',    label: 'Overview' },
@@ -1570,6 +1731,7 @@ const TABS: { id: Tab; label: string; count?: (d: AssistantAnalysis) => number }
   { id: 'risk',       label: 'Risk' },
   { id: 'performance',label: 'Performance' },
   { id: 'research',   label: 'Research' },
+  { id: 'summary',    label: 'Summary' },
   { id: 'assistant',  label: 'AI Assistant' },
 ]
 
@@ -1741,6 +1903,7 @@ export default function AssistantView() {
             {tab === 'risk'       && <RiskTab data={data} />}
             {tab === 'performance'&& <PerformanceTab data={data} portfolioId={activePortfolioId} />}
             {tab === 'research'   && <ResearchTab data={data} portfolioId={activePortfolioId} onHoldingsChanged={refresh} />}
+            {tab === 'summary'    && <SummaryTab portfolioId={activePortfolioId} />}
             {tab === 'assistant'  && <AssistantTab token={tokenRef.current} portfolioId={activePortfolioId} />}
           </>
         )}

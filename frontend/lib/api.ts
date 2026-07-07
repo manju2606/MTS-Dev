@@ -711,6 +711,51 @@ export async function getAssistantTimeline(token: string, portfolioId = 'default
   return res.json()
 }
 
+export type SummaryPeriod = 'day' | 'week' | 'month'
+
+export type SummaryHoldingMove = {
+  symbol: string
+  name: string
+  sector: string
+  price_start: number
+  price_now: number
+  change_pct: number
+  value_now: number
+}
+
+export type SummarySectorMove = { sector: string; weight_pct: number; change_pct: number }
+
+export type PortfolioSuggestion = { severity: 'warning' | 'info' | 'positive'; text: string }
+
+export type AssistantPeriodSummary = {
+  period: SummaryPeriod
+  has_data: boolean
+  start_date?: string
+  end_date?: string
+  portfolio_value_start?: number
+  portfolio_value_now?: number
+  portfolio_change_pct?: number
+  nifty_change_pct?: number | null
+  relative_pct?: number | null
+  winners?: SummaryHoldingMove[]
+  losers?: SummaryHoldingMove[]
+  sector_moves?: SummarySectorMove[]
+  suggestions?: PortfolioSuggestion[]
+}
+
+export async function getAssistantSummary(
+  token: string,
+  portfolioId = 'default',
+  period: SummaryPeriod = 'week',
+): Promise<AssistantPeriodSummary> {
+  const res = await fetch(
+    `${BASE}/api/v1/portfolio/assistant/summary?portfolio_id=${encodeURIComponent(portfolioId)}&period=${period}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) return { period, has_data: false }
+  return res.json()
+}
+
 export type TaxRow = {
   symbol: string; qty: number; avg_price: number; current_price: number
   invested: number; pnl: number; days_held: number | null

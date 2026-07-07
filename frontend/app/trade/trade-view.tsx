@@ -11,10 +11,12 @@ import {
   validateTrade,
   placeTrade,
   getRiskConfig,
+  getHistory,
 } from '@/lib/api'
 import type {
-  StockSearchResult, WatchlistQuote, AIRecommendation, RiskCheckResult, RiskConfig,
+  StockSearchResult, WatchlistQuote, AIRecommendation, RiskCheckResult, RiskConfig, ChartPeriod, HistoryBar,
 } from '@/lib/api'
+import { PriceChart } from '@/components/price-chart'
 
 function fmtINR(n: number) {
   return `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -230,6 +232,19 @@ function TradeTicket({
   const [placing, setPlacing] = useState(false)
   const [placeError, setPlaceError] = useState('')
   const [placed, setPlaced] = useState(false)
+  const [showChart, setShowChart] = useState(false)
+  const [chartPeriod, setChartPeriod] = useState<ChartPeriod>('1D')
+  const [chartBars, setChartBars] = useState<HistoryBar[]>([])
+  const [chartLoading, setChartLoading] = useState(false)
+
+  useEffect(() => {
+    if (!showChart) return
+    setChartLoading(true)
+    getHistory(token, symbol, chartPeriod)
+      .then(setChartBars)
+      .catch(() => setChartBars([]))
+      .finally(() => setChartLoading(false))
+  }, [showChart, token, symbol, chartPeriod])
 
   useEffect(() => {
     if (rec && rec.signal !== 'HOLD') {
@@ -393,6 +408,14 @@ function TradeTicket({
       )}
 
       <div className="flex gap-2">
+        <button onClick={() => setShowChart(v => !v)}
+          className={`rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors ${
+            showChart
+              ? 'bg-indigo-600 text-white'
+              : 'border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200'
+          }`}>
+          📈 {showChart ? 'Hide Chart' : 'Chart'}
+        </button>
         <button onClick={handleCheck} disabled={checking}
           className="flex-1 rounded-lg border border-zinc-200 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
           {checking ? 'Checking…' : 'Check Risk'}
@@ -404,6 +427,20 @@ function TradeTicket({
           {placing ? 'Placing…' : `Place Paper ${signal}`}
         </button>
       </div>
+
+      {showChart && (
+        <div className="mt-4">
+          <PriceChart
+            symbol={symbol}
+            data={chartBars}
+            period={chartPeriod}
+            onPeriodChange={setChartPeriod}
+            loading={chartLoading}
+            currentPrice={entry}
+            aiLevels={{ signal, entry, stopLoss, target }}
+          />
+        </div>
+      )}
     </div>
   )
 }

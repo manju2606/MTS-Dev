@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import time
 from dataclasses import asdict
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -23,6 +24,12 @@ router = APIRouter(prefix="/ai", tags=["ai-engine"])
 
 _trader_or_admin = Depends(require_role(UserRole.ADMIN, UserRole.TRADER))
 _usage_gate = Depends(check_ai_usage)
+
+# Recommendations barely change minute-to-minute and each one costs a live
+# quote + indicator fetch + an LLM call — cache briefly so re-selecting the
+# same symbol (e.g. flipping back and forth in Quick Trade) is instant.
+_REC_CACHE: dict[str, tuple[float, dict]] = {}
+_REC_TTL = 90.0  # seconds
 
 
 def _norm(symbol: str) -> str:
@@ -104,6 +111,12 @@ async def analyze_symbol(
     signal_repo: AISignalDep,
 ) -> dict:
     sym = _norm(symbol)
+
+    now = time.monotonic()
+    cached = _REC_CACHE.get(sym)
+    if cached and (now - cached[0]) < _REC_TTL:
+        return cached[1]
+
     try:
         quote, ta = await asyncio.gather(
             market_data.get_quote(sym),
@@ -118,7 +131,9 @@ async def analyze_symbol(
 
     rec = await ai_client.analyze(symbol=sym, quote=quote, ta=ta)
     await _save_signal(signal_repo, current_user.id, rec)
-    return _serialize(rec)
+    data = _serialize(rec)
+    _REC_CACHE[sym] = (now, data)
+    return data
 
 
 @router.post(

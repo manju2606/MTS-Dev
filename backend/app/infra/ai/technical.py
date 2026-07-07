@@ -2,6 +2,7 @@
 
 import asyncio
 import math
+import time
 from dataclasses import dataclass
 
 import yfinance as yf
@@ -117,6 +118,17 @@ def _fetch_sync(symbol: str) -> TechnicalIndicators:
     )
 
 
+_INDICATOR_CACHE: dict[str, tuple[float, TechnicalIndicators]] = {}
+_INDICATOR_TTL = 60.0  # seconds
+
+
 async def fetch_indicators(symbol: str) -> TechnicalIndicators:
+    now = time.monotonic()
+    cached = _INDICATOR_CACHE.get(symbol)
+    if cached and (now - cached[0]) < _INDICATOR_TTL:
+        return cached[1]
+
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, _fetch_sync, symbol)
+    result = await loop.run_in_executor(None, _fetch_sync, symbol)
+    _INDICATOR_CACHE[symbol] = (now, result)
+    return result

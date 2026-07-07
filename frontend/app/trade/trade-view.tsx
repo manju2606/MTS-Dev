@@ -18,6 +18,12 @@ import type {
 } from '@/lib/api'
 import { PriceChart } from '@/components/price-chart'
 
+// In-memory, tab-lifetime cache so re-selecting a symbol (e.g. flipping back
+// and forth from a watchlist) renders instantly from cache while a fresh
+// fetch quietly updates it in the background — no spinner on repeat visits.
+const _quoteCache = new Map<string, WatchlistQuote>()
+const _recCache = new Map<string, AIRecommendation>()
+
 function fmtINR(n: number) {
   return `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
@@ -457,6 +463,7 @@ export function TradeView() {
   const [loadingQuote, setLoadingQuote] = useState(false)
   const [loadingRec, setLoadingRec] = useState(false)
   const [error, setError] = useState('')
+  const selectedSymbolRef = useRef<string | null>(null)
 
   useEffect(() => {
     setToken(localStorage.getItem('mts_token') ?? '')
@@ -470,16 +477,27 @@ export function TradeView() {
   async function handleSelect(r: StockSearchResult) {
     setSelected(r)
     setError('')
-    setQuote(null)
-    setRec(null)
-    setLoadingQuote(true)
-    setLoadingRec(true)
+    selectedSymbolRef.current = r.symbol
+
+    const cachedQuote = _quoteCache.get(r.symbol) ?? null
+    const cachedRec = _recCache.get(r.symbol) ?? null
+    setQuote(cachedQuote)
+    setRec(cachedRec)
+    setLoadingQuote(!cachedQuote)
+    setLoadingRec(!cachedRec)
+
     getQuoteDetail(token, r.symbol)
-      .then(setQuote)
-      .catch(e => setError((e as Error).message))
+      .then(q => {
+        _quoteCache.set(r.symbol, q)
+        if (selectedSymbolRef.current === r.symbol) setQuote(q)
+      })
+      .catch(e => { if (!cachedQuote) setError((e as Error).message) })
       .finally(() => setLoadingQuote(false))
     analyzeSymbol(token, r.symbol)
-      .then(setRec)
+      .then(rc => {
+        _recCache.set(r.symbol, rc)
+        if (selectedSymbolRef.current === r.symbol) setRec(rc)
+      })
       .catch(() => {})
       .finally(() => setLoadingRec(false))
   }

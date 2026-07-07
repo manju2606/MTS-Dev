@@ -157,6 +157,25 @@ async def close_trade(
         )
 
     if exit_price is not None:
+        # Plausibility check: reject a manual close price the stock never
+        # actually traded at today (e.g. LTP 238 but someone types 250).
+        try:
+            quote = await market_data.get_quote(trade.symbol)
+        except Exception:
+            quote = (
+                None  # data provider hiccup — trust the manual price rather than block the close
+            )
+
+        if quote is not None and quote.day_low > 0 and quote.day_high > 0:
+            eps = 0.01
+            if not (quote.day_low - eps <= exit_price <= quote.day_high + eps):
+                raise HTTPException(
+                    status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=(
+                        f"Close price ₹{exit_price:.2f} is outside today's traded range "
+                        f"(₹{quote.day_low:.2f}-₹{quote.day_high:.2f}) for {trade.symbol}."
+                    ),
+                )
         price = exit_price
     else:
         try:

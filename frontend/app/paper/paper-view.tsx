@@ -882,47 +882,49 @@ export default function PaperView() {
                       </div>
                       {user?.role !== 'viewer' && (
                         <div className="flex flex-col items-end gap-1.5">
-                          <label className="flex items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
-                            <input
-                              type="checkbox"
-                              checked={manualCloseId === trade.id}
-                              onChange={e => {
-                                setManualCloseId(e.target.checked ? trade.id : null)
-                                setManualClosePrice('')
+                          {manualCloseId === trade.id ? (
+                            <>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-zinc-500">Close @ ₹</span>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0.01"
+                                  autoFocus
+                                  value={manualClosePrice}
+                                  onChange={e => setManualClosePrice(e.target.value)}
+                                  onKeyDown={e => { if (e.key === 'Enter') handleManualClose(trade.id) }}
+                                  placeholder="Exit price"
+                                  className="w-24 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                                />
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => { setManualCloseId(null); setManualClosePrice('') }}
+                                  className="rounded-lg bg-zinc-100 px-3 py-1.5 text-xs font-semibold text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  onClick={() => handleManualClose(trade.id)}
+                                  disabled={closing === trade.id}
+                                  className="rounded-lg bg-red-50 px-4 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/30"
+                                >
+                                  {closing === trade.id ? 'Closing…' : 'Confirm Close'}
+                                </button>
+                              </div>
+                            </>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setManualCloseId(trade.id)
+                                setManualClosePrice(current !== undefined ? current.toFixed(2) : '')
                               }}
-                              className="h-3.5 w-3.5 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
-                            />
-                            Enter close price manually
-                          </label>
-                          {manualCloseId === trade.id && (
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-zinc-500">₹</span>
-                              <input
-                                type="number"
-                                step="0.01"
-                                min="0.01"
-                                autoFocus
-                                value={manualClosePrice}
-                                onChange={e => setManualClosePrice(e.target.value)}
-                                onKeyDown={e => { if (e.key === 'Enter') handleManualClose(trade.id) }}
-                                placeholder="Exit price"
-                                className="w-24 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
-                              />
-                            </div>
+                              className="rounded-lg bg-red-50 px-4 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/30"
+                            >
+                              Close Position
+                            </button>
                           )}
-                          <button
-                            onClick={() => {
-                              if (manualCloseId === trade.id) {
-                                handleManualClose(trade.id)
-                              } else {
-                                handleClose(trade.id)
-                              }
-                            }}
-                            disabled={closing === trade.id}
-                            className="rounded-lg bg-red-50 px-4 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/30"
-                          >
-                            {closing === trade.id ? 'Closing…' : 'Close Position'}
-                          </button>
                         </div>
                       )}
                     </div>

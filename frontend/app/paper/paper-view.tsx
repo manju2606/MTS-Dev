@@ -177,7 +177,10 @@ export default function PaperView() {
   const [pricesUpdatedAt, setPricesUpdatedAt] = useState<Date | null>(null)
   const [pricesRefreshing, setPricesRefreshing] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<Tab>('open')
+  const [tab, setTab] = useState<Tab>(() => {
+    const t = searchParams.get('tab')
+    return t === 'pending' || t === 'closed' ? t : 'open'
+  })
   const [closing, setClosing] = useState<string | null>(null)
   const [cancelling, setCancelling] = useState<string | null>(null)
   const [manualCloseId, setManualCloseId] = useState<string | null>(null)

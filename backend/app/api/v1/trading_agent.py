@@ -19,6 +19,51 @@ from app.infra.market.hours import is_market_open_ist
 
 router = APIRouter(prefix="/agent", tags=["trading-agent"])
 
+# Topic id -> (href, label) so the chat can offer a clickable link, not just
+# describe where a feature lives.
+_TOPIC_HREFS: dict[str, tuple[str, str]] = {
+    "quick_trade": ("/trade", "Quick Trade"),
+    "limit_pending": ("/paper?tab=pending", "Pending Orders"),
+    "paper_trading": ("/paper", "Paper Trading"),
+    "golden_stock": ("/golden-stock", "Golden Stock"),
+    "btst": ("/btst", "BTST"),
+    "risk": ("/risk", "Risk"),
+    "portfolio_assistant": ("/portfolio/assistant", "Portfolio Assistant"),
+    "portfolio_summary_tab": ("/portfolio/assistant", "Portfolio Assistant"),
+    "sentiment_forecast": ("/sentiment-forecast", "Sentiment Forecast"),
+    "tax": ("/tax", "Tax Report"),
+    "reports": ("/reports", "Reports"),
+    "backtest": ("/backtest", "Backtest"),
+    "strategy_builder": ("/strategy", "Strategy Builder"),
+    "alerts": ("/alerts", "Alerts"),
+    "webhooks": ("/webhooks", "Webhooks"),
+    "broker": ("/broker", "Broker"),
+    "live_trading": ("/live", "Live Trading"),
+    "scanner": ("/scanner", "Scanner"),
+    "screener": ("/screener", "Custom Screener"),
+    "heatmap": ("/heatmap", "Heat Map"),
+    "options": ("/options", "Options Chain"),
+    "calendar": ("/calendar", "Economic Calendar"),
+    "discovery": ("/discovery", "Discovery"),
+    "ml_signals": ("/ml", "ML Signals"),
+    "ai_analysis": ("/ai", "AI Analysis"),
+    "research": ("/research", "Research"),
+    "market_pulse": ("/market-pulse", "Market Pulse"),
+    "watchlists": ("/watchlists", "Watchlists"),
+    "tradingview": ("/tradingview", "TradingView"),
+    "stock_of_day": ("/stock-of-day", "Stock of Day"),
+    "dashboard": ("/dashboard", "Dashboard"),
+}
+
+_TRADE_TAB_LINKS: dict[str, tuple[str, str]] = {
+    "open": ("/paper?tab=open", "Open Trades"),
+    "pending": ("/paper?tab=pending", "Pending Orders"),
+    "closed": ("/paper?tab=closed", "Closed Trades"),
+    "holdings": ("/portfolio/assistant", "Portfolio Assistant"),
+}
+
+_NAV_VERBS = ("open my", "open the", "go to", "take me to", "navigate to", "bring me to")
+
 
 class _Topic:
     def __init__(
@@ -471,7 +516,16 @@ async def _list_holdings(user_id: UUID) -> str:
     return "\n".join(lines)
 
 
-_ACTION_VERBS = ("show", "list", "what are my", "give me", "display", "see my", "check my")
+_ACTION_VERBS = (
+    "show",
+    "list",
+    "what are my",
+    "give me",
+    "display",
+    "see my",
+    "check my",
+    *_NAV_VERBS,
+)
 
 _ACTION_INTENTS: list[tuple[tuple[str, ...], str]] = [
     (("open order", "open position", "open trade"), "open"),
@@ -485,13 +539,17 @@ def _match_action(q: str) -> str | None:
     """Distinguishes "show me my open orders" (fetch real data) from "what is
     a pending order" (explain the concept, handled by the static topics
     below) — only trigger a live data fetch when there's an explicit
-    show/list-style verb alongside the noun."""
+    show/list/open/go-to style verb alongside the noun."""
     if not any(v in q for v in _ACTION_VERBS):
         return None
     for nouns, action in _ACTION_INTENTS:
         if any(n in q for n in nouns):
             return action
     return None
+
+
+def _link(href: str, label: str) -> dict[str, str]:
+    return {"href": href, "label": label}
 
 
 @router.post("/chat")
@@ -502,34 +560,29 @@ async def agent_chat(
 ) -> dict:
     question: str = str(body.get("question", "")).strip()
     if not question:
-        return {"answer": _OVERVIEW, "suggestions": _DEFAULT_SUGGESTIONS}
+        return {"answer": _OVERVIEW, "suggestions": _DEFAULT_SUGGESTIONS, "link": None}
 
     q = question.lower()
 
     if any(kw in q for kw in _GREETING_KEYWORDS) and len(q) < 60:
-        return {"answer": _OVERVIEW, "suggestions": _DEFAULT_SUGGESTIONS}
+        return {"answer": _OVERVIEW, "suggestions": _DEFAULT_SUGGESTIONS, "link": None}
 
     action = _match_action(q)
-    if action == "open":
-        return {
-            "answer": await _list_open_trades(trade_repo, current_user.id),
-            "suggestions": ["Show me my pending orders", "Show me my closed trades"],
-        }
-    if action == "pending":
-        return {
-            "answer": await _list_pending_trades(trade_repo, current_user.id),
-            "suggestions": ["Show me my open orders", "How do pending orders work?"],
-        }
-    if action == "closed":
-        return {
-            "answer": await _list_closed_trades(trade_repo, current_user.id),
-            "suggestions": ["Show me my open orders"],
-        }
-    if action == "holdings":
-        return {
-            "answer": await _list_holdings(current_user.id),
-            "suggestions": ["What does the Summary tab show?"],
-        }
+    if action is not None:
+        href, label = _TRADE_TAB_LINKS[action]
+        if action == "open":
+            answer = await _list_open_trades(trade_repo, current_user.id)
+            suggestions = ["Show me my pending orders", "Show me my closed trades"]
+        elif action == "pending":
+            answer = await _list_pending_trades(trade_repo, current_user.id)
+            suggestions = ["Show me my open orders", "How do pending orders work?"]
+        elif action == "closed":
+            answer = await _list_closed_trades(trade_repo, current_user.id)
+            suggestions = ["Show me my open orders"]
+        else:
+            answer = await _list_holdings(current_user.id)
+            suggestions = ["What does the Summary tab show?"]
+        return {"answer": answer, "suggestions": suggestions, "link": _link(href, label)}
 
     topic = _match_topic(q)
     if topic is None:
@@ -539,6 +592,7 @@ async def agent_chat(
                 + _OVERVIEW
             ),
             "suggestions": _DEFAULT_SUGGESTIONS,
+            "link": None,
         }
 
     answer = topic.answer
@@ -547,4 +601,9 @@ async def agent_chat(
         if context:
             answer = f"{answer}\n\n{context}"
 
-    return {"answer": answer, "suggestions": topic.suggestions}
+    link = None
+    if any(v in q for v in _NAV_VERBS) and topic.id in _TOPIC_HREFS:
+        href, label = _TOPIC_HREFS[topic.id]
+        link = _link(href, label)
+
+    return {"answer": answer, "suggestions": topic.suggestions, "link": link}

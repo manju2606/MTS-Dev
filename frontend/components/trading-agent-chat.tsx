@@ -1,9 +1,11 @@
 'use client'
 
 import { Fragment, useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { askTradingAgent } from '@/lib/api'
+import type { TradingAgentLink } from '@/lib/api'
 
-type ChatMessage = { role: 'user' | 'agent'; text: string; suggestions?: string[] }
+type ChatMessage = { role: 'user' | 'agent'; text: string; suggestions?: string[]; link?: TradingAgentLink | null }
 
 // Lightweight **bold** support — the knowledge base uses it for emphasis and
 // symbol names; no need for a full markdown renderer for a chat bubble.
@@ -27,6 +29,7 @@ const GREETING: ChatMessage = {
 }
 
 export function TradingAgentChat() {
+  const router = useRouter()
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState<ChatMessage[]>([GREETING])
   const [input, setInput] = useState('')
@@ -47,7 +50,7 @@ export function TradingAgentChat() {
     setSending(true)
     try {
       const reply = await askTradingAgent(token, q)
-      setMessages(prev => [...prev, { role: 'agent', text: reply.answer, suggestions: reply.suggestions }])
+      setMessages(prev => [...prev, { role: 'agent', text: reply.answer, suggestions: reply.suggestions, link: reply.link }])
     } catch (e) {
       setMessages(prev => [...prev, { role: 'agent', text: (e as Error).message }])
     } finally {
@@ -84,6 +87,14 @@ export function TradingAgentChat() {
                   >
                     {renderChatText(m.text)}
                   </div>
+                  {m.role === 'agent' && m.link && (
+                    <button
+                      onClick={() => { router.push(m.link!.href); setOpen(false) }}
+                      className="mt-2 flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-indigo-700"
+                    >
+                      Open {m.link.label} →
+                    </button>
+                  )}
                   {m.role === 'agent' && m.suggestions && m.suggestions.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {m.suggestions.map(s => (

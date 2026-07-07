@@ -2961,7 +2961,8 @@ export async function triggerSentimentSnapshot(token: string): Promise<Record<st
 
 // ── Chat Trading Agent ───────────────────────────────────────────────────────
 
-export type TradingAgentReply = { answer: string; suggestions: string[] }
+export type TradingAgentLink = { href: string; label: string }
+export type TradingAgentReply = { answer: string; suggestions: string[]; link?: TradingAgentLink | null }
 
 export async function askTradingAgent(token: string, question: string): Promise<TradingAgentReply> {
   const res = await fetch(`${BASE}/api/v1/agent/chat`, {

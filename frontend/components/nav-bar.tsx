@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import { getMe, getUnreadCount } from '@/lib/api'
 import type { User } from '@/lib/api'
+import { TradingAgentChat } from '@/components/trading-agent-chat'
 
 // ── Icon primitives ───────────────────────────────────────────────────────────
 
@@ -554,6 +555,7 @@ export function NavBar({ active }: { active: string }) {
           </div>
         )}
       </header>
+      {user && <TradingAgentChat />}
     </>
   )
 }

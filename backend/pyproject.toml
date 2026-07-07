@@ -64,6 +64,9 @@ extend-immutable-calls = [
 "app/infra/email/btst_report.py" = ["E501"]
 "app/services/stock_of_day_service.py" = ["E501"]
 "app/infra/monitoring/position_monitor.py" = ["E501"]
+# Trading agent's knowledge base is almost entirely long natural-language
+# answer strings -- same rationale as the email templates above.
+"app/api/v1/trading_agent.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.11"

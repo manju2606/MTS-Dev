@@ -2958,3 +2958,17 @@ export async function triggerSentimentSnapshot(token: string): Promise<Record<st
   if (!r.ok) throw new Error(await r.text())
   return r.json()
 }
+
+// ── Chat Trading Agent ───────────────────────────────────────────────────────
+
+export type TradingAgentReply = { answer: string; suggestions: string[] }
+
+export async function askTradingAgent(token: string, question: string): Promise<TradingAgentReply> {
+  const res = await fetch(`${BASE}/api/v1/agent/chat`, {
+    method: 'POST',
+    headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question }),
+  })
+  if (!res.ok) throw new Error('Trading agent is unavailable right now')
+  return res.json()
+}

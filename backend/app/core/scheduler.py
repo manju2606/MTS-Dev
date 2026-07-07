@@ -39,6 +39,7 @@ async def _run_golden_stock_scan() -> None:
     """Every 15 min, 09:30-15:00 IST weekdays: run Golden Stock Intraday scan."""
     try:
         from app.services.golden_stock_service import run_and_save_golden_stock
+
         await run_and_save_golden_stock()
     except Exception as exc:
         log.error("scheduler.golden_stock.error", error=str(exc))
@@ -50,6 +51,7 @@ async def _resolve_btst_outcomes() -> None:
         from datetime import date, timedelta
 
         from app.services.golden_stock_service import resolve_btst_outcomes
+
         yesterday = (date.today() - timedelta(days=1)).isoformat()
         count = await resolve_btst_outcomes(yesterday)
         log.info("scheduler.btst_resolve.done", date=yesterday, updated=count)
@@ -61,6 +63,7 @@ async def _run_btst_scan() -> None:
     """14:00 IST weekdays: run the BTST (Buy Today, Sell Tomorrow) scan."""
     try:
         from app.services.btst_service import run_and_save_btst
+
         await run_and_save_btst()
     except Exception as exc:
         log.error("scheduler.btst_scan.error", error=str(exc))
@@ -72,6 +75,7 @@ async def _resolve_btst_pick_outcomes() -> None:
         from datetime import date, timedelta
 
         from app.services.btst_service import resolve_btst_outcomes
+
         yesterday = (date.today() - timedelta(days=1)).isoformat()
         count = await resolve_btst_outcomes(yesterday)
         log.info("scheduler.btst_pick_resolve.done", date=yesterday, updated=count)
@@ -82,26 +86,31 @@ async def _resolve_btst_pick_outcomes() -> None:
 async def _run_sotd_generate() -> None:
     """09:30 IST weekdays: pick the day's best stock and optionally auto-trade it."""
     from app.services.stock_of_day_service import generate_and_save_daily_pick
+
     await generate_and_save_daily_pick()
 
 
 async def _run_sotd_price_check() -> None:
     """Every 5 minutes during market hours: check if SotD SL/target hit."""
     from app.services.stock_of_day_service import run_sotd_price_check
+
     await run_sotd_price_check()
 
 
 async def _run_sotd_expire() -> None:
     """15:35 IST weekdays: expire any still-open SotD positions."""
     from app.services.stock_of_day_service import expire_open_picks
+
     await expire_open_picks()
 
 
 async def _resolve_forecast_accuracy() -> None:
     """16:30 IST weekdays: fill actual prices into today's forecast records."""
     from datetime import date
+
     try:
         from app.infra.db.repositories.forecast_repo import ForecastRepository
+
         repo = ForecastRepository()
         updated = await repo.resolve_predictions_for_date(date.today().isoformat())
         log.info("scheduler.forecast_accuracy.done", updated=updated)
@@ -109,9 +118,33 @@ async def _resolve_forecast_accuracy() -> None:
         log.error("scheduler.forecast_accuracy.error", error=str(exc))
 
 
+async def _run_sentiment_snapshot() -> None:
+    """15:35 IST weekdays: capture today's actual market sentiment and, if this
+    week has a forecast, resolve today's forecast day against it."""
+    try:
+        from app.services.sentiment_forecast_service import compute_daily_snapshot
+
+        snap = await compute_daily_snapshot()
+        log.info("scheduler.sentiment_snapshot.done", date=snap.date, label=snap.label)
+    except Exception as exc:
+        log.error("scheduler.sentiment_snapshot.error", error=str(exc))
+
+
+async def _run_weekly_sentiment_forecast() -> None:
+    """09:00 IST Monday: generate this week's Mon-Fri sentiment forecast."""
+    try:
+        from app.services.sentiment_forecast_service import generate_weekly_forecast
+
+        forecast = await generate_weekly_forecast()
+        log.info("scheduler.weekly_sentiment_forecast.done", week_start=forecast.week_start)
+    except Exception as exc:
+        log.error("scheduler.weekly_sentiment_forecast.error", error=str(exc))
+
+
 async def _run_position_check() -> None:
     """Delegate to the position monitor (import kept lazy to avoid circular imports)."""
     from app.infra.monitoring.position_monitor import run_position_check
+
     await run_position_check()
 
 
@@ -121,6 +154,7 @@ async def run_morning_report() -> None:
     await run_full_scan()
     try:
         from app.infra.email.report import send_daily_report
+
         await send_daily_report()
     except Exception as exc:
         log.error("scheduler.morning_report.email_error", error=str(exc))
@@ -131,6 +165,7 @@ async def run_news_refresh() -> None:
     try:
         from app.infra.db.repositories.discovery_repo import DiscoveryRepository
         from app.infra.discovery.news_fetcher import fetch_all_news
+
         items = await fetch_all_news()
         repo = DiscoveryRepository()
         await repo.save_news(items)
@@ -160,21 +195,14 @@ async def run_full_scan() -> None:
         for item in news_items:
             for sym in item.mentioned_symbols:
                 sym_sentiment.setdefault(sym, []).append(item.sentiment_score)
-        avg_sentiment = {
-            sym: sum(scores) / len(scores)
-            for sym, scores in sym_sentiment.items()
-        }
+        avg_sentiment = {sym: sum(scores) / len(scores) for sym, scores in sym_sentiment.items()}
 
         # 2. Score every stock with a bounded concurrency semaphore
-        tasks = [
-            score_stock(sym, name, avg_sentiment.get(sym, 0.0))
-            for sym, name in NSE_UNIVERSE
-        ]
+        tasks = [score_stock(sym, name, avg_sentiment.get(sym, 0.0)) for sym, name in NSE_UNIVERSE]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        scores = [r for r in results if isinstance(r, object) and not isinstance(r, Exception) and r is not None]
-        # mypy: filter properly
         from app.domain.models.discovery import StockScore as _SS
+
         valid: list[_SS] = [r for r in results if isinstance(r, _SS)]
 
         # 3. Persist
@@ -186,6 +214,7 @@ async def run_full_scan() -> None:
         _last_scan_count = len(valid)
         log.info("scheduler.scan.done", scored=len(valid), skipped=len(NSE_UNIVERSE) - len(valid))
         from app.api.v1.discovery import invalidate_picks_cache
+
         invalidate_picks_cache()
     except Exception as exc:
         log.error("scheduler.scan.error", error=str(exc))
@@ -315,7 +344,9 @@ def start_scheduler() -> None:
     # Golden Stock Intraday scan every 15 min, 09:30-15:00 IST (Mon-Fri)
     _scheduler.add_job(
         _run_golden_stock_scan,
-        CronTrigger(day_of_week="mon-fri", hour=9, minute="30,45", second=0, timezone="Asia/Kolkata"),
+        CronTrigger(
+            day_of_week="mon-fri", hour=9, minute="30,45", second=0, timezone="Asia/Kolkata"
+        ),
         id="golden_stock_scan_open",
         name="Golden Stock Intraday Scan (09:30-09:45)",
         max_instances=1,
@@ -323,7 +354,13 @@ def start_scheduler() -> None:
     )
     _scheduler.add_job(
         _run_golden_stock_scan,
-        CronTrigger(day_of_week="mon-fri", hour="10-14", minute="0,15,30,45", second=0, timezone="Asia/Kolkata"),
+        CronTrigger(
+            day_of_week="mon-fri",
+            hour="10-14",
+            minute="0,15,30,45",
+            second=0,
+            timezone="Asia/Kolkata",
+        ),
         id="golden_stock_scan_mid",
         name="Golden Stock Intraday Scan (10:00-14:45)",
         max_instances=1,
@@ -364,6 +401,26 @@ def start_scheduler() -> None:
         CronTrigger(day_of_week="mon-fri", hour=15, minute=35, second=0, timezone="Asia/Kolkata"),
         id="btst_pick_resolve",
         name="Resolve BTST Pick Outcomes",
+        max_instances=1,
+        misfire_grace_time=None,
+    )
+
+    # Capture today's actual market sentiment at 15:35 IST (after market close)
+    _scheduler.add_job(
+        _run_sentiment_snapshot,
+        CronTrigger(day_of_week="mon-fri", hour=15, minute=35, second=0, timezone="Asia/Kolkata"),
+        id="sentiment_snapshot",
+        name="Market Sentiment — Daily Snapshot",
+        max_instances=1,
+        misfire_grace_time=None,
+    )
+
+    # Generate the week's Mon-Fri sentiment forecast at 09:00 IST every Monday
+    _scheduler.add_job(
+        _run_weekly_sentiment_forecast,
+        CronTrigger(day_of_week="mon", hour=9, minute=0, second=0, timezone="Asia/Kolkata"),
+        id="weekly_sentiment_forecast",
+        name="Market Sentiment — Weekly Forecast",
         max_instances=1,
         misfire_grace_time=None,
     )

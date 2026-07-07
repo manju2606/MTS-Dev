@@ -2833,3 +2833,73 @@ export async function getBTSTPerformance(token: string): Promise<Record<string, 
   if (!r.ok) throw new Error(await r.text())
   return r.json()
 }
+
+// ── Market Sentiment Forecast ────────────────────────────────────────────────
+
+export type SentimentForecastDay = {
+  date: string
+  weekday: string
+  forecast_bull_pct: number
+  forecast_label: string
+  actual_bull_pct: number | null
+  actual_label: string | null
+  label_match: boolean | null
+  error_pct: number | null
+  resolved_at: string | null
+}
+
+export type SentimentForecastAccuracy = {
+  days_resolved: number
+  days_correct: number
+  accuracy_pct: number | null
+  avg_error_pct: number | null
+}
+
+export type SentimentForecastInputs = {
+  avg_bull_pct_3d: number
+  days_of_history_used: number
+  vix_value: number | null
+  vix_adjustment: number
+  nifty_momentum_pct: number
+  nifty_adjustment: number
+}
+
+export type WeeklySentimentForecast = {
+  week_start: string
+  generated_at: string
+  inputs: SentimentForecastInputs
+  days: SentimentForecastDay[]
+  accuracy: SentimentForecastAccuracy
+}
+
+export async function getCurrentWeekSentimentForecast(token: string): Promise<WeeklySentimentForecast | null> {
+  const r = await fetch(`${BASE}/api/v1/sentiment-forecast/current-week`, { headers: authHeaders(token) })
+  if (r.status === 404) return null
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+export async function getSentimentForecastWeek(token: string, weekStart: string): Promise<WeeklySentimentForecast | null> {
+  const r = await fetch(`${BASE}/api/v1/sentiment-forecast/week/${weekStart}`, { headers: authHeaders(token) })
+  if (r.status === 404) return null
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+export async function getSentimentForecastHistory(token: string, limit = 12): Promise<WeeklySentimentForecast[]> {
+  const r = await fetch(`${BASE}/api/v1/sentiment-forecast/history?limit=${limit}`, { headers: authHeaders(token) })
+  if (!r.ok) return []
+  return r.json()
+}
+
+export async function generateSentimentForecast(token: string): Promise<WeeklySentimentForecast> {
+  const r = await fetch(`${BASE}/api/v1/sentiment-forecast/generate`, { method: 'POST', headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+export async function triggerSentimentSnapshot(token: string): Promise<Record<string, unknown>> {
+  const r = await fetch(`${BASE}/api/v1/sentiment-forecast/snapshot`, { method: 'POST', headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}

@@ -88,6 +88,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/discovery',    label: 'Discovery',     icon: 'compass',     desc: 'Stock discovery engine' },
       { href: '/heatmap',      label: 'Heat Map',      icon: 'squares',    desc: 'NSE-style market heat map' },
       { href: '/forecast',      label: 'Forecast',       icon: 'trendingUp', desc: 'ML price predictions: day, week, month' },
+      { href: '/sentiment-forecast', label: 'Sentiment Forecast', icon: 'activity', desc: 'Week-ahead market sentiment forecast, tracked vs actual' },
       { href: '/options',        label: 'Options Chain',  icon: 'layers',   desc: 'NSE/BSE options chain, PCR & max pain' },
       { href: '/calendar',       label: 'Economic Calendar', icon: 'calendar', desc: 'F&O expiries, RBI MPC, earnings & holidays' },
       { href: '/screener',       label: 'Custom Screener', icon: 'sliders', desc: 'Multi-factor stock screen across Nifty universes' },

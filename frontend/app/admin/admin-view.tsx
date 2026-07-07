@@ -11,7 +11,7 @@ import {
 } from '@/lib/api'
 import type { AdminStats, AdminUser, EmailRecipient, SotDSettings, OrgData, AuditEvent, AuditPage } from '@/lib/api'
 
-type Tab = 'users' | 'email-list' | 'trading-rules' | 'organizations' | 'audit'
+type Tab = 'users' | 'email-list' | 'trading-rules' | 'organizations' | 'audit' | 'monitoring'
 
 function SendReportButton({ tokenRef }: { tokenRef: React.RefObject<string> }) {
   const [busy, setBusy] = useState(false)
@@ -632,6 +632,7 @@ export default function AdminView() {
             { key: 'trading-rules', label: 'Trading Rules' },
             { key: 'organizations', label: 'Organizations' },
             { key: 'audit', label: 'Audit Log' },
+            { key: 'monitoring', label: 'Monitoring' },
           ] as { key: Tab; label: string }[]).map(({ key, label }) => (
             <button
               key={key}
@@ -719,6 +720,9 @@ export default function AdminView() {
 
         {/* Audit Log tab */}
         {tab === 'audit' && <AuditPanel tokenRef={tokenRef} />}
+
+        {/* Monitoring tab */}
+        {tab === 'monitoring' && <MonitoringPanel />}
       </main>
     </div>
   )
@@ -828,6 +832,70 @@ function AuditPanel({ tokenRef }: { tokenRef: React.RefObject<string> }) {
           )}
         </>
       )}
+    </div>
+  )
+}
+
+// ── Monitoring tab ────────────────────────────────────────────────────────────
+
+const GRAFANA_URL = process.env.NEXT_PUBLIC_GRAFANA_URL || 'http://localhost:3001'
+
+function MonitoringCard({
+  title, desc, href, accent,
+}: { title: string; desc: string; href?: string; accent: string }) {
+  const content = (
+    <div className="flex h-full flex-col rounded-xl border border-zinc-200 bg-white p-5 transition-colors hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700">
+      <div className={`mb-3 h-1.5 w-10 rounded-full ${accent}`} />
+      <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">{title}</p>
+      <p className="mt-1 flex-1 text-xs text-zinc-500 dark:text-zinc-400">{desc}</p>
+      {href && (
+        <span className="mt-3 text-xs font-semibold text-indigo-600 dark:text-indigo-400">Open →</span>
+      )}
+    </div>
+  )
+  return href ? (
+    <a href={href} target="_blank" rel="noopener noreferrer">{content}</a>
+  ) : content
+}
+
+function MonitoringPanel() {
+  return (
+    <div className="space-y-5">
+      <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-xs text-indigo-700 dark:border-indigo-900 dark:bg-indigo-950/30 dark:text-indigo-300">
+        These open in a new tab and only work from this machine (Grafana isn&apos;t proxied through
+        nginx or the ngrok tunnel). Infrastructure alerts also show up right here in the app — see
+        the bell icon.
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <MonitoringCard
+          title="Grafana Dashboard"
+          desc="API request rate/latency/errors, per-container CPU & memory, datastore health, Postgres connections."
+          href={`${GRAFANA_URL}/d/mts-overview/mts-platform-overview`}
+          accent="bg-orange-400"
+        />
+        <MonitoringCard
+          title="Prometheus"
+          desc="Raw metrics and alert rule status. Bound to localhost only — not reachable from other devices."
+          href={`${GRAFANA_URL.replace(':3001', ':9090')}`}
+          accent="bg-red-400"
+        />
+        <MonitoringCard
+          title="Alertmanager"
+          desc="Active/silenced alerts. Firing and resolved alerts are also pushed to admin notifications automatically."
+          href={`${GRAFANA_URL.replace(':3001', ':9093')}`}
+          accent="bg-amber-400"
+        />
+      </div>
+
+      <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+        <p className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-50">What&apos;s wired up</p>
+        <ul className="space-y-2 text-xs text-zinc-600 dark:text-zinc-300">
+          <li>• <strong>Sentry</strong> — error tracking for both backend and frontend (needs SENTRY_DSN configured to activate)</li>
+          <li>• <strong>Prometheus + Grafana</strong> — API metrics, container CPU/memory, Postgres/Redis/MongoDB health, host disk/memory</li>
+          <li>• <strong>Alertmanager</strong> — service-down, high error rate, high latency, disk/memory pressure, too many DB connections — routed straight into this app&apos;s notification bell</li>
+        </ul>
+      </div>
     </div>
   )
 }

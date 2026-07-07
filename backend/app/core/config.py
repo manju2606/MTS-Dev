@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     # Observability — Sentry error tracking (optional; no-ops if unset)
     SENTRY_DSN: str | None = None
 
+    # Observability — shared secret Alertmanager must send so the webhook
+    # receiver (reachable at /api/v1/alerting/webhook, which nginx proxies
+    # publicly along with the rest of /api/) can't be spammed by strangers.
+    ALERTMANAGER_WEBHOOK_SECRET: str | None = None
+
     # Phase 2
     ANTHROPIC_API_KEY: str | None = None
     PAPER_CAPITAL: float = 100_000.0  # default paper trading capital in INR

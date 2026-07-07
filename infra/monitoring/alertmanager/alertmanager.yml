@@ -1,0 +1,21 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: mts-backend
+  group_by: ["alertname"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: mts-backend
+    webhook_configs:
+      - url: http://backend:8000/api/v1/alerting/webhook
+        send_resolved: true
+        http_config:
+          # Sends "Authorization: Bearer <contents of this file>". The file
+          # itself is untracked (see webhook_secret.example) -- its content
+          # must match ALERTMANAGER_WEBHOOK_SECRET in backend/.env.prod.
+          authorization:
+            credentials_file: /etc/alertmanager/webhook_secret

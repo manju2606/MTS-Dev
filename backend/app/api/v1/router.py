@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.v1 import (
     admin,
     ai,
+    alerting,
     alerts,
     audit_api,
     auth,
@@ -81,3 +82,4 @@ router.include_router(golden_stock.router)
 router.include_router(btst.router)
 router.include_router(sentiment_forecast.router)
 router.include_router(trading_agent.router)
+router.include_router(alerting.router)

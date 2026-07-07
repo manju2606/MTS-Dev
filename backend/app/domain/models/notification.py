@@ -11,6 +11,7 @@ NOTIFICATION_TYPES = [
     "strategy.condition_met",
     "risk.limit_breached",
     "system.info",
+    "infra.alert",
 ]
 
 

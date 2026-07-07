@@ -24,6 +24,7 @@ htmlcov/
 *.env
 backend/.env.dev
 backend/.env.prod
+infra/monitoring/alertmanager/webhook_secret
 
 # Node / Next.js
 node_modules/

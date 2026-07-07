@@ -1334,6 +1334,15 @@ export async function marketScan(
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+export async function cancelTrade(token: string, tradeId: string): Promise<Trade> {
+  const res = await fetch(`${BASE}/api/v1/paper/trades/${tradeId}/cancel`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
 export async function closeTrade(token: string, tradeId: string, exitPrice?: number): Promise<Trade> {
   const qs = exitPrice != null ? `?exit_price=${exitPrice}` : ''
   const res = await fetch(`${BASE}/api/v1/paper/trades/${tradeId}/close${qs}`, {

@@ -132,7 +132,9 @@ async def run_position_check() -> None:
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
     from app.core.config import settings
+    from app.domain.models.trade import TradeStatus
     from app.infra.db.repositories.trade_repo import SQLTradeRepository
+    from app.infra.market.hours import is_market_open_ist
     from app.infra.market_data.yfinance_client import YFinanceClient
 
     engine = create_async_engine(settings.DATABASE_URL)
@@ -142,15 +144,16 @@ async def run_position_check() -> None:
         async with Session() as session:
             repo = SQLTradeRepository(session)
             trades = await repo.list_all_open()
+            pending = await repo.list_all_pending() if is_market_open_ist() else []
 
-        if not trades:
+        if not trades and not pending:
             await engine.dispose()
             return
 
-        log.info("position_monitor.checking", count=len(trades))
+        log.info("position_monitor.checking", open=len(trades), pending=len(pending))
 
-        # Fetch current prices for all unique symbols
-        symbols = list({t.symbol for t in trades})
+        # Fetch current prices for all unique symbols (open + pending combined)
+        symbols = list({t.symbol for t in trades} | {t.symbol for t in pending})
         client = YFinanceClient()
         results = await asyncio.gather(
             *[client.get_quote(s) for s in symbols], return_exceptions=True
@@ -206,6 +209,32 @@ async def run_position_check() -> None:
 
         if email_tasks:
             await asyncio.gather(*email_tasks, return_exceptions=True)
+
+        # Trigger PENDING (LIMIT) orders whose price has been reached — only
+        # runs when is_market_open_ist() gated the pending fetch above.
+        if pending:
+            async with Session() as session:
+                repo = SQLTradeRepository(session)
+                for trade in pending:
+                    price = prices.get(trade.symbol)
+                    if price is None:
+                        continue
+                    is_buy = trade.signal.value == "BUY"
+                    triggered = (is_buy and price <= trade.entry_price) or (
+                        not is_buy and price >= trade.entry_price
+                    )
+                    if not triggered:
+                        continue
+                    trade.status = TradeStatus.OPEN
+                    trade.opened_at = datetime.utcnow()
+                    await repo.update(trade)
+                    log.info(
+                        "position_monitor.pending_triggered",
+                        symbol=trade.symbol,
+                        trade_id=str(trade.id),
+                        limit_price=trade.entry_price,
+                        trigger_price=price,
+                    )
 
     except Exception as exc:
         log.error("position_monitor.error", error=str(exc))

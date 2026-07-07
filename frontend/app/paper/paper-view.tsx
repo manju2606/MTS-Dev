@@ -4,7 +4,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { NavBar } from '@/components/nav-bar'
 import {
-  closeTrade, getHistory, getJournalEntry, getMe, getQuote,
+  cancelTrade, closeTrade, getHistory, getJournalEntry, getMe, getQuote,
   getSotDSettings, listTrades, listWatchlists, placeTrade, saveJournalEntry, searchStocks, updateSotDSettings,
 } from '@/lib/api'
 import type { ChartPeriod, HistoryBar, JournalEntry, PlaceTradeBody, SotDSettings, StockSearchResult, Trade, User, Watchlist } from '@/lib/api'
@@ -85,7 +85,7 @@ function SymbolSearch({
   )
 }
 
-type Tab = 'open' | 'closed'
+type Tab = 'open' | 'pending' | 'closed'
 type JournalDraft = { notes: string; rating: number; tags: string }
 
 // DB timestamps are stored as UTC without 'Z' suffix — append it so JS
@@ -179,6 +179,7 @@ export default function PaperView() {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('open')
   const [closing, setClosing] = useState<string | null>(null)
+  const [cancelling, setCancelling] = useState<string | null>(null)
   const [manualCloseId, setManualCloseId] = useState<string | null>(null)
   const [manualClosePrice, setManualClosePrice] = useState('')
 
@@ -250,7 +251,7 @@ export default function PaperView() {
   const fetchTrades = useCallback(async () => {
     const all = await listTrades(tokenRef.current)
     setTrades(all)
-    await fetchPrices(all.filter(t => t.status === 'open'))
+    await fetchPrices(all.filter(t => t.status === 'open' || t.status === 'pending'))
   }, [fetchPrices])
 
   useEffect(() => {
@@ -272,16 +273,16 @@ export default function PaperView() {
       .then(async (all) => {
         setTrades(all)
         localStorage.setItem('mts_paper_trades_cache', JSON.stringify(all))
-        await fetchPrices(all.filter(tr => tr.status === 'open'))
+        await fetchPrices(all.filter(tr => tr.status === 'open' || tr.status === 'pending'))
       })
       .catch(() => { localStorage.removeItem('mts_token'); router.replace('/login') })
       .finally(() => setLoading(false))
   }, [router, fetchPrices])
 
   useEffect(() => {
-    const open = trades.filter(t => t.status === 'open')
-    if (open.length === 0) return
-    const id = setInterval(() => fetchPrices(open), 15000)
+    const live = trades.filter(t => t.status === 'open' || t.status === 'pending')
+    if (live.length === 0) return
+    const id = setInterval(() => fetchPrices(live), 15000)
     return () => clearInterval(id)
   }, [trades, fetchPrices])
 
@@ -309,9 +310,10 @@ export default function PaperView() {
     }
     setFormLoading(true)
     try {
-      await placeTrade(tokenRef.current, body)
+      const placedTrade = await placeTrade(tokenRef.current, body)
       setSymbol(''); setSymbolFull(''); setStopLoss(''); setTarget(''); setQuantity(''); setLimitPrice('')
       await fetchTrades()
+      if (placedTrade.status === 'pending') setTab('pending')
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Failed to place trade')
     } finally {
@@ -340,6 +342,18 @@ export default function PaperView() {
       return
     }
     handleClose(tradeId, price)
+  }
+
+  async function handleCancel(tradeId: string) {
+    setCancelling(tradeId)
+    try {
+      const updated = await cancelTrade(tokenRef.current, tradeId)
+      setTrades(prev => prev.map(t => t.id === tradeId ? updated : t))
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to cancel order')
+    } finally {
+      setCancelling(null)
+    }
   }
 
   async function openJournal(tradeId: string) {
@@ -390,8 +404,9 @@ export default function PaperView() {
   }
 
   const openTrades = trades.filter(t => t.status === 'open')
+  const pendingTrades = trades.filter(t => t.status === 'pending')
   const closedTrades = trades.filter(t => t.status === 'closed')
-  const shown = tab === 'open' ? openTrades : closedTrades
+  const shown = tab === 'open' ? openTrades : tab === 'pending' ? pendingTrades : closedTrades
 
   if (loading) {
     return (
@@ -564,7 +579,7 @@ export default function PaperView() {
         <section>
           <div className="mb-4 flex items-center justify-between">
             <div className="flex items-center gap-1">
-              {(['open', 'closed'] as Tab[]).map(t => (
+              {(['open', 'pending', 'closed'] as Tab[]).map(t => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
@@ -574,7 +589,7 @@ export default function PaperView() {
                       : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'
                   }`}
                 >
-                  {t === 'open' ? `Open (${openTrades.length})` : `Closed (${closedTrades.length})`}
+                  {t === 'open' ? `Open (${openTrades.length})` : t === 'pending' ? `Pending (${pendingTrades.length})` : `Closed (${closedTrades.length})`}
                 </button>
               ))}
             </div>
@@ -599,8 +614,61 @@ export default function PaperView() {
           {shown.length === 0 ? (
             <div className="rounded-xl border border-zinc-200 bg-white px-4 py-12 text-center dark:border-zinc-800 dark:bg-zinc-900">
               <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                {tab === 'open' ? 'No open trades. Place a trade above.' : 'No closed trades yet.'}
+                {tab === 'open' ? 'No open trades. Place a trade above.'
+                  : tab === 'pending' ? 'No pending LIMIT orders.'
+                  : 'No closed trades yet.'}
               </p>
+            </div>
+          ) : tab === 'pending' ? (
+            <div className="space-y-3">
+              {pendingTrades.map(trade => {
+                const current = prices[trade.symbol]
+                const slPct = (trade.stop_loss - trade.entry_price) / trade.entry_price * 100
+                const tgtPct = (trade.target - trade.entry_price) / trade.entry_price * 100
+                return (
+                  <div key={trade.id} className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg font-bold text-zinc-900 dark:text-zinc-50">{trade.symbol.replace('.NS', '').replace('.BO', '')}</span>
+                          <span className="text-xs text-zinc-400">{trade.exchange}</span>
+                          <SignalBadge signal={trade.signal} />
+                          <span className="inline-block rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-400">
+                            LIMIT · Pending
+                          </span>
+                        </div>
+                        <p className="mt-0.5 text-[11px] text-zinc-400">
+                          Will open when LTP {trade.signal === 'BUY' ? 'falls to' : 'rises to'} ₹{trade.entry_price.toFixed(2)} during market hours
+                          {current !== undefined && <> · Current ₹{current.toFixed(2)}</>}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleCancel(trade.id)}
+                        disabled={cancelling === trade.id}
+                        className="rounded-lg bg-zinc-100 px-4 py-1.5 text-xs font-semibold text-zinc-600 hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                      >
+                        {cancelling === trade.id ? 'Cancelling…' : 'Cancel Order'}
+                      </button>
+                    </div>
+                    <div className="mt-4 grid grid-cols-3 gap-x-4 gap-y-2 border-t border-zinc-100 pt-3 text-xs dark:border-zinc-800 sm:grid-cols-6">
+                      {[
+                        { label: 'Buy/Sell Price', value: `₹${trade.entry_price.toFixed(2)}` },
+                        { label: 'Current', value: current !== undefined ? `₹${current.toFixed(2)}` : '—' },
+                        { label: 'Stop Loss', value: `₹${trade.stop_loss.toFixed(2)}`, sub: `${slPct.toFixed(1)}%`, red: true },
+                        { label: 'Target', value: `₹${trade.target.toFixed(2)}`, sub: `+${tgtPct.toFixed(1)}%`, green: true },
+                        { label: 'Qty', value: trade.quantity },
+                        { label: 'R:R', value: trade.risk_reward_ratio.toFixed(2) },
+                      ].map(({ label, value, sub, red, green }) => (
+                        <div key={label}>
+                          <p className="text-zinc-400">{label}</p>
+                          <p className={`font-semibold font-mono ${red ? 'text-red-500 dark:text-red-400' : green ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-800 dark:text-zinc-200'}`}>{value}</p>
+                          {sub && <p className={`text-[10px] font-mono ${red ? 'text-red-400' : 'text-emerald-500'}`}>{sub}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           ) : tab === 'open' ? (
             <div className="space-y-3">

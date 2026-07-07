@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from app.api.deps import CurrentUser, MarketDataDep, RiskDep, TradeDep, require_role
 from app.domain.models.trade import Trade, TradeMode, TradeSignal, TradeStatus
 from app.domain.models.user import UserRole
+from app.infra.market.hours import is_market_open_ist
 
 _trader_or_admin = Depends(require_role(UserRole.ADMIN, UserRole.TRADER))
 
@@ -87,6 +88,18 @@ async def place_trade(
             detail="Risk check failed: " + "; ".join(risk.violations),
         )
 
+    is_limit_order = body.limit_price is not None
+    if not is_limit_order and not is_market_open_ist():
+        # A MARKET order fills at the live LTP right now — with the market
+        # closed there's no live price to fill at, so reject rather than
+        # silently opening at a stale quote.
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Market is closed. NSE trading hours are 9:15 AM-3:30 PM IST, Monday-Friday.",
+        )
+
+    # LIMIT orders queue as PENDING and only open once the live LTP reaches
+    # the requested price during market hours (see position_monitor).
     trade = Trade(
         user_id=current_user.id,
         symbol=quote.symbol,
@@ -97,8 +110,8 @@ async def place_trade(
         target=body.target,
         quantity=body.quantity,
         mode=TradeMode.PAPER,
-        status=TradeStatus.OPEN,
-        opened_at=datetime.utcnow(),
+        status=TradeStatus.PENDING if is_limit_order else TradeStatus.OPEN,
+        opened_at=None if is_limit_order else datetime.utcnow(),
     )
     saved = await repo.create(trade)
     return _trade_dict(saved)
@@ -159,5 +172,26 @@ async def close_trade(
     trade.closed_at = datetime.utcnow()
     trade.status = TradeStatus.CLOSED
 
+    updated = await repo.update(trade)
+    return _trade_dict(updated)
+
+
+@router.post("/trades/{trade_id}/cancel", dependencies=[_trader_or_admin])
+async def cancel_trade(
+    trade_id: UUID,
+    current_user: CurrentUser,
+    repo: TradeDep,
+) -> dict:
+    """Cancel a PENDING (unfilled LIMIT) order before it triggers."""
+    trade = await repo.get_by_id(trade_id)
+    if not trade or trade.user_id != current_user.id:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Trade not found")
+    if trade.status != TradeStatus.PENDING:
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail=f"Only pending orders can be cancelled (trade is {trade.status})",
+        )
+
+    trade.status = TradeStatus.CANCELLED
     updated = await repo.update(trade)
     return _trade_dict(updated)

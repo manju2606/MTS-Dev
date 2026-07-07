@@ -238,6 +238,7 @@ function TradeTicket({
   const [placing, setPlacing] = useState(false)
   const [placeError, setPlaceError] = useState('')
   const [placed, setPlaced] = useState(false)
+  const [placedPending, setPlacedPending] = useState(false)
   const [showChart, setShowChart] = useState(false)
   const [chartPeriod, setChartPeriod] = useState<ChartPeriod>('1D')
   const [chartBars, setChartBars] = useState<HistoryBar[]>([])
@@ -264,6 +265,7 @@ function TradeTicket({
     setLimitPrice(ltp)
     setCheckResult(null)
     setPlaced(false)
+    setPlacedPending(false)
     setPlaceError('')
   }, [rec, ltp])
 
@@ -286,10 +288,11 @@ function TradeTicket({
     setPlacing(true)
     setPlaceError('')
     try {
-      await placeTrade(token, {
+      const trade = await placeTrade(token, {
         symbol, signal, stop_loss: stopLoss, target, quantity,
         limit_price: orderType === 'LIMIT' ? limitPrice : undefined,
       })
+      setPlacedPending(trade.status === 'pending')
       setPlaced(true)
     } catch (e) {
       setPlaceError((e as Error).message)
@@ -409,7 +412,9 @@ function TradeTicket({
 
       {placed && (
         <div className="mb-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
-          Paper trade placed successfully.
+          {placedPending
+            ? `Order queued — will open automatically once the price reaches ${fmtINR(entry)} during market hours.`
+            : 'Paper trade placed successfully.'}
         </div>
       )}
 

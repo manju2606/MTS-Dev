@@ -40,6 +40,15 @@ class SQLTradeRepository(TradeRepository):
         )
         return [row.to_domain() for row in result.scalars()]
 
+    async def list_all_pending(self) -> list[Trade]:
+        """Return every PENDING (unfilled LIMIT) trade across all users."""
+        result = await self._session.execute(
+            select(TradeORM)
+            .where(TradeORM.status == TradeStatus.PENDING.value)
+            .order_by(TradeORM.created_at.desc())
+        )
+        return [row.to_domain() for row in result.scalars()]
+
     async def update(self, trade: Trade) -> Trade:
         orm = TradeORM.from_domain(trade)
         merged = await self._session.merge(orm)

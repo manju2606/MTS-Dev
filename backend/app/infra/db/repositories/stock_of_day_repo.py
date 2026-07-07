@@ -44,6 +44,7 @@ class StockOfDayRepository:
 
     async def update(self, sotd: StockOfDay) -> None:
         from bson import ObjectId
+
         if not sotd.id:
             return
         patch = {
@@ -87,12 +88,14 @@ class StockOfDayRepository:
         event: str,
         details: dict,
     ) -> None:
-        await self._journal.insert_one({
-            "date": date_str,
-            "event": event,
-            "details": details,
-            "logged_at": datetime.utcnow(),
-        })
+        await self._journal.insert_one(
+            {
+                "date": date_str,
+                "event": event,
+                "details": details,
+                "logged_at": datetime.utcnow(),
+            }
+        )
 
     async def get_journal(self, date_str: str) -> list[dict]:
         cursor = self._journal.find({"date": date_str}).sort("logged_at", 1)
@@ -129,22 +132,25 @@ class StockOfDayRepository:
     async def save_settings(self, cfg: SotDSettings) -> SotDSettings:
         await self._settings_col.update_one(
             {"_id": "singleton"},
-            {"$set": {
-                "auto_trade_enabled": cfg.auto_trade_enabled,
-                "threshold": cfg.threshold,
-                "max_daily_trades": cfg.max_daily_trades,
-                "market_hours_only": cfg.market_hours_only,
-                "paper_trade_quantity": cfg.paper_trade_quantity,
-                "quantity_type": cfg.quantity_type,
-                "paper_capital": cfg.paper_capital,
-                "updated_at": datetime.utcnow(),
-            }},
+            {
+                "$set": {
+                    "auto_trade_enabled": cfg.auto_trade_enabled,
+                    "threshold": cfg.threshold,
+                    "max_daily_trades": cfg.max_daily_trades,
+                    "market_hours_only": cfg.market_hours_only,
+                    "paper_trade_quantity": cfg.paper_trade_quantity,
+                    "quantity_type": cfg.quantity_type,
+                    "paper_capital": cfg.paper_capital,
+                    "updated_at": datetime.utcnow(),
+                }
+            },
             upsert=True,
         )
         return cfg
 
 
 # ── Serialisation ─────────────────────────────────────────────────────────────
+
 
 def _to_doc(s: StockOfDay) -> dict:
     return {

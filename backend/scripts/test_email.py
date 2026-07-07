@@ -27,44 +27,148 @@ def _fake_picks():
     from app.domain.models.discovery import StockScore
 
     data = [
-        ("RELIANCE.NS", "Reliance Industries", 81.5, "STRONG_BUY", 2448.0, 2375.0, [2540.0, 2640.0, 2750.0], 2.35, "3–5 days",
-         82.0, 79.0, 76.0, 50.0, ["MACD bullish crossover", "Volume surge 2.3×", "SMA-20 > SMA-50 uptrend"]),
-        ("INFY.NS",     "Infosys",              76.2, "STRONG_BUY", 1812.0, 1755.0, [1880.0, 1950.0, 2020.0], 1.96, "5–7 days",
-         74.0, 80.0, 71.0, 50.0, ["RSI recovering from oversold", "Bullish news sentiment", "BB lower bounce"]),
-        ("HDFCBANK.NS", "HDFC Bank",            68.8, "BUY",        1624.0, 1575.0, [1680.0, 1740.0, 1800.0], 1.63, "3–5 days",
-         70.0, 65.0, 73.0, 50.0, ["Full bullish alignment (5 MAs)", "Volume confirmation"]),
-        ("TCS.NS",      "Tata Consultancy",     65.1, "BUY",        3910.0, 3790.0, [4050.0, 4200.0, 4350.0], 1.67, "5–7 days",
-         66.0, 62.0, 68.0, 50.0, ["MACD signal crossover", "RSI momentum"]),
-        ("WIPRO.NS",    "Wipro",                58.4, "WATCH",      480.5,  462.0,  [500.0,  518.0,  535.0],  1.43, "2–3 days",
-         60.0, 55.0, 58.0, 50.0, ["BB squeeze — potential breakout", "Volume building"]),
-        ("BAJFINANCE.NS","Bajaj Finance",        55.7, "WATCH",      7180.0, 6950.0, [7420.0, 7650.0, 7880.0], 1.48, "5–7 days",
-         58.0, 52.0, 57.0, 50.0, ["RSI at 45 — approaching buy zone"]),
+        (
+            "RELIANCE.NS",
+            "Reliance Industries",
+            81.5,
+            "STRONG_BUY",
+            2448.0,
+            2375.0,
+            [2540.0, 2640.0, 2750.0],
+            2.35,
+            "3–5 days",
+            82.0,
+            79.0,
+            76.0,
+            50.0,
+            ["MACD bullish crossover", "Volume surge 2.3×", "SMA-20 > SMA-50 uptrend"],
+        ),
+        (
+            "INFY.NS",
+            "Infosys",
+            76.2,
+            "STRONG_BUY",
+            1812.0,
+            1755.0,
+            [1880.0, 1950.0, 2020.0],
+            1.96,
+            "5–7 days",
+            74.0,
+            80.0,
+            71.0,
+            50.0,
+            ["RSI recovering from oversold", "Bullish news sentiment", "BB lower bounce"],
+        ),
+        (
+            "HDFCBANK.NS",
+            "HDFC Bank",
+            68.8,
+            "BUY",
+            1624.0,
+            1575.0,
+            [1680.0, 1740.0, 1800.0],
+            1.63,
+            "3–5 days",
+            70.0,
+            65.0,
+            73.0,
+            50.0,
+            ["Full bullish alignment (5 MAs)", "Volume confirmation"],
+        ),
+        (
+            "TCS.NS",
+            "Tata Consultancy",
+            65.1,
+            "BUY",
+            3910.0,
+            3790.0,
+            [4050.0, 4200.0, 4350.0],
+            1.67,
+            "5–7 days",
+            66.0,
+            62.0,
+            68.0,
+            50.0,
+            ["MACD signal crossover", "RSI momentum"],
+        ),
+        (
+            "WIPRO.NS",
+            "Wipro",
+            58.4,
+            "WATCH",
+            480.5,
+            462.0,
+            [500.0, 518.0, 535.0],
+            1.43,
+            "2–3 days",
+            60.0,
+            55.0,
+            58.0,
+            50.0,
+            ["BB squeeze — potential breakout", "Volume building"],
+        ),
+        (
+            "BAJFINANCE.NS",
+            "Bajaj Finance",
+            55.7,
+            "WATCH",
+            7180.0,
+            6950.0,
+            [7420.0, 7650.0, 7880.0],
+            1.48,
+            "5–7 days",
+            58.0,
+            52.0,
+            57.0,
+            50.0,
+            ["RSI at 45 — approaching buy zone"],
+        ),
     ]
 
     picks = []
     for i, row in enumerate(data):
-        sym, name, score, signal, entry, stop, targets, rr, hold, tech, news, ml, social, patterns = row
-        picks.append(StockScore(
-            id=uuid.uuid4(),
-            symbol=sym,
-            name=name,
-            score=score,
-            signal=signal,
-            confidence=score / 100,
-            entry_price=entry,
-            stop_loss=stop,
-            targets=targets,
-            holding_period=hold,
-            risk_reward_ratio=rr,
-            technical_score=tech,
-            news_score=news,
-            ml_score=ml,
-            social_score=social,
-            patterns=patterns,
-            news_summary="",
-            explanation=f"{signal}: Technical {tech:.0f}/100 · News {news:.0f}/100 · ML {ml:.0f}/100.",
-            scanned_at=datetime.utcnow() - timedelta(minutes=i * 2),
-        ))
+        (
+            sym,
+            name,
+            score,
+            signal,
+            entry,
+            stop,
+            targets,
+            rr,
+            hold,
+            tech,
+            news,
+            ml,
+            social,
+            patterns,
+        ) = row
+        picks.append(
+            StockScore(
+                id=uuid.uuid4(),
+                symbol=sym,
+                name=name,
+                score=score,
+                signal=signal,
+                confidence=score / 100,
+                entry_price=entry,
+                stop_loss=stop,
+                targets=targets,
+                holding_period=hold,
+                risk_reward_ratio=rr,
+                technical_score=tech,
+                news_score=news,
+                ml_score=ml,
+                social_score=social,
+                patterns=patterns,
+                news_summary="",
+                explanation=(
+                    f"{signal}: Technical {tech:.0f}/100 · News {news:.0f}/100 · "
+                    f"ML {ml:.0f}/100."
+                ),
+                scanned_at=datetime.utcnow() - timedelta(minutes=i * 2),
+            )
+        )
     return picks
 
 
@@ -93,7 +197,10 @@ async def run(send: bool, to: str | None) -> None:
 
     recipient = to or settings.REPORT_TO_EMAIL or settings.SMTP_USER
     if not recipient:
-        print("\n  ERROR: No recipient. Set REPORT_TO_EMAIL in backend/.env or pass --to addr@example.com")
+        print(
+            "\n  ERROR: No recipient. Set REPORT_TO_EMAIL in backend/.env "
+            "or pass --to addr@example.com"
+        )
         sys.exit(1)
 
     # Check credentials

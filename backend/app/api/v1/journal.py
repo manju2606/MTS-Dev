@@ -19,7 +19,7 @@ def _collection():
 
 class JournalUpsertRequest(BaseModel):
     notes: str = ""
-    rating: int = 3       # 1–5 stars
+    rating: int = 3  # 1–5 stars
     tags: list[str] = []
 
 
@@ -45,20 +45,27 @@ async def upsert_entry(
     if existing:
         await col.update_one(
             {"trade_id": trade_id, "user_id": str(current_user.id)},
-            {"$set": {
-                "notes": body.notes, "rating": body.rating, "tags": body.tags, "updated_at": now
-            }},
+            {
+                "$set": {
+                    "notes": body.notes,
+                    "rating": body.rating,
+                    "tags": body.tags,
+                    "updated_at": now,
+                }
+            },
         )
     else:
-        await col.insert_one({
-            "trade_id": trade_id,
-            "user_id": str(current_user.id),
-            "notes": body.notes,
-            "rating": body.rating,
-            "tags": body.tags,
-            "created_at": now,
-            "updated_at": now,
-        })
+        await col.insert_one(
+            {
+                "trade_id": trade_id,
+                "user_id": str(current_user.id),
+                "notes": body.notes,
+                "rating": body.rating,
+                "tags": body.tags,
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
     doc = await col.find_one({"trade_id": trade_id, "user_id": str(current_user.id)})
     doc["_id"] = str(doc["_id"])  # type: ignore[index]
     return doc

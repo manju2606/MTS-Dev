@@ -6,6 +6,7 @@ Falls back to an empty list -- callers decide how to degrade -- rather than
 raising, since this file is regenerated periodically and a stale checkout
 without it shouldn't take down search.
 """
+
 import csv
 from functools import lru_cache
 from pathlib import Path
@@ -43,20 +44,22 @@ def load_stock_master() -> list[StockMasterRow]:
     rows: list[StockMasterRow] = []
     with CSV_PATH.open(encoding="utf-8", newline="") as f:
         for raw in csv.DictReader(f):
-            rows.append({
-                "symbol": raw["symbol"],
-                "yahoo_symbol": raw["yahoo_symbol"],
-                "name": raw["company_name"],
-                "sector": raw["nifty_industry"] or raw["segment"],
-                "segment": raw["segment"],
-                "exchange": raw["exchange"],
-                "previous_symbol": raw.get("previous_symbol") or "",
-                "previous_name": raw.get("previous_company_name") or "",
-                "in_nifty50": raw.get("in_nifty50", "").strip().lower() == "true",
-                "in_nifty_next50": raw.get("in_nifty_next50", "").strip().lower() == "true",
-                "in_nifty100": raw.get("in_nifty100", "").strip().lower() == "true",
-                "in_nifty200": raw.get("in_nifty200", "").strip().lower() == "true",
-                "in_nifty500": raw.get("in_nifty500", "").strip().lower() == "true",
-            })
+            rows.append(
+                {
+                    "symbol": raw["symbol"],
+                    "yahoo_symbol": raw["yahoo_symbol"],
+                    "name": raw["company_name"],
+                    "sector": raw["nifty_industry"] or raw["segment"],
+                    "segment": raw["segment"],
+                    "exchange": raw["exchange"],
+                    "previous_symbol": raw.get("previous_symbol") or "",
+                    "previous_name": raw.get("previous_company_name") or "",
+                    "in_nifty50": raw.get("in_nifty50", "").strip().lower() == "true",
+                    "in_nifty_next50": raw.get("in_nifty_next50", "").strip().lower() == "true",
+                    "in_nifty100": raw.get("in_nifty100", "").strip().lower() == "true",
+                    "in_nifty200": raw.get("in_nifty200", "").strip().lower() == "true",
+                    "in_nifty500": raw.get("in_nifty500", "").strip().lower() == "true",
+                }
+            )
     log.info("stock_master.loaded", count=len(rows), path=str(CSV_PATH))
     return rows

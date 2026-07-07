@@ -17,34 +17,44 @@ def _email() -> str:
 async def registered(client: AsyncClient) -> dict:
     email = _email()
     password = "Secure123!"
-    resp = await client.post(f"{BASE}/register", json={
-        "email": email,
-        "password": password,
-        "full_name": "Test User",
-    })
+    resp = await client.post(
+        f"{BASE}/register",
+        json={
+            "email": email,
+            "password": password,
+            "full_name": "Test User",
+        },
+    )
     assert resp.status_code == 201
     return {"email": email, "password": password, "id": resp.json()["id"]}
 
 
 @pytest.fixture
 async def auth_token(client: AsyncClient, registered: dict) -> str:
-    resp = await client.post(f"{BASE}/login", json={
-        "email": registered["email"],
-        "password": registered["password"],
-    })
+    resp = await client.post(
+        f"{BASE}/login",
+        json={
+            "email": registered["email"],
+            "password": registered["password"],
+        },
+    )
     assert resp.status_code == 200
     return resp.json()["access_token"]
 
 
 # --- Register ---
 
+
 async def test_register_success(client: AsyncClient):
     email = _email()
-    resp = await client.post(f"{BASE}/register", json={
-        "email": email,
-        "password": "Password1!",
-        "full_name": "Alice Trader",
-    })
+    resp = await client.post(
+        f"{BASE}/register",
+        json={
+            "email": email,
+            "password": "Password1!",
+            "full_name": "Alice Trader",
+        },
+    )
     assert resp.status_code == 201
     body = resp.json()
     assert body["email"] == email
@@ -52,21 +62,27 @@ async def test_register_success(client: AsyncClient):
 
 
 async def test_register_duplicate_email(client: AsyncClient, registered: dict):
-    resp = await client.post(f"{BASE}/register", json={
-        "email": registered["email"],
-        "password": "AnotherPass1!",
-        "full_name": "Duplicate",
-    })
+    resp = await client.post(
+        f"{BASE}/register",
+        json={
+            "email": registered["email"],
+            "password": "AnotherPass1!",
+            "full_name": "Duplicate",
+        },
+    )
     assert resp.status_code == 400
     assert "already registered" in resp.json()["detail"].lower()
 
 
 async def test_register_invalid_email(client: AsyncClient):
-    resp = await client.post(f"{BASE}/register", json={
-        "email": "not-an-email",
-        "password": "Password1!",
-        "full_name": "Bad Email",
-    })
+    resp = await client.post(
+        f"{BASE}/register",
+        json={
+            "email": "not-an-email",
+            "password": "Password1!",
+            "full_name": "Bad Email",
+        },
+    )
     assert resp.status_code == 422
 
 
@@ -77,11 +93,15 @@ async def test_register_missing_fields(client: AsyncClient):
 
 # --- Login ---
 
+
 async def test_login_success(client: AsyncClient, registered: dict):
-    resp = await client.post(f"{BASE}/login", json={
-        "email": registered["email"],
-        "password": registered["password"],
-    })
+    resp = await client.post(
+        f"{BASE}/login",
+        json={
+            "email": registered["email"],
+            "password": registered["password"],
+        },
+    )
     assert resp.status_code == 200
     body = resp.json()
     assert body["token_type"] == "bearer"
@@ -89,27 +109,32 @@ async def test_login_success(client: AsyncClient, registered: dict):
 
 
 async def test_login_wrong_password(client: AsyncClient, registered: dict):
-    resp = await client.post(f"{BASE}/login", json={
-        "email": registered["email"],
-        "password": "WrongPass999!",
-    })
+    resp = await client.post(
+        f"{BASE}/login",
+        json={
+            "email": registered["email"],
+            "password": "WrongPass999!",
+        },
+    )
     assert resp.status_code == 401
 
 
 async def test_login_unknown_email(client: AsyncClient):
-    resp = await client.post(f"{BASE}/login", json={
-        "email": _email(),
-        "password": "SomePass1!",
-    })
+    resp = await client.post(
+        f"{BASE}/login",
+        json={
+            "email": _email(),
+            "password": "SomePass1!",
+        },
+    )
     assert resp.status_code == 401
 
 
 # --- /me ---
 
+
 async def test_me_success(client: AsyncClient, registered: dict, auth_token: str):
-    resp = await client.get(
-        f"{BASE}/me", headers={"Authorization": f"Bearer {auth_token}"}
-    )
+    resp = await client.get(f"{BASE}/me", headers={"Authorization": f"Bearer {auth_token}"})
     assert resp.status_code == 200
     body = resp.json()
     assert body["email"] == registered["email"]
@@ -124,15 +149,11 @@ async def test_me_no_token(client: AsyncClient):
 
 
 async def test_me_invalid_token(client: AsyncClient):
-    resp = await client.get(
-        f"{BASE}/me", headers={"Authorization": "Bearer not.a.valid.token"}
-    )
+    resp = await client.get(f"{BASE}/me", headers={"Authorization": "Bearer not.a.valid.token"})
     assert resp.status_code == 401
 
 
 async def test_me_expired_token(client: AsyncClient):
     expired = create_access_token(uuid4(), expires_delta=timedelta(seconds=-1))
-    resp = await client.get(
-        f"{BASE}/me", headers={"Authorization": f"Bearer {expired}"}
-    )
+    resp = await client.get(f"{BASE}/me", headers={"Authorization": f"Bearer {expired}"})
     assert resp.status_code == 401

@@ -1,4 +1,5 @@
 """WebSocket endpoint — real-time price streaming for subscribed symbols."""
+
 from __future__ import annotations
 
 import asyncio
@@ -29,7 +30,9 @@ async def _fetch_price(sym: str) -> dict:
     def _sync(s: str) -> dict:
         try:
             info = yf.Ticker(s).fast_info
-            price = float(getattr(info, "last_price", None) or getattr(info, "previous_close", None) or 0)
+            price = float(
+                getattr(info, "last_price", None) or getattr(info, "previous_close", None) or 0
+            )
             prev = float(getattr(info, "previous_close", None) or price)
             change = price - prev
             change_pct = (change / prev * 100) if prev else 0.0
@@ -75,7 +78,9 @@ async def price_stream(websocket: WebSocket, token: str = ""):
             if not symbols:
                 await asyncio.sleep(_STREAM_INTERVAL)
                 continue
-            ticks = await asyncio.gather(*[_fetch_price(s) for s in symbols], return_exceptions=True)
+            ticks = await asyncio.gather(
+                *[_fetch_price(s) for s in symbols], return_exceptions=True
+            )
             payload = [t for t in ticks if isinstance(t, dict)]
             try:
                 await websocket.send_json({"type": "tick", "data": payload})

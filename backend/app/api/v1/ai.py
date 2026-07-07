@@ -32,6 +32,7 @@ def _norm(symbol: str) -> str:
 
 def _serialize(rec: object) -> dict:
     from app.domain.models.recommendation import AIRecommendation
+
     r: AIRecommendation = rec  # type: ignore[assignment]
     d = asdict(r)
     d["id"] = str(d["id"])
@@ -41,6 +42,7 @@ def _serialize(rec: object) -> dict:
 
 async def _save_signal(signal_repo: AISignalDep, user_id, rec: object) -> None:
     from app.domain.models.recommendation import AIRecommendation
+
     r: AIRecommendation = rec  # type: ignore[assignment]
     sig = AISignal(
         user_id=user_id,
@@ -162,7 +164,11 @@ async def ensemble_signal(
     votes: list[tuple[float, float]] = []  # (directional score, confidence)
 
     if not isinstance(local_result, Exception):
-        score = 1.0 if local_result.signal == "BUY" else (-1.0 if local_result.signal == "SELL" else 0.0)
+        score = (
+            1.0
+            if local_result.signal == "BUY"
+            else (-1.0 if local_result.signal == "SELL" else 0.0)
+        )
         votes.append((score, local_result.confidence))
         engines["local"] = _serialize(local_result)
     else:
@@ -181,7 +187,11 @@ async def ensemble_signal(
         ml_result = None
 
     if claude_result is not None and not isinstance(claude_result, Exception):
-        score = 1.0 if claude_result.signal == "BUY" else (-1.0 if claude_result.signal == "SELL" else 0.0)
+        score = (
+            1.0
+            if claude_result.signal == "BUY"
+            else (-1.0 if claude_result.signal == "SELL" else 0.0)
+        )
         votes.append((score, claude_result.confidence))
         engines["claude"] = _serialize(claude_result)
     else:
@@ -234,6 +244,7 @@ async def ensemble_signal(
 
     with contextlib.suppress(Exception):
         from app.domain.models.ai_signal import AISignal as Sig
+
         await signal_repo.save(
             Sig(
                 user_id=current_user.id,
@@ -260,9 +271,7 @@ async def signal_history(
     symbol: str | None = Query(default=None),
     limit: int = Query(default=50, le=200),
 ) -> list[dict]:
-    signals = await signal_repo.list_by_user(
-        current_user.id, symbol=symbol, limit=limit
-    )
+    signals = await signal_repo.list_by_user(current_user.id, symbol=symbol, limit=limit)
     return [
         {
             "id": str(s.id),

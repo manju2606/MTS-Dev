@@ -93,8 +93,7 @@ class DiscoveryRepository:
                 if to_date:
                     query["generated_at"]["$lte"] = to_date
             cursor = (
-                self._reports
-                .find(query, {"picks": 0})
+                self._reports.find(query, {"picks": 0})
                 .sort("generated_at", -1)
                 .skip(skip)
                 .limit(limit)
@@ -129,6 +128,7 @@ class DiscoveryRepository:
     async def get_report(self, report_id: str) -> dict | None:
         """Return a single report including full picks list."""
         from bson import ObjectId
+
         try:
             doc = await self._reports.find_one({"_id": ObjectId(report_id)})
             if not doc:
@@ -201,9 +201,7 @@ class DiscoveryRepository:
         limit: int = 20,
     ) -> list[StockScore]:
         try:
-            cursor = self._scores.find(
-                {"symbol": symbol}
-            ).sort("scanned_at", -1).limit(limit)
+            cursor = self._scores.find({"symbol": symbol}).sort("scanned_at", -1).limit(limit)
             return [_doc_to_score(doc) async for doc in cursor]
         except Exception as exc:
             log.error("discovery.symbol_history.error", symbol=symbol, error=str(exc))
@@ -242,6 +240,7 @@ class DiscoveryRepository:
                 return 0
             # Count docs within 5 minutes of the latest scan
             from datetime import timedelta
+
             cutoff = latest - timedelta(minutes=5)
             return await self._scores.count_documents({"scanned_at": {"$gte": cutoff}})
         except Exception:
@@ -249,6 +248,7 @@ class DiscoveryRepository:
 
 
 # ── Serialization helpers ─────────────────────────────────────────────────────
+
 
 def _score_to_doc(s: StockScore) -> dict:
     return {

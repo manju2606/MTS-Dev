@@ -13,6 +13,7 @@ _admin_only = Depends(require_role(UserRole.ADMIN))
 
 def _serialize(s: object) -> dict:
     from app.domain.models.stock_of_day import StockOfDay
+
     d: StockOfDay = s  # type: ignore[assignment]
     return {
         "id": d.id,
@@ -48,6 +49,7 @@ def _serialize(s: object) -> dict:
 async def get_today(_: CurrentUser) -> dict:
     """Return today's Stock of the Day pick (null if not yet generated)."""
     from datetime import datetime, timedelta, timezone
+
     IST = timezone(timedelta(hours=5, minutes=30))
     today = datetime.now(IST).strftime("%Y-%m-%d")
     repo = StockOfDayRepository()
@@ -79,18 +81,23 @@ async def get_journal(date_str: str, _: CurrentUser) -> list[dict]:
 async def trigger_generate(_: CurrentUser) -> dict:
     """Manually trigger today's SotD pick generation (admin only)."""
     from datetime import datetime, timedelta, timezone
+
     IST = timezone(timedelta(hours=5, minutes=30))
     today = datetime.now(IST).strftime("%Y-%m-%d")
 
     # Delete existing pick for today so it can regenerate
     from app.infra.db.repositories.stock_of_day_repo import _get_db
+
     db = _get_db()
     await db["stock_of_day"].delete_one({"date": today})
 
     from app.services.stock_of_day_service import generate_and_save_daily_pick
+
     sotd = await generate_and_save_daily_pick()
     if sotd is None:
-        raise HTTPException(status_code=503, detail="No candidates found — run a discovery scan first")
+        raise HTTPException(
+            status_code=503, detail="No candidates found — run a discovery scan first"
+        )
     return _serialize(sotd)
 
 
@@ -98,6 +105,7 @@ async def trigger_generate(_: CurrentUser) -> dict:
 async def trigger_price_check(_: CurrentUser) -> dict:
     """Manually trigger a SL/target price check for TRADING picks (admin only)."""
     from app.services.stock_of_day_service import run_sotd_price_check
+
     await run_sotd_price_check()
     return {"ok": True}
 
@@ -125,6 +133,7 @@ async def get_settings(_: CurrentUser) -> dict:
 async def update_settings(body: dict, _: CurrentUser) -> dict:
     """Update SotD auto-trade settings (admin only)."""
     from app.domain.models.stock_of_day import SotDSettings
+
     repo = StockOfDayRepository()
     existing = await repo.get_settings()
     qty_type = str(body.get("quantity_type", existing.quantity_type))
@@ -144,9 +153,15 @@ async def update_settings(body: dict, _: CurrentUser) -> dict:
     if not (1 <= updated.max_daily_trades <= 10):
         raise HTTPException(status_code=422, detail="max_daily_trades must be between 1 and 10")
     if updated.quantity_type == "qty" and not (1 <= updated.paper_trade_quantity <= 10000):
-        raise HTTPException(status_code=422, detail="paper_trade_quantity must be between 1 and 10000 for qty mode")
+        raise HTTPException(
+            status_code=422, detail="paper_trade_quantity must be between 1 and 10000 for qty mode"
+        )
     if updated.quantity_type == "pct" and not (0.1 <= updated.paper_trade_quantity <= 100):
-        raise HTTPException(status_code=422, detail="paper_trade_quantity must be between 0.1 and 100 for pct mode")
+        raise HTTPException(
+            status_code=422, detail="paper_trade_quantity must be between 0.1 and 100 for pct mode"
+        )
     if not (1000 <= updated.paper_capital <= 100_000_000):
-        raise HTTPException(status_code=422, detail="paper_capital must be between ₹1,000 and ₹10,00,00,000")
+        raise HTTPException(
+            status_code=422, detail="paper_capital must be between ₹1,000 and ₹10,00,00,000"
+        )
     return _settings_dict(await repo.save_settings(updated))

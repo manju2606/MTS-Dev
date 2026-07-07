@@ -223,11 +223,17 @@ def _run_rsi_mean_reversion(symbol: str, period: str) -> BacktestResult:
             pnl = (exit_p - entry_price) * qty
             pnl_pct = (exit_p - entry_price) / entry_price * 100
             equity += pnl
-            trades.append(BacktestTrade(
-                date_in=entry_date, date_out=dates[i], signal="BUY",
-                entry=round(entry_price, 2), exit=round(exit_p, 2),
-                pnl=round(pnl, 2), pnl_pct=round(pnl_pct, 2),
-            ))
+            trades.append(
+                BacktestTrade(
+                    date_in=entry_date,
+                    date_out=dates[i],
+                    signal="BUY",
+                    entry=round(entry_price, 2),
+                    exit=round(exit_p, 2),
+                    pnl=round(pnl, 2),
+                    pnl_pct=round(pnl_pct, 2),
+                )
+            )
             equity_curve.append({"date": dates[i], "value": round(equity, 2)})
             in_trade = False
         elif i % 10 == 0:
@@ -239,20 +245,33 @@ def _run_rsi_mean_reversion(symbol: str, period: str) -> BacktestResult:
         pnl = (exit_p - entry_price) * qty
         pnl_pct = (exit_p - entry_price) / entry_price * 100
         equity += pnl
-        trades.append(BacktestTrade(
-            date_in=entry_date, date_out=dates[-1], signal="BUY",
-            entry=round(entry_price, 2), exit=round(exit_p, 2),
-            pnl=round(pnl, 2), pnl_pct=round(pnl_pct, 2),
-        ))
+        trades.append(
+            BacktestTrade(
+                date_in=entry_date,
+                date_out=dates[-1],
+                signal="BUY",
+                entry=round(entry_price, 2),
+                exit=round(exit_p, 2),
+                pnl=round(pnl, 2),
+                pnl_pct=round(pnl_pct, 2),
+            )
+        )
         equity_curve.append({"date": dates[-1], "value": round(equity, 2)})
 
     total_return, max_dd, win_rate, sharpe = _compute_stats(trades, capital)
     return BacktestResult(
-        symbol=symbol, strategy="RSI Mean-Reversion",
-        period=period, start_date=dates[14], end_date=dates[-1],
-        total_return_pct=total_return, max_drawdown_pct=max_dd,
-        win_rate_pct=win_rate, total_trades=len(trades), sharpe_ratio=sharpe,
-        trades=trades, equity_curve=equity_curve,
+        symbol=symbol,
+        strategy="RSI Mean-Reversion",
+        period=period,
+        start_date=dates[14],
+        end_date=dates[-1],
+        total_return_pct=total_return,
+        max_drawdown_pct=max_dd,
+        win_rate_pct=win_rate,
+        total_trades=len(trades),
+        sharpe_ratio=sharpe,
+        trades=trades,
+        equity_curve=equity_curve,
     )
 
 
@@ -287,11 +306,17 @@ def _run_macd_crossover(symbol: str, period: str) -> BacktestResult:
             pnl = (exit_p - entry_price) * qty
             pnl_pct = (exit_p - entry_price) / entry_price * 100
             equity += pnl
-            trades.append(BacktestTrade(
-                date_in=entry_date, date_out=dates[i], signal="BUY",
-                entry=round(entry_price, 2), exit=round(exit_p, 2),
-                pnl=round(pnl, 2), pnl_pct=round(pnl_pct, 2),
-            ))
+            trades.append(
+                BacktestTrade(
+                    date_in=entry_date,
+                    date_out=dates[i],
+                    signal="BUY",
+                    entry=round(entry_price, 2),
+                    exit=round(exit_p, 2),
+                    pnl=round(pnl, 2),
+                    pnl_pct=round(pnl_pct, 2),
+                )
+            )
             equity_curve.append({"date": dates[i], "value": round(equity, 2)})
             in_trade = False
         elif i % 10 == 0:
@@ -303,20 +328,33 @@ def _run_macd_crossover(symbol: str, period: str) -> BacktestResult:
         pnl = (exit_p - entry_price) * qty
         pnl_pct = (exit_p - entry_price) / entry_price * 100
         equity += pnl
-        trades.append(BacktestTrade(
-            date_in=entry_date, date_out=dates[-1], signal="BUY",
-            entry=round(entry_price, 2), exit=round(exit_p, 2),
-            pnl=round(pnl, 2), pnl_pct=round(pnl_pct, 2),
-        ))
+        trades.append(
+            BacktestTrade(
+                date_in=entry_date,
+                date_out=dates[-1],
+                signal="BUY",
+                entry=round(entry_price, 2),
+                exit=round(exit_p, 2),
+                pnl=round(pnl, 2),
+                pnl_pct=round(pnl_pct, 2),
+            )
+        )
         equity_curve.append({"date": dates[-1], "value": round(equity, 2)})
 
     total_return, max_dd, win_rate, sharpe = _compute_stats(trades, capital)
     return BacktestResult(
-        symbol=symbol, strategy="MACD Crossover",
-        period=period, start_date=dates[34], end_date=dates[-1],
-        total_return_pct=total_return, max_drawdown_pct=max_dd,
-        win_rate_pct=win_rate, total_trades=len(trades), sharpe_ratio=sharpe,
-        trades=trades, equity_curve=equity_curve,
+        symbol=symbol,
+        strategy="MACD Crossover",
+        period=period,
+        start_date=dates[34],
+        end_date=dates[-1],
+        total_return_pct=total_return,
+        max_drawdown_pct=max_dd,
+        win_rate_pct=win_rate,
+        total_trades=len(trades),
+        sharpe_ratio=sharpe,
+        trades=trades,
+        equity_curve=equity_curve,
     )
 
 

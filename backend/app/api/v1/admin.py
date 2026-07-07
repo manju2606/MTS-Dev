@@ -38,7 +38,9 @@ async def create_user(body: CreateUserRequest, db: DBSession) -> dict:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=f"Invalid role: {body.role}") from exc
 
-    exists = (await db.execute(select(UserORM).where(UserORM.email == body.email))).scalar_one_or_none()
+    exists = (
+        await db.execute(select(UserORM).where(UserORM.email == body.email))
+    ).scalar_one_or_none()
     if exists:
         raise HTTPException(status_code=400, detail="Email already registered")
 
@@ -119,6 +121,7 @@ async def deactivate_user(user_id: UUID, db: DBSession) -> dict:
 
 # ── Email recipient list ──────────────────────────────────────────────────────
 
+
 class AddEmailRequest(BaseModel):
     email: EmailStr
     label: str = ""
@@ -127,6 +130,7 @@ class AddEmailRequest(BaseModel):
 @router.get("/email-list")
 async def list_email_recipients() -> list[dict]:
     from app.infra.db.repositories.email_list_repo import EmailListRepository
+
     repo = EmailListRepository()
     return await repo.list_all()
 
@@ -134,6 +138,7 @@ async def list_email_recipients() -> list[dict]:
 @router.post("/email-list", status_code=status.HTTP_201_CREATED)
 async def add_email_recipient(body: AddEmailRequest) -> dict:
     from app.infra.db.repositories.email_list_repo import EmailListRepository
+
     repo = EmailListRepository()
     existing = await repo.get_by_email(body.email)
     if existing:
@@ -144,6 +149,7 @@ async def add_email_recipient(body: AddEmailRequest) -> dict:
 @router.delete("/email-list/{email_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_email_recipient(email_id: str) -> None:
     from app.infra.db.repositories.email_list_repo import EmailListRepository
+
     repo = EmailListRepository()
     deleted = await repo.remove(email_id)
     if not deleted:
@@ -153,6 +159,7 @@ async def remove_email_recipient(email_id: str) -> None:
 @router.patch("/email-list/{email_id}/toggle")
 async def toggle_email_recipient(email_id: str) -> dict:
     from app.infra.db.repositories.email_list_repo import EmailListRepository
+
     repo = EmailListRepository()
     result = await repo.toggle_active(email_id)
     if not result:
@@ -170,8 +177,7 @@ async def platform_stats(db: DBSession) -> dict:
     open_trades = (await db.execute(open_q)).scalar() or 0
 
     by_role_result = await db.execute(
-        select(UserORM.role, func.count().label("count"))
-        .group_by(UserORM.role)
+        select(UserORM.role, func.count().label("count")).group_by(UserORM.role)
     )
     by_role = {row.role: row.count for row in by_role_result}
 

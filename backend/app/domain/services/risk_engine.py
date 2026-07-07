@@ -53,9 +53,7 @@ class RiskEngine:
         if risk > 0:
             rr = reward / risk
             if rr < self._cfg.min_risk_reward:
-                violations.append(
-                    f"R:R {rr:.2f} below minimum {self._cfg.min_risk_reward}"
-                )
+                violations.append(f"R:R {rr:.2f} below minimum {self._cfg.min_risk_reward}")
 
         # 4. Position sizing
         max_position = self._cfg.capital * self._cfg.max_position_pct

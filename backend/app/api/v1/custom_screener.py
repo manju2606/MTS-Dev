@@ -1,7 +1,9 @@
 """Custom multi-factor stock screener — technical + fundamental criteria."""
+
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from functools import partial
 
 import structlog
@@ -28,13 +30,14 @@ router = APIRouter(prefix="/screener", tags=["custom-screener"])
 log = structlog.get_logger()
 
 _UNIVERSE_MAP: dict[str, list[str]] = {
-    "nifty50":           NIFTY_50,
-    "nifty100":          NIFTY_100,
-    "niftymidcap150":    NIFTY_MIDCAP_150,
-    "niftysmallcap250":  NIFTY_SMALLCAP_250,
+    "nifty50": NIFTY_50,
+    "nifty100": NIFTY_100,
+    "niftymidcap150": NIFTY_MIDCAP_150,
+    "niftysmallcap250": NIFTY_SMALLCAP_250,
 }
 
 # ── fetch helpers ─────────────────────────────────────────────────────────────
+
 
 def _fetch_symbol_data(symbol: str) -> dict | None:
     """Fetch technical + fundamental data for one symbol."""
@@ -69,7 +72,7 @@ def _fetch_symbol_data(symbol: str) -> dict | None:
         sma20 = float(close.rolling(20).mean().iloc[-1])
         sma50 = float(close.rolling(50).mean().iloc[-1]) if len(close) >= 50 else sma20
         price = float(close.iloc[-1])
-        prev  = float(close.iloc[-2]) if len(close) >= 2 else price
+        prev = float(close.iloc[-2]) if len(close) >= 2 else price
         sma20_ratio = round((price / sma20 - 1) * 100, 2) if sma20 else 0
         sma50_ratio = round((price / sma50 - 1) * 100, 2) if sma50 else 0
 
@@ -82,28 +85,29 @@ def _fetch_symbol_data(symbol: str) -> dict | None:
 
         # ATR %
         high = hist["High"]
-        low  = hist["Low"]
-        tr   = pd.concat([
-            high - low,
-            (high - close.shift()).abs(),
-            (low  - close.shift()).abs(),
-        ], axis=1).max(axis=1)
+        low = hist["Low"]
+        tr = pd.concat(
+            [
+                high - low,
+                (high - close.shift()).abs(),
+                (low - close.shift()).abs(),
+            ],
+            axis=1,
+        ).max(axis=1)
         atr_pct = round(float(tr.rolling(14).mean().iloc[-1]) / price * 100, 2) if price else 0
 
         # ── Fundamentals ──────────────────────────────────────────────────────
         info = {}
-        try:
+        with contextlib.suppress(Exception):
             info = tk.info or {}
-        except Exception:
-            pass
 
-        pe  = info.get("trailingPE") or info.get("forwardPE")
-        pb  = info.get("priceToBook")
+        pe = info.get("trailingPE") or info.get("forwardPE")
+        pb = info.get("priceToBook")
         mcap_cr = (info.get("marketCap") or 0) / 1e7  # convert to crores
-        dy  = (info.get("dividendYield") or 0) * 100
+        dy = (info.get("dividendYield") or 0) * 100
         roe = (info.get("returnOnEquity") or 0) * 100
-        de  = info.get("debtToEquity") or 0
-        rg  = (info.get("revenueGrowth") or 0) * 100
+        de = info.get("debtToEquity") or 0
+        rg = (info.get("revenueGrowth") or 0) * 100
 
         return {
             "symbol": symbol,
@@ -147,10 +151,12 @@ def _matches(row: dict, criteria: list[dict]) -> bool:
 
 # ── endpoints ─────────────────────────────────────────────────────────────────
 
+
 class CriterionIn(BaseModel):
     field: str
     operator: str
     value: float
+
 
 class RunScreenRequest(BaseModel):
     universe: str = "nifty50"
@@ -161,7 +167,9 @@ class RunScreenRequest(BaseModel):
 @router.post("/run")
 async def run_screen(body: RunScreenRequest, _: CurrentUser) -> dict:
     if body.universe not in _UNIVERSE_MAP:
-        raise HTTPException(status_code=422, detail=f"universe must be one of {list(_UNIVERSE_MAP)}")
+        raise HTTPException(
+            status_code=422, detail=f"universe must be one of {list(_UNIVERSE_MAP)}"
+        )
     for c in body.criteria:
         if c.field not in CRITERIA_FIELDS:
             raise HTTPException(status_code=422, detail=f"Unknown field: {c.field}")
@@ -176,10 +184,7 @@ async def run_screen(body: RunScreenRequest, _: CurrentUser) -> dict:
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     criteria_dicts = [c.model_dump() for c in body.criteria]
-    matches = [
-        r for r in results
-        if isinstance(r, dict) and _matches(r, criteria_dicts)
-    ][:limit]
+    matches = [r for r in results if isinstance(r, dict) and _matches(r, criteria_dicts)][:limit]
 
     return {
         "universe": body.universe,
@@ -201,22 +206,37 @@ async def save_screen(body: SaveScreenRequest, current_user: CurrentUser) -> dic
         user_id=str(current_user.id),
         name=body.name,
         universe=body.universe,
-        criteria=[ScreenerCriterion(field=c.field, operator=c.operator, value=c.value)
-                  for c in body.criteria],
+        criteria=[
+            ScreenerCriterion(field=c.field, operator=c.operator, value=c.value)
+            for c in body.criteria
+        ],
     )
     saved = await screener_repo.create(screen)
-    return {"id": str(saved.id), "name": saved.name, "universe": saved.universe,
-            "criteria": [{"field": c.field, "operator": c.operator, "value": c.value}
-                         for c in saved.criteria]}
+    return {
+        "id": str(saved.id),
+        "name": saved.name,
+        "universe": saved.universe,
+        "criteria": [
+            {"field": c.field, "operator": c.operator, "value": c.value} for c in saved.criteria
+        ],
+    }
 
 
 @router.get("/saved")
 async def list_saved(current_user: CurrentUser) -> list[dict]:
     screens = await screener_repo.list_by_user(str(current_user.id))
-    return [{"id": str(s.id), "name": s.name, "universe": s.universe,
-             "criteria": [{"field": c.field, "operator": c.operator, "value": c.value}
-                          for c in s.criteria],
-             "created_at": s.created_at.isoformat()} for s in screens]
+    return [
+        {
+            "id": str(s.id),
+            "name": s.name,
+            "universe": s.universe,
+            "criteria": [
+                {"field": c.field, "operator": c.operator, "value": c.value} for c in s.criteria
+            ],
+            "created_at": s.created_at.isoformat(),
+        }
+        for s in screens
+    ]
 
 
 @router.delete("/saved/{screen_id}")

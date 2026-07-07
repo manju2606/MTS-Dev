@@ -21,17 +21,28 @@ _CACHE_TTL = 3_600  # 1 hour — retrain at most once per hour per symbol
 @dataclass
 class MLPrediction:
     symbol: str
-    prediction: str          # UP | DOWN
-    probability: float       # 0.0–1.0 (confidence for predicted class)
+    prediction: str  # UP | DOWN
+    probability: float  # 0.0–1.0 (confidence for predicted class)
     feature_importances: dict[str, float]
     training_samples: int
-    accuracy_cv: float       # cross-val accuracy estimate
+    accuracy_cv: float  # cross-val accuracy estimate
 
 
 _FEATURES = [
-    "rsi", "macd", "macd_hist", "sma20_ratio", "sma50_ratio",
-    "bb_position", "atr_pct", "vol_ratio", "ret_1d", "ret_5d",
-    "ret_20d", "high_low_ratio", "price_vs_52w_high", "obv_trend",
+    "rsi",
+    "macd",
+    "macd_hist",
+    "sma20_ratio",
+    "sma50_ratio",
+    "bb_position",
+    "atr_pct",
+    "vol_ratio",
+    "ret_1d",
+    "ret_5d",
+    "ret_20d",
+    "high_low_ratio",
+    "price_vs_52w_high",
+    "obv_trend",
 ]
 
 
@@ -71,11 +82,14 @@ def _build_features(df: pd.DataFrame) -> pd.DataFrame:
     df["bb_position"] = (c - bb_lower) / (bb_upper - bb_lower + 1e-9)
 
     # ATR %
-    tr = pd.concat([
-        df["High"] - df["Low"],
-        (df["High"] - df["Close"].shift()).abs(),
-        (df["Low"] - df["Close"].shift()).abs(),
-    ], axis=1).max(axis=1)
+    tr = pd.concat(
+        [
+            df["High"] - df["Low"],
+            (df["High"] - df["Close"].shift()).abs(),
+            (df["Low"] - df["Close"].shift()).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
     atr = tr.rolling(14).mean()
     df["atr_pct"] = atr / c
 

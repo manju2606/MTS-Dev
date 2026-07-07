@@ -1,4 +1,5 @@
 """Tax P&L report — Indian STCG / LTCG breakdown by financial year."""
+
 from __future__ import annotations
 
 import csv
@@ -20,8 +21,8 @@ def _fy_bounds(fy: str) -> tuple[datetime, datetime]:
     """Parse '2025-26' → (2025-04-01, 2026-03-31) as UTC datetimes."""
     try:
         start_year = int(fy.split("-")[0])
-    except (ValueError, IndexError):
-        raise HTTPException(status_code=422, detail="fy must be like '2025-26'")
+    except (ValueError, IndexError) as exc:
+        raise HTTPException(status_code=422, detail="fy must be like '2025-26'") from exc
     start = datetime(start_year, 4, 1, tzinfo=UTC)
     end = datetime(start_year + 1, 3, 31, 23, 59, 59, tzinfo=UTC)
     return start, end
@@ -70,19 +71,21 @@ async def tax_report(
         days = _holding_days(t.opened_at, t.closed_at)
         category = _classify(days)
         pnl = t.pnl or 0.0
-        rows.append({
-            "symbol": t.symbol,
-            "signal": t.signal.value,
-            "entry_price": t.entry_price,
-            "exit_price": t.exit_price,
-            "quantity": t.quantity,
-            "pnl": round(pnl, 2),
-            "holding_days": days,
-            "category": category,
-            "opened_at": t.opened_at.isoformat() if t.opened_at else None,
-            "closed_at": t.closed_at.isoformat() if t.closed_at else None,
-            "mode": t.mode.value,
-        })
+        rows.append(
+            {
+                "symbol": t.symbol,
+                "signal": t.signal.value,
+                "entry_price": t.entry_price,
+                "exit_price": t.exit_price,
+                "quantity": t.quantity,
+                "pnl": round(pnl, 2),
+                "holding_days": days,
+                "category": category,
+                "opened_at": t.opened_at.isoformat() if t.opened_at else None,
+                "closed_at": t.closed_at.isoformat() if t.closed_at else None,
+                "mode": t.mode.value,
+            }
+        )
         if category == "STCG":
             if pnl >= 0:
                 stcg_gain += pnl
@@ -145,8 +148,19 @@ async def tax_export(
     buf = io.StringIO()
     writer = csv.DictWriter(
         buf,
-        fieldnames=["symbol", "signal", "entry_price", "exit_price", "quantity",
-                    "pnl", "holding_days", "category", "opened_at", "closed_at", "mode"],
+        fieldnames=[
+            "symbol",
+            "signal",
+            "entry_price",
+            "exit_price",
+            "quantity",
+            "pnl",
+            "holding_days",
+            "category",
+            "opened_at",
+            "closed_at",
+            "mode",
+        ],
     )
     writer.writeheader()
     for row in report["trades"]:

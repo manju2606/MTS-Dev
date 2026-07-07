@@ -26,9 +26,9 @@ class Settings(BaseSettings):
     # Email — SMTP (e.g. Gmail with App Password)
     SMTP_HOST: str = "smtp.gmail.com"
     SMTP_PORT: int = 587
-    SMTP_USER: str | None = None      # your Gmail address
+    SMTP_USER: str | None = None  # your Gmail address
     SMTP_PASSWORD: str | None = None  # Gmail App Password (not your regular password)
-    SMTP_FROM: str | None = None      # defaults to SMTP_USER if unset
+    SMTP_FROM: str | None = None  # defaults to SMTP_USER if unset
 
     # Email — Resend API (alternative to SMTP; used if SMTP_USER is not set)
     RESEND_API_KEY: str | None = None

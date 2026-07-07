@@ -75,9 +75,7 @@ class ClaudeAIClient:
     def __init__(self, api_key: str) -> None:
         self._client = AsyncAnthropic(api_key=api_key)
 
-    async def analyze(
-        self, symbol: str, quote: Quote, ta: TechnicalIndicators
-    ) -> AIRecommendation:
+    async def analyze(self, symbol: str, quote: Quote, ta: TechnicalIndicators) -> AIRecommendation:
         prompt = _build_prompt(symbol, quote, ta)
         log.info("ai.analyze.start", symbol=symbol)
 

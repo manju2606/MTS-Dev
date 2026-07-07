@@ -38,9 +38,7 @@ class ZerodhaBroker(AbstractBroker):
             self._kite = KiteConnect(api_key=api_key)
             self._kite.set_access_token(access_token)
         except ImportError as exc:
-            raise RuntimeError(
-                "kiteconnect not installed. Run: pip install kiteconnect"
-            ) from exc
+            raise RuntimeError("kiteconnect not installed. Run: pip install kiteconnect") from exc
         self._connected = True
         self._orders: dict[str, LiveOrder] = {}
 

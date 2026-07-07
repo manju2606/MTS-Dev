@@ -1,4 +1,5 @@
 """Integration tests for admin endpoints — user management and platform stats."""
+
 import uuid
 
 import pytest
@@ -17,7 +18,9 @@ def _headers(token: str) -> dict:
 
 
 async def _register_login(client: AsyncClient, email: str, pw: str = "Secure123!") -> str:
-    await client.post(AUTH + "/register", json={"email": email, "password": pw, "full_name": "Test"})
+    await client.post(
+        AUTH + "/register", json={"email": email, "password": pw, "full_name": "Test"}
+    )
     r = await client.post(AUTH + "/login", json={"email": email, "password": pw})
     assert r.status_code == 200
     return r.json()["access_token"]
@@ -40,8 +43,12 @@ async def admin_token(client: AsyncClient) -> str:
     # (The first registered user with a known email acts as the fixture admin for this session)
     email = f"bootstrap_admin_{uuid.uuid4().hex[:6]}@example.com"
     pw = "Admin999!"
-    await client.post(AUTH + "/register", json={"email": email, "password": pw, "full_name": "Admin"})
-    token = (await client.post(AUTH + "/login", json={"email": email, "password": pw})).json()["access_token"]
+    await client.post(
+        AUTH + "/register", json={"email": email, "password": pw, "full_name": "Admin"}
+    )
+    token = (await client.post(AUTH + "/login", json={"email": email, "password": pw})).json()[
+        "access_token"
+    ]
 
     # Get own user_id from /me
     me = await client.get(AUTH + "/me", headers=_headers(token))
@@ -67,7 +74,9 @@ async def admin_token(client: AsyncClient) -> str:
         await session.commit()
 
     # Re-login to get a fresh token reflecting the new role
-    token = (await client.post(AUTH + "/login", json={"email": email, "password": pw})).json()["access_token"]
+    token = (await client.post(AUTH + "/login", json={"email": email, "password": pw})).json()[
+        "access_token"
+    ]
     return token
 
 

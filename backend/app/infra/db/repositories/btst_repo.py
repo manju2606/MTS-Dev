@@ -57,29 +57,40 @@ class BTSTRepository:
         return _clean(doc)
 
     async def get_history(self, limit: int = 30) -> list[dict]:
-        cursor = self._col.find(
-            {},
-            projection={
-                "scan_date": 1, "scan_time": 1, "universe_scanned": 1,
-                "passed_filter": 1, "created_at": 1, "pick_count": 1, "picks": {"$slice": 1},
-            },
-        ).sort("created_at", -1).limit(limit)
+        cursor = (
+            self._col.find(
+                {},
+                projection={
+                    "scan_date": 1,
+                    "scan_time": 1,
+                    "universe_scanned": 1,
+                    "passed_filter": 1,
+                    "created_at": 1,
+                    "pick_count": 1,
+                    "picks": {"$slice": 1},
+                },
+            )
+            .sort("created_at", -1)
+            .limit(limit)
+        )
 
         results = []
         async for doc in cursor:
             picks = doc.get("picks", [])
             top = picks[0] if picks else {}
-            results.append({
-                "id": str(doc["_id"]),
-                "scan_date": doc.get("scan_date", ""),
-                "scan_time": doc.get("scan_time", ""),
-                "universe_scanned": doc.get("universe_scanned", 0),
-                "passed_filter": doc.get("passed_filter", 0),
-                "pick_count": doc.get("pick_count", len(picks)),
-                "top_symbol": top.get("symbol", ""),
-                "top_score": top.get("confidence_score", 0),
-                "created_at": doc.get("created_at", ""),
-            })
+            results.append(
+                {
+                    "id": str(doc["_id"]),
+                    "scan_date": doc.get("scan_date", ""),
+                    "scan_time": doc.get("scan_time", ""),
+                    "universe_scanned": doc.get("universe_scanned", 0),
+                    "passed_filter": doc.get("passed_filter", 0),
+                    "pick_count": doc.get("pick_count", len(picks)),
+                    "top_symbol": top.get("symbol", ""),
+                    "top_score": top.get("confidence_score", 0),
+                    "created_at": doc.get("created_at", ""),
+                }
+            )
         return results
 
     async def get_scan_by_date(self, date_str: str) -> dict | None:
@@ -89,7 +100,11 @@ class BTSTRepository:
         return _clean(doc)
 
     async def update_pick_outcome(
-        self, scan_id: str, symbol: str, actual_close: float, actual_pct: float,
+        self,
+        scan_id: str,
+        symbol: str,
+        actual_close: float,
+        actual_pct: float,
     ) -> None:
         if actual_pct >= 5.0:
             outcome = "target_hit"
@@ -100,32 +115,42 @@ class BTSTRepository:
 
         await self._col.update_one(
             {"_id": ObjectId(scan_id), "picks.symbol": symbol},
-            {"$set": {
-                "picks.$.outcome": outcome,
-                "picks.$.actual_close": actual_close,
-                "picks.$.actual_pct": actual_pct,
-                "picks.$.resolved_at": datetime.utcnow().isoformat(),
-            }},
+            {
+                "$set": {
+                    "picks.$.outcome": outcome,
+                    "picks.$.actual_close": actual_close,
+                    "picks.$.actual_pct": actual_pct,
+                    "picks.$.resolved_at": datetime.utcnow().isoformat(),
+                }
+            },
         )
 
     async def get_performance_stats(self) -> dict:
         pipeline = [
             {"$unwind": "$picks"},
             {"$match": {"picks.outcome": {"$ne": None}}},
-            {"$group": {
-                "_id": None,
-                "total": {"$sum": 1},
-                "target_hits": {"$sum": {"$cond": [{"$eq": ["$picks.outcome", "target_hit"]}, 1, 0]}},
-                "sl_hits": {"$sum": {"$cond": [{"$eq": ["$picks.outcome", "sl_hit"]}, 1, 0]}},
-                "expired": {"$sum": {"$cond": [{"$eq": ["$picks.outcome", "expired"]}, 1, 0]}},
-                "avg_return": {"$avg": "$picks.actual_pct"},
-            }},
+            {
+                "$group": {
+                    "_id": None,
+                    "total": {"$sum": 1},
+                    "target_hits": {
+                        "$sum": {"$cond": [{"$eq": ["$picks.outcome", "target_hit"]}, 1, 0]}
+                    },
+                    "sl_hits": {"$sum": {"$cond": [{"$eq": ["$picks.outcome", "sl_hit"]}, 1, 0]}},
+                    "expired": {"$sum": {"$cond": [{"$eq": ["$picks.outcome", "expired"]}, 1, 0]}},
+                    "avg_return": {"$avg": "$picks.actual_pct"},
+                }
+            },
         ]
         results = [doc async for doc in self._col.aggregate(pipeline)]
         if not results:
             return {
-                "total_picks": 0, "target_hits": 0, "sl_hits": 0, "expired": 0,
-                "hit_rate_pct": 0.0, "avg_return_pct": 0.0,
+                "total_picks": 0,
+                "target_hits": 0,
+                "sl_hits": 0,
+                "expired": 0,
+                "hit_rate_pct": 0.0,
+                "avg_return_pct": 0.0,
             }
         r = results[0]
         total = r.get("total", 0)

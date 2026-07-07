@@ -31,7 +31,7 @@ def _alert_dict(a: Alert) -> dict:
 class CreateAlertRequest(BaseModel):
     symbol: str
     price_target: float
-    direction: str   # "above" | "below"
+    direction: str  # "above" | "below"
 
 
 @router.get("")
@@ -71,10 +71,13 @@ async def delete_alert(alert_id: str, current_user: CurrentUser, repo: AlertDep)
     if current_user.role not in (UserRole.ADMIN, UserRole.TRADER):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Traders and admins only")
     from uuid import UUID
+
     try:
         uid = UUID(alert_id)
-    except ValueError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alert not found")
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Alert not found"
+        ) from exc
     deleted = await repo.delete(uid, current_user.id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alert not found")
@@ -105,9 +108,8 @@ async def check_alerts(
         price = prices.get(alert.symbol)
         if price is None:
             continue
-        hit = (
-            (alert.direction == "above" and price >= alert.price_target)
-            or (alert.direction == "below" and price <= alert.price_target)
+        hit = (alert.direction == "above" and price >= alert.price_target) or (
+            alert.direction == "below" and price <= alert.price_target
         )
         if hit:
             alert.triggered = True
@@ -117,10 +119,16 @@ async def check_alerts(
             triggered.append(_alert_dict(updated))
             from app.infra.notifications.push import fire as notif_fire
             from app.infra.webhooks.dispatcher import fire as wh_fire
-            wh_fire("alert.triggered", {
-                "symbol": alert.symbol, "direction": alert.direction,
-                "price_target": alert.price_target, "triggered_price": price,
-            })
+
+            wh_fire(
+                "alert.triggered",
+                {
+                    "symbol": alert.symbol,
+                    "direction": alert.direction,
+                    "price_target": alert.price_target,
+                    "triggered_price": price,
+                },
+            )
             notif_fire(
                 str(alert.user_id),
                 "alert.triggered",
@@ -133,6 +141,7 @@ async def check_alerts(
 
 
 # ── Position monitoring alerts (still in-memory, from position_monitor.py) ───
+
 
 def _pos_dict(a) -> dict:  # type: ignore[no-untyped-def]
     return {
@@ -155,12 +164,14 @@ def _pos_dict(a) -> dict:  # type: ignore[no-untyped-def]
 @router.get("/positions")
 async def list_position_alerts(current_user: CurrentUser) -> list[dict]:
     from app.infra.monitoring.position_monitor import get_position_alerts
+
     return [_pos_dict(a) for a in get_position_alerts(str(current_user.id))]
 
 
 @router.post("/positions/{alert_id}/ack")
 async def ack_position_alert(alert_id: str, current_user: CurrentUser) -> dict:
     from app.infra.monitoring.position_monitor import ack_position_alert as _ack
+
     if not _ack(str(current_user.id), alert_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alert not found")
     return {"ok": True}
@@ -169,5 +180,6 @@ async def ack_position_alert(alert_id: str, current_user: CurrentUser) -> dict:
 @router.delete("/positions/{alert_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def clear_position_alert(alert_id: str, current_user: CurrentUser) -> None:
     from app.infra.monitoring.position_monitor import clear_position_alert as _clear
+
     if not _clear(str(current_user.id), alert_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alert not found")

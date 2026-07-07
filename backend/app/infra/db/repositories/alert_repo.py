@@ -14,9 +14,7 @@ class SQLAlertRepository(AlertRepository):
 
     async def list_by_user(self, user_id: UUID) -> list[Alert]:
         result = await self._session.execute(
-            select(AlertORM)
-            .where(AlertORM.user_id == user_id)
-            .order_by(AlertORM.created_at.desc())
+            select(AlertORM).where(AlertORM.user_id == user_id).order_by(AlertORM.created_at.desc())
         )
         return [row.to_domain() for row in result.scalars()]
 
@@ -28,9 +26,7 @@ class SQLAlertRepository(AlertRepository):
         return orm.to_domain()
 
     async def get_by_id(self, alert_id: UUID) -> Alert | None:
-        result = await self._session.execute(
-            select(AlertORM).where(AlertORM.id == alert_id)
-        )
+        result = await self._session.execute(select(AlertORM).where(AlertORM.id == alert_id))
         row = result.scalar_one_or_none()
         return row.to_domain() if row else None
 

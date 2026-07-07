@@ -103,9 +103,9 @@ def _build_explanation(
     top_patterns = sorted(patterns, key=lambda x: x[2], reverse=True)[:2]
     pattern_text = "; ".join(p[1] for p in top_patterns) if top_patterns else "No strong patterns"
     return (
-        f"{signal}: Technical {tech_score:.0f}/100 · News {news_score:.0f}/100 · ML {ml_score:.0f}/100. "
-        f"Key signals: {pattern_text}."
-        + (f" News: {news_summary}" if news_summary else "")
+        f"{signal}: Technical {tech_score:.0f}/100 · News {news_score:.0f}/100 · "
+        f"ML {ml_score:.0f}/100. "
+        f"Key signals: {pattern_text}." + (f" News: {news_summary}" if news_summary else "")
     )
 
 
@@ -137,6 +137,7 @@ async def score_stock(
     ml_score = 50.0
     try:
         from app.infra.ml.predictor import predict
+
         ml_pred = await asyncio.wait_for(predict(symbol), timeout=15.0)
         ml_score = 72.0 if ml_pred.prediction == "UP" else 28.0
     except Exception:
@@ -160,10 +161,7 @@ async def score_stock(
 
     pattern_labels = [p[1] for p in sorted(patterns, key=lambda x: x[2], reverse=True)[:5]]
 
-    explanation = _build_explanation(
-        symbol, signal, tech_score, news_score, ml_score,
-        patterns, ""
-    )
+    explanation = _build_explanation(symbol, signal, tech_score, news_score, ml_score, patterns, "")
 
     return StockScore(
         symbol=symbol,

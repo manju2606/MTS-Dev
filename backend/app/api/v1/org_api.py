@@ -1,4 +1,5 @@
 """Organization (multi-client SaaS) endpoints."""
+
 from __future__ import annotations
 
 from uuid import uuid4
@@ -98,9 +99,16 @@ async def invite_member(body: InviteRequest, current_user: CurrentUser) -> dict:
     if limits["max_users"] != -1:
         count = await repo.member_count(str(org.id))
         if count >= limits["max_users"]:
-            raise HTTPException(422, detail=f"Plan limit reached ({limits['max_users']} users). Upgrade to add more.")
+            raise HTTPException(
+                422,
+                detail=f"Plan limit reached ({limits['max_users']} users). Upgrade to add more.",
+            )
     token = await repo.create_invite(str(org.id), body.email.lower().strip(), str(current_user.id))
-    return {"email": body.email, "invite_token": token, "message": f"Invite created. Share the token to let {body.email} join."}
+    return {
+        "email": body.email,
+        "invite_token": token,
+        "message": f"Invite created. Share the token to let {body.email} join.",
+    }
 
 
 @router.delete("/my/invite/{email}")
@@ -144,6 +152,7 @@ async def update_plan(body: UpdatePlanRequest, current_user: CurrentUser) -> dic
 
 
 # ── Super-admin endpoints (admin role only) ───────────────────────────────────
+
 
 @router.get("/admin/all")
 async def list_all_orgs(current_user: CurrentUser) -> list[dict]:

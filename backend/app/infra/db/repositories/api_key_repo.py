@@ -28,9 +28,7 @@ class SQLApiKeyRepository:
         return [row.to_domain() for row in result.scalars()]
 
     async def get_by_hash(self, key_hash: str) -> ApiKey | None:
-        result = await self._db.execute(
-            select(ApiKeyORM).where(ApiKeyORM.key_hash == key_hash)
-        )
+        result = await self._db.execute(select(ApiKeyORM).where(ApiKeyORM.key_hash == key_hash))
         row = result.scalar_one_or_none()
         return row.to_domain() if row else None
 
@@ -46,8 +44,6 @@ class SQLApiKeyRepository:
 
     async def touch_last_used(self, key_id: UUID) -> None:
         await self._db.execute(
-            update(ApiKeyORM)
-            .where(ApiKeyORM.id == key_id)
-            .values(last_used_at=datetime.utcnow())
+            update(ApiKeyORM).where(ApiKeyORM.id == key_id).values(last_used_at=datetime.utcnow())
         )
         await self._db.commit()

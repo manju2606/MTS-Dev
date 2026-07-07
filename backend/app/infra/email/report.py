@@ -7,11 +7,11 @@ import structlog
 log = structlog.get_logger()
 
 _SIGNAL_COLOR = {
-    "STRONG_BUY":  ("#065f46", "#d1fae5"),  # dark-green text, light-green bg
-    "BUY":         ("#065f46", "#ecfdf5"),
-    "WATCH":       ("#78350f", "#fef3c7"),
-    "NEUTRAL":     ("#374151", "#f3f4f6"),
-    "SELL":        ("#991b1b", "#fee2e2"),
+    "STRONG_BUY": ("#065f46", "#d1fae5"),  # dark-green text, light-green bg
+    "BUY": ("#065f46", "#ecfdf5"),
+    "WATCH": ("#78350f", "#fef3c7"),
+    "NEUTRAL": ("#374151", "#f3f4f6"),
+    "SELL": ("#991b1b", "#fee2e2"),
     "STRONG_SELL": ("#7f1d1d", "#fee2e2"),
 }
 
@@ -57,7 +57,7 @@ def _stock_row(idx: int, s: object) -> str:  # s: StockScore
             return '<td style="padding:8px 6px;font-size:12px;color:#6b7280;">—</td>'
         return (
             f'<td style="padding:8px 6px;font-family:monospace;font-size:12px;color:{color};">'
-            f'&#8377;{val:.2f}{_pct(entry, val)}</td>'
+            f"&#8377;{val:.2f}{_pct(entry, val)}</td>"
         )
 
     stop_pct = _pct(entry, stop) if entry else ""
@@ -75,10 +75,10 @@ def _stock_row(idx: int, s: object) -> str:  # s: StockScore
         f'  <div style="font-weight:700;font-size:13px;color:#111827;">{sym}</div>'
         f'  <div style="font-size:11px;color:#6b7280;">{getattr(s, "name", "")}</div>'
         f'  <div style="margin-top:3px;">{patterns_html}</div>'
-        f'</td>'
+        f"</td>"
         f'<td style="padding:8px 6px;text-align:center;">'
         f'  <span style="display:inline-block;background:{sig_bg};color:{sig_fg};border-radius:12px;padding:2px 8px;font-size:10px;font-weight:700;white-space:nowrap;">{getattr(s, "signal", "")}</span>'
-        f'</td>'
+        f"</td>"
         f'<td style="padding:8px 6px;">{_score_bar(getattr(s, "score", 0.0))}</td>'
         f'<td style="padding:8px 6px;font-family:monospace;font-size:12px;color:#111827;">&#8377;{entry:.2f}</td>'
         f'<td style="padding:8px 6px;font-family:monospace;font-size:12px;color:#dc2626;">&#8377;{stop:.2f}{stop_pct}</td>'
@@ -87,7 +87,7 @@ def _stock_row(idx: int, s: object) -> str:  # s: StockScore
         + _tgt_cell(t3_val, "#065f46")
         + f'<td style="padding:8px 6px;font-weight:700;font-size:12px;color:{_rr_color(rr)}">{rr:.2f}</td>'
         f'<td style="padding:8px 6px;font-size:11px;color:#6b7280;">{getattr(s, "holding_period", "")}</td>'
-        f'</tr>'
+        f"</tr>"
     )
 
 
@@ -150,19 +150,23 @@ def build_report_html(picks: list, scanned_count: int) -> str:
     if strong_buy:
         summary_pills.append(
             f'<span style="background:#d1fae5;color:#065f46;border-radius:12px;padding:3px 10px;font-size:12px;font-weight:700;margin-right:6px;">'
-            f'⬆ {strong_buy} STRONG BUY</span>'
+            f"⬆ {strong_buy} STRONG BUY</span>"
         )
     if buy:
         summary_pills.append(
             f'<span style="background:#ecfdf5;color:#065f46;border-radius:12px;padding:3px 10px;font-size:12px;font-weight:700;margin-right:6px;">'
-            f'↑ {buy} BUY</span>'
+            f"↑ {buy} BUY</span>"
         )
     if watch:
         summary_pills.append(
             f'<span style="background:#fef3c7;color:#78350f;border-radius:12px;padding:3px 10px;font-size:12px;font-weight:700;margin-right:6px;">'
-            f'◉ {watch} WATCH</span>'
+            f"◉ {watch} WATCH</span>"
         )
-    pills_html = " ".join(summary_pills) if summary_pills else '<span style="color:#6b7280;">No actionable picks today</span>'
+    pills_html = (
+        " ".join(summary_pills)
+        if summary_pills
+        else '<span style="color:#6b7280;">No actionable picks today</span>'
+    )
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -258,7 +262,9 @@ async def send_daily_report() -> None:
         # regardless of whether email delivery succeeds.
         await repo.save_report(picks, scanned)
 
-        subject = f"📈 Daily Picks — {date.today().strftime('%d %b %Y')} | {len(picks)} actionable stocks"
+        subject = (
+            f"📈 Daily Picks — {date.today().strftime('%d %b %Y')} | {len(picks)} actionable stocks"
+        )
         html = build_report_html(picks, scanned)
 
         for to in recipients:

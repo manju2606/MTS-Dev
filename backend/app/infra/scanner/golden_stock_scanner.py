@@ -27,6 +27,7 @@ IST = timezone(timedelta(hours=5, minutes=30))
 
 # ── Dataclasses ───────────────────────────────────────────────────────────────
 
+
 @dataclass
 class IntradayCandidate:
     rank: int
@@ -65,6 +66,7 @@ class GoldenStockScan:
 
 # ── ADX calculation ───────────────────────────────────────────────────────────
 
+
 def _compute_adx(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> float:
     try:
         tr = pd.concat(
@@ -93,6 +95,7 @@ def _compute_adx(high: pd.Series, low: pd.Series, close: pd.Series, period: int 
 
 # ── RSI helper ────────────────────────────────────────────────────────────────
 
+
 def _compute_rsi(close: pd.Series, period: int = 14) -> float:
     try:
         delta = close.diff()
@@ -107,6 +110,7 @@ def _compute_rsi(close: pd.Series, period: int = 14) -> float:
 
 
 # ── MACD helper ───────────────────────────────────────────────────────────────
+
 
 def _macd_bullish_crossover(close: pd.Series) -> bool:
     try:
@@ -126,6 +130,7 @@ def _macd_bullish_crossover(close: pd.Series) -> bool:
 
 
 # ── Pass 1: batch download ────────────────────────────────────────────────────
+
 
 def _pass1_batch_download(symbols: list[str]) -> list[dict]:
     """Download 6-month OHLCV for all symbols at once, return filtered candidates."""
@@ -168,7 +173,9 @@ def _pass1_batch_download(symbols: list[str]) -> list[dict]:
 
             # Detect partial trading day: if today's volume < 30% of 20-day avg,
             # use the previous completed session for current-day metrics.
-            vol_avg_hist = float(volume.iloc[:-1].rolling(20).mean().iloc[-1]) if len(volume) > 20 else 1.0
+            vol_avg_hist = (
+                float(volume.iloc[:-1].rolling(20).mean().iloc[-1]) if len(volume) > 20 else 1.0
+            )
             if pd.isna(vol_avg_hist) or vol_avg_hist == 0:
                 vol_avg_hist = 1.0
             today_vol = float(volume.iloc[-1])
@@ -194,7 +201,9 @@ def _pass1_batch_download(symbols: list[str]) -> list[dict]:
 
             ref_close = close.iloc[:idx] if idx == -2 else close
             ret_5d = (current / float(ref_close.iloc[-6]) - 1) * 100 if len(ref_close) >= 6 else 0.0
-            ret_20d = (current / float(ref_close.iloc[-21]) - 1) * 100 if len(ref_close) >= 21 else 0.0
+            ret_20d = (
+                (current / float(ref_close.iloc[-21]) - 1) * 100 if len(ref_close) >= 21 else 0.0
+            )
 
             prev_close = float(close.iloc[idx - 1]) if len(close) >= abs(idx) + 1 else current
             change_pct = (current - prev_close) / prev_close * 100 if prev_close > 0 else 0.0
@@ -209,21 +218,23 @@ def _pass1_batch_download(symbols: list[str]) -> list[dict]:
             if volume_ratio < 1.0:
                 continue
 
-            candidates.append({
-                "symbol": sym,
-                "close": close,
-                "high": high_s,
-                "low": low_s,
-                "current": current,
-                "sma20": sma20,
-                "sma50": sma50,
-                "rsi": rsi,
-                "volume_ratio": volume_ratio,
-                "ret_5d": ret_5d,
-                "ret_20d": ret_20d,
-                "change_pct": change_pct,
-                "day_high": day_high,
-            })
+            candidates.append(
+                {
+                    "symbol": sym,
+                    "close": close,
+                    "high": high_s,
+                    "low": low_s,
+                    "current": current,
+                    "sma20": sma20,
+                    "sma50": sma50,
+                    "rsi": rsi,
+                    "volume_ratio": volume_ratio,
+                    "ret_5d": ret_5d,
+                    "ret_20d": ret_20d,
+                    "change_pct": change_pct,
+                    "day_high": day_high,
+                }
+            )
         except Exception as exc:
             log.debug("golden_stock.pass1.sym_error", symbol=sym, error=str(exc))
             continue
@@ -233,15 +244,12 @@ def _pass1_batch_download(symbols: list[str]) -> list[dict]:
 
 # ── Pass 2: individual ticker info + scoring ──────────────────────────────────
 
+
 def _fetch_ticker_info_sync(symbol: str) -> dict:
     try:
         ticker = yf.Ticker(symbol)
         info = ticker.info or {}
-        name = (
-            info.get("longName")
-            or info.get("shortName")
-            or symbol.replace(".NS", "")
-        )
+        name = info.get("longName") or info.get("shortName") or symbol.replace(".NS", "")
         return {
             "name": name,
             "returnOnEquity": info.get("returnOnEquity"),
@@ -458,6 +466,7 @@ def _score_candidate(cand: dict, info: dict) -> IntradayCandidate | None:
 
 
 # ── Main scan function ────────────────────────────────────────────────────────
+
 
 async def run_golden_stock_scan() -> GoldenStockScan:
     now_ist = datetime.now(IST)

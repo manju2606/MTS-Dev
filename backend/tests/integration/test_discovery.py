@@ -3,6 +3,7 @@
 MongoDB calls are patched so these tests don't require a live MongoDB instance.
 The scan trigger is patched to avoid running the full stock universe scan.
 """
+
 import uuid
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -198,8 +199,10 @@ async def test_top_picks_unauthenticated(client: AsyncClient) -> None:
 
 # ── Unit tests for scoring components ────────────────────────────────────────
 
+
 async def test_sentiment_scorer() -> None:
     from app.infra.discovery.sentiment import score_text
+
     assert score_text("strong rally breakout bullish") > 0
     assert score_text("crash selloff bearish weak loss") < 0
     assert score_text("neutral text about weather") == 0.0
@@ -213,12 +216,12 @@ async def test_breakout_patterns() -> None:
     quote.price = 1000.0
     quote.change_pct = 1.5
     ta = MagicMock()
-    ta.rsi_14 = 28.0         # oversold
+    ta.rsi_14 = 28.0  # oversold
     ta.macd = 5.0
-    ta.macd_signal = 3.0     # MACD > signal
+    ta.macd_signal = 3.0  # MACD > signal
     ta.trend = "uptrend"
     ta.price_vs_sma20_pct = 1.2
-    ta.volume_ratio = 2.5    # volume surge
+    ta.volume_ratio = 2.5  # volume surge
     ta.bb_upper = 1050.0
     ta.bb_lower = 950.0
     ta.sma_20 = 990.0

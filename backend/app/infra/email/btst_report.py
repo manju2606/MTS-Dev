@@ -5,25 +5,32 @@ from app.infra.scanner.btst_scanner import BTSTCandidate, BTSTScan
 
 def _pick_row(p: BTSTCandidate) -> str:
     score_color = (
-        "#059669" if p.confidence_score >= 70
-        else "#f59e0b" if p.confidence_score >= 50
+        "#059669"
+        if p.confidence_score >= 70
+        else "#f59e0b"
+        if p.confidence_score >= 50
         else "#dc2626"
     )
     sym = p.symbol.replace(".NS", "").replace(".BO", "")
     ltp_color = "#059669" if p.change_pct >= 0 else "#dc2626"
 
     reasons_html = "".join(
-        f'<li style="margin:2px 0;font-size:11px;color:#374151;">{r}</li>'
-        for r in p.reasons[:4]
+        f'<li style="margin:2px 0;font-size:11px;color:#374151;">{r}</li>' for r in p.reasons[:4]
     )
 
     badges = []
     if p.breakout_consolidation:
-        badges.append('<span style="background:#ede9fe;color:#5b21b6;font-size:10px;padding:2px 5px;border-radius:3px;margin-right:3px;">Breakout</span>')
+        badges.append(
+            '<span style="background:#ede9fe;color:#5b21b6;font-size:10px;padding:2px 5px;border-radius:3px;margin-right:3px;">Breakout</span>'
+        )
     if p.news_mentions > 0:
-        badges.append('<span style="background:#fef3c7;color:#92400e;font-size:10px;padding:2px 5px;border-radius:3px;margin-right:3px;">News</span>')
+        badges.append(
+            '<span style="background:#fef3c7;color:#92400e;font-size:10px;padding:2px 5px;border-radius:3px;margin-right:3px;">News</span>'
+        )
     if p.fo_bullish:
-        badges.append('<span style="background:#ecfdf5;color:#065f46;font-size:10px;padding:2px 5px;border-radius:3px;">F&amp;O Bullish</span>')
+        badges.append(
+            '<span style="background:#ecfdf5;color:#065f46;font-size:10px;padding:2px 5px;border-radius:3px;">F&amp;O Bullish</span>'
+        )
 
     return f"""
   <tr style="border-bottom:1px solid #f3f4f6;">
@@ -46,7 +53,7 @@ def _pick_row(p: BTSTCandidate) -> str:
         <tr>
           <td style="color:#6b7280;padding:1px 4px 1px 0;">LTP</td>
           <td style="font-family:monospace;font-weight:700;color:{ltp_color};">
-            &#8377;{p.current_price:,.2f} <span style="font-size:10px;">({'+' if p.change_pct >= 0 else ''}{p.change_pct:.2f}%)</span>
+            &#8377;{p.current_price:,.2f} <span style="font-size:10px;">({"+" if p.change_pct >= 0 else ""}{p.change_pct:.2f}%)</span>
           </td>
         </tr>
         <tr>

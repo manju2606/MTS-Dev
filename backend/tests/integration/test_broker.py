@@ -1,4 +1,5 @@
 """Integration tests for broker management endpoints."""
+
 import uuid
 
 import pytest

@@ -1,4 +1,5 @@
 """MongoDB repository for forecast results and accuracy tracking."""
+
 from __future__ import annotations
 
 from dataclasses import asdict
@@ -55,11 +56,7 @@ class ForecastRepository:
         query: dict = {"symbol": symbol}
         if horizon:
             query["horizon"] = horizon
-        cursor = (
-            self._accuracy.find(query, {"_id": 0})
-            .sort("generated_at", -1)
-            .limit(limit)
-        )
+        cursor = self._accuracy.find(query, {"_id": 0}).sort("generated_at", -1).limit(limit)
         return await cursor.to_list(length=limit)
 
     async def save_accuracy_records(self, records: list[dict]) -> None:
@@ -72,8 +69,11 @@ class ForecastRepository:
         import yfinance as yf
 
         projection = {
-            "_id": 1, "symbol": 1, "predicted_price": 1,
-            "predicted_change_pct": 1, "direction": 1,
+            "_id": 1,
+            "symbol": 1,
+            "predicted_price": 1,
+            "predicted_change_pct": 1,
+            "direction": 1,
         }
         unresolved = await self._accuracy.find(
             {"target_date": {"$lte": target_date}, "actual_price": None},
@@ -111,12 +111,14 @@ class ForecastRepository:
                 actual_dir = "FLAT"
             await self._accuracy.update_one(
                 {"_id": rec["_id"]},
-                {"$set": {
-                    "actual_price": round(actual, 2),
-                    "error_pct": round(error_pct, 2),
-                    "direction_correct": predicted_dir == actual_dir,
-                    "resolved_at": now,
-                }},
+                {
+                    "$set": {
+                        "actual_price": round(actual, 2),
+                        "error_pct": round(error_pct, 2),
+                        "direction_correct": predicted_dir == actual_dir,
+                        "resolved_at": now,
+                    }
+                },
             )
             updated += 1
 

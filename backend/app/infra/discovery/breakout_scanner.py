@@ -44,65 +44,102 @@ def detect_patterns(
     if ta.volume_ratio >= 2.0:
         strength = min(1.0, (ta.volume_ratio - 2.0) / 3.0 + 0.6)
         dir_label = "buying" if quote.change_pct >= 0 else "selling"
-        patterns.append(("volume_surge",
-                         f"Volume {ta.volume_ratio:.1f}× avg — strong {dir_label} interest",
-                         strength))
+        patterns.append(
+            (
+                "volume_surge",
+                f"Volume {ta.volume_ratio:.1f}× avg — strong {dir_label} interest",
+                strength,
+            )
+        )
 
     # 7. Bollinger Band upper breakout — momentum continuation
     if p >= ta.bb_upper * 0.998:
-        patterns.append(("bb_upper_break",
-                         f"Price at/above upper Bollinger Band (₹{ta.bb_upper:.2f})", 0.7))
+        patterns.append(
+            ("bb_upper_break", f"Price at/above upper Bollinger Band (₹{ta.bb_upper:.2f})", 0.7)
+        )
 
     # 8. Bollinger Band lower bounce — mean-reversion entry
     if p <= ta.bb_lower * 1.002:
-        patterns.append(("bb_lower_bounce",
-                         f"Price at/below lower Bollinger Band (₹{ta.bb_lower:.2f})", 0.7))
+        patterns.append(
+            ("bb_lower_bounce", f"Price at/below lower Bollinger Band (₹{ta.bb_lower:.2f})", 0.7)
+        )
 
     # 9. Strong uptrend — SMA20 > SMA50, price above both
     if ta.trend == "uptrend" and ta.price_vs_sma20_pct > 0:
-        patterns.append(("uptrend_confirmed",
-                         "SMA-20 > SMA-50, price above both — strong uptrend", 0.6))
+        patterns.append(
+            ("uptrend_confirmed", "SMA-20 > SMA-50, price above both — strong uptrend", 0.6)
+        )
 
     # 10. Strong downtrend — SMA20 < SMA50, price below both
     if ta.trend == "downtrend" and ta.price_vs_sma20_pct < 0:
-        patterns.append(("downtrend_confirmed",
-                         "SMA-20 < SMA-50, price below both — strong downtrend", 0.6))
+        patterns.append(
+            ("downtrend_confirmed", "SMA-20 < SMA-50, price below both — strong downtrend", 0.6)
+        )
 
     # 11. Price extended above SMA-20 (potential pullback)
     if ta.price_vs_sma20_pct > 5:
-        patterns.append(("extended_above_sma",
-                         f"Price {ta.price_vs_sma20_pct:.1f}% above SMA-20 — extended, pullback risk", 0.4))
+        patterns.append(
+            (
+                "extended_above_sma",
+                f"Price {ta.price_vs_sma20_pct:.1f}% above SMA-20 — extended, pullback risk",
+                0.4,
+            )
+        )
 
     # 12. Price far below SMA-20 (bounce candidate)
     if ta.price_vs_sma20_pct < -5:
-        patterns.append(("deep_below_sma",
-                         f"Price {abs(ta.price_vs_sma20_pct):.1f}% below SMA-20 — deep discount", 0.5))
+        patterns.append(
+            (
+                "deep_below_sma",
+                f"Price {abs(ta.price_vs_sma20_pct):.1f}% below SMA-20 — deep discount",
+                0.5,
+            )
+        )
 
     # 13. Bollinger Band squeeze — low volatility, breakout imminent
     bb_width = (ta.bb_upper - ta.bb_lower) / ta.sma_20 if ta.sma_20 > 0 else 0
     if bb_width < 0.04:  # < 4% band width indicates squeeze
-        patterns.append(("bb_squeeze",
-                         f"Bollinger Band width {bb_width:.1%} — volatility squeeze, breakout imminent", 0.55))
+        patterns.append(
+            (
+                "bb_squeeze",
+                f"Bollinger Band width {bb_width:.1%} — volatility squeeze, breakout imminent",
+                0.55,
+            )
+        )
 
     # 14. Bullish convergence — all three main signals align
-    bull_count = sum([
-        ta.rsi_14 > 50,
-        ta.macd > ta.macd_signal,
-        ta.trend == "uptrend",
-    ])
+    bull_count = sum(
+        [
+            ta.rsi_14 > 50,
+            ta.macd > ta.macd_signal,
+            ta.trend == "uptrend",
+        ]
+    )
     if bull_count == 3:
-        patterns.append(("full_bullish_alignment",
-                         "RSI > 50, MACD bullish, uptrend — full bullish convergence", 0.8))
+        patterns.append(
+            (
+                "full_bullish_alignment",
+                "RSI > 50, MACD bullish, uptrend — full bullish convergence",
+                0.8,
+            )
+        )
 
     # 15. Bearish convergence — all three main signals align bearishly
-    bear_count = sum([
-        ta.rsi_14 < 50,
-        ta.macd < ta.macd_signal,
-        ta.trend == "downtrend",
-    ])
+    bear_count = sum(
+        [
+            ta.rsi_14 < 50,
+            ta.macd < ta.macd_signal,
+            ta.trend == "downtrend",
+        ]
+    )
     if bear_count == 3:
-        patterns.append(("full_bearish_alignment",
-                         "RSI < 50, MACD bearish, downtrend — full bearish convergence", 0.8))
+        patterns.append(
+            (
+                "full_bearish_alignment",
+                "RSI < 50, MACD bearish, downtrend — full bearish convergence",
+                0.8,
+            )
+        )
 
     return patterns
 
@@ -158,11 +195,25 @@ def compute_technical_score(
             bear += 1
 
     # Pattern bonus: positive patterns push score up, negative push down
-    bullish_patterns = {"rsi_oversold", "rsi_momentum", "macd_bullish", "volume_surge",
-                        "bb_lower_bounce", "uptrend_confirmed", "deep_below_sma",
-                        "full_bullish_alignment", "bb_squeeze"}
-    bearish_patterns = {"rsi_overbought", "macd_bearish", "bb_upper_break",
-                        "downtrend_confirmed", "extended_above_sma", "full_bearish_alignment"}
+    bullish_patterns = {
+        "rsi_oversold",
+        "rsi_momentum",
+        "macd_bullish",
+        "volume_surge",
+        "bb_lower_bounce",
+        "uptrend_confirmed",
+        "deep_below_sma",
+        "full_bullish_alignment",
+        "bb_squeeze",
+    }
+    bearish_patterns = {
+        "rsi_overbought",
+        "macd_bearish",
+        "bb_upper_break",
+        "downtrend_confirmed",
+        "extended_above_sma",
+        "full_bearish_alignment",
+    }
 
     for name, _, strength in patterns:
         if name in bullish_patterns:

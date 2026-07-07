@@ -4,6 +4,7 @@ Every function here does exactly one thing: turn one raw official CSV into a
 normalized frame with a uniform `symbol` column, ready for `merge.py` to
 combine. No enrichment or cross-file logic lives here.
 """
+
 from io import BytesIO
 from typing import Any
 
@@ -26,16 +27,18 @@ def _read_csv(raw: bytes, **kwargs: Any) -> pd.DataFrame:
 def fetch_equity() -> pd.DataFrame:
     raw = fetch_raw("equity", config.SOURCE_URLS["equity"])
     df = _read_csv(raw)
-    df = df.rename(columns={
-        "SYMBOL": "symbol",
-        "NAME OF COMPANY": "company_name",
-        "SERIES": "listing_series",
-        "DATE OF LISTING": "listing_date",
-        "PAID UP VALUE": "paidup_value",
-        "MARKET LOT": "market_lot",
-        "ISIN NUMBER": "isin",
-        "FACE VALUE": "face_value",
-    })
+    df = df.rename(
+        columns={
+            "SYMBOL": "symbol",
+            "NAME OF COMPANY": "company_name",
+            "SERIES": "listing_series",
+            "DATE OF LISTING": "listing_date",
+            "PAID UP VALUE": "paidup_value",
+            "MARKET LOT": "market_lot",
+            "ISIN NUMBER": "isin",
+            "FACE VALUE": "face_value",
+        }
+    )
     df["symbol"] = clean.clean_symbol(df["symbol"])
     df["listing_date"] = clean.parse_date(df["listing_date"])
     df["paidup_value"] = clean.to_numeric(df["paidup_value"])
@@ -50,16 +53,18 @@ def fetch_equity() -> pd.DataFrame:
 def fetch_sme() -> pd.DataFrame:
     raw = fetch_raw("sme", config.SOURCE_URLS["sme"])
     df = _read_csv(raw)
-    df = df.rename(columns={
-        "SYMBOL": "symbol",
-        "NAME OF COMPANY": "company_name",
-        "SERIES": "listing_series",
-        "DATE OF LISTING": "listing_date",
-        "PAID UP VALUE": "paidup_value",
-        "MARKET LOT": "market_lot",
-        "ISIN NUMBER": "isin",
-        "FACE VALUE": "face_value",
-    })
+    df = df.rename(
+        columns={
+            "SYMBOL": "symbol",
+            "NAME OF COMPANY": "company_name",
+            "SERIES": "listing_series",
+            "DATE OF LISTING": "listing_date",
+            "PAID UP VALUE": "paidup_value",
+            "MARKET LOT": "market_lot",
+            "ISIN NUMBER": "isin",
+            "FACE VALUE": "face_value",
+        }
+    )
     df["symbol"] = clean.clean_symbol(df["symbol"])
     df["listing_date"] = clean.parse_date(df["listing_date"])
     df["paidup_value"] = clean.to_numeric(df["paidup_value"])
@@ -74,15 +79,17 @@ def fetch_sme() -> pd.DataFrame:
 def fetch_etf() -> pd.DataFrame:
     raw = fetch_raw("etf", config.SOURCE_URLS["etf"])
     df = _read_csv(raw)
-    df = df.rename(columns={
-        "Symbol": "symbol",
-        "Underlying": "etf_underlying",
-        "SecurityName": "company_name",
-        "DateofListing": "listing_date",
-        "MarketLot": "market_lot",
-        "ISINNumber": "isin",
-        "FaceValue": "face_value",
-    })
+    df = df.rename(
+        columns={
+            "Symbol": "symbol",
+            "Underlying": "etf_underlying",
+            "SecurityName": "company_name",
+            "DateofListing": "listing_date",
+            "MarketLot": "market_lot",
+            "ISINNumber": "isin",
+            "FaceValue": "face_value",
+        }
+    )
     df["symbol"] = clean.clean_symbol(df["symbol"])
     df["listing_date"] = clean.parse_date(df["listing_date"])
     df["market_lot"] = clean.to_numeric(df["market_lot"])
@@ -96,13 +103,15 @@ def fetch_etf() -> pd.DataFrame:
 def fetch_series_band() -> pd.DataFrame:
     raw = fetch_raw("series_band", config.SOURCE_URLS["series_band"])
     df = _read_csv(raw)
-    df = df.rename(columns={
-        "Symbol": "symbol",
-        "Series": "current_series",
-        "Security Name": "security_name_secmaster",
-        "Band": "surveillance_band",
-        "Remarks": "surveillance_remarks",
-    })
+    df = df.rename(
+        columns={
+            "Symbol": "symbol",
+            "Series": "current_series",
+            "Security Name": "security_name_secmaster",
+            "Band": "surveillance_band",
+            "Remarks": "surveillance_remarks",
+        }
+    )
     df["symbol"] = clean.clean_symbol(df["symbol"])
     df = clean.strip_strings(df)
     df = df[clean.is_plausible_symbol(df["symbol"])]
@@ -128,12 +137,14 @@ def fetch_symbol_changes() -> pd.DataFrame:
 def fetch_name_changes() -> pd.DataFrame:
     raw = fetch_raw("name_change", config.SOURCE_URLS["name_change"])
     df = _read_csv(raw)
-    df = df.rename(columns={
-        "NCH_SYMBOL": "symbol",
-        "NCH_PREV_NAME": "previous_company_name",
-        "NCH_NEW_NAME": "new_company_name",
-        "NCH_DT": "change_date",
-    })
+    df = df.rename(
+        columns={
+            "NCH_SYMBOL": "symbol",
+            "NCH_PREV_NAME": "previous_company_name",
+            "NCH_NEW_NAME": "new_company_name",
+            "NCH_DT": "change_date",
+        }
+    )
     df["symbol"] = clean.clean_symbol(df["symbol"])
     df["change_date"] = clean.parse_date(df["change_date"])
     df = clean.strip_strings(df)
@@ -144,13 +155,15 @@ def fetch_name_changes() -> pd.DataFrame:
 def fetch_nifty_index(key: str) -> pd.DataFrame:
     raw = fetch_raw(key, config.SOURCE_URLS[key])
     df = _read_csv(raw)
-    df = df.rename(columns={
-        "Company Name": "company_name_index",
-        "Industry": "industry",
-        "Symbol": "symbol",
-        "Series": "series_index",
-        "ISIN Code": "isin_index",
-    })
+    df = df.rename(
+        columns={
+            "Company Name": "company_name_index",
+            "Industry": "industry",
+            "Symbol": "symbol",
+            "Series": "series_index",
+            "ISIN Code": "isin_index",
+        }
+    )
     df["symbol"] = clean.clean_symbol(df["symbol"])
     df = clean.strip_strings(df)
     df = df[clean.is_plausible_symbol(df["symbol"])]

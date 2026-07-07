@@ -13,6 +13,7 @@ log = structlog.get_logger()
 class EmailListRepository:
     def __init__(self) -> None:
         from motor.motor_asyncio import AsyncIOMotorClient
+
         client = AsyncIOMotorClient(settings.MONGODB_URL)
         db = client[settings.MONGODB_DB]
         self._col = db["email_recipients"]
@@ -23,7 +24,9 @@ class EmailListRepository:
             "email": raw["email"],
             "label": raw.get("label", ""),
             "active": raw.get("active", True),
-            "added_at": raw["added_at"].isoformat() if isinstance(raw.get("added_at"), datetime) else raw.get("added_at"),
+            "added_at": raw["added_at"].isoformat()
+            if isinstance(raw.get("added_at"), datetime)
+            else raw.get("added_at"),
         }
 
     async def list_all(self) -> list[dict]:

@@ -1,4 +1,5 @@
 """MongoDB repository for user strategies."""
+
 from __future__ import annotations
 
 from dataclasses import asdict

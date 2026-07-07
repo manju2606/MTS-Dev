@@ -1,4 +1,5 @@
 """Integration tests for backtesting endpoints."""
+
 import uuid
 from unittest.mock import AsyncMock, patch
 
@@ -146,9 +147,20 @@ async def test_backtest_unauthenticated(client: AsyncClient) -> None:
 
 
 def _assert_result_shape(body: dict) -> None:
-    for field in ("symbol", "strategy", "period", "start_date", "end_date",
-                  "total_return_pct", "max_drawdown_pct", "win_rate_pct",
-                  "total_trades", "sharpe_ratio", "trades", "equity_curve"):
+    for field in (
+        "symbol",
+        "strategy",
+        "period",
+        "start_date",
+        "end_date",
+        "total_return_pct",
+        "max_drawdown_pct",
+        "win_rate_pct",
+        "total_trades",
+        "sharpe_ratio",
+        "trades",
+        "equity_curve",
+    ):
         assert field in body, f"Missing field: {field}"
     assert isinstance(body["trades"], list)
     assert isinstance(body["equity_curve"], list)

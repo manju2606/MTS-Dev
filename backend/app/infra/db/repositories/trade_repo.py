@@ -13,20 +13,12 @@ class SQLTradeRepository(TradeRepository):
         self._session = session
 
     async def get_by_id(self, trade_id: UUID) -> Trade | None:
-        result = await self._session.execute(
-            select(TradeORM).where(TradeORM.id == trade_id)
-        )
+        result = await self._session.execute(select(TradeORM).where(TradeORM.id == trade_id))
         row = result.scalar_one_or_none()
         return row.to_domain() if row else None
 
-    async def list_by_user(
-        self, user_id: UUID, status: TradeStatus | None = None
-    ) -> list[Trade]:
-        q = (
-            select(TradeORM)
-            .where(TradeORM.user_id == user_id)
-            .order_by(TradeORM.created_at.desc())
-        )
+    async def list_by_user(self, user_id: UUID, status: TradeStatus | None = None) -> list[Trade]:
+        q = select(TradeORM).where(TradeORM.user_id == user_id).order_by(TradeORM.created_at.desc())
         if status is not None:
             q = q.where(TradeORM.status == status.value)
         result = await self._session.execute(q)

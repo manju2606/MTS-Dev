@@ -1,6 +1,8 @@
 """In-process WebSocket connection registry for per-user broadcasts."""
+
 from __future__ import annotations
 
+import contextlib
 from collections import defaultdict
 
 from fastapi import WebSocket
@@ -15,15 +17,11 @@ def register(user_id: str, ws: WebSocket) -> None:
 def deregister(user_id: str, ws: WebSocket) -> None:
     conns = _connections.get(user_id)
     if conns:
-        try:
+        with contextlib.suppress(ValueError):
             conns.remove(ws)
-        except ValueError:
-            pass
 
 
 async def broadcast(user_id: str, message: dict) -> None:
     for ws in list(_connections.get(user_id, [])):
-        try:
+        with contextlib.suppress(Exception):
             await ws.send_json(message)
-        except Exception:
-            pass

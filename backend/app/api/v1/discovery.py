@@ -174,6 +174,7 @@ async def trigger_scan(
     if is_scan_running():
         return {"message": "Scan already in progress", "started": False}
     import asyncio
+
     asyncio.create_task(run_full_scan())
     return {"message": "Discovery scan started", "started": True}
 
@@ -186,6 +187,7 @@ async def trigger_report(current_user: CurrentUser) -> dict:
     import asyncio
 
     from app.infra.email.report import send_daily_report
+
     asyncio.create_task(send_daily_report())
     return {"message": "Report email queued"}
 
@@ -244,9 +246,7 @@ async def get_report_performance(report_id: str, current_user: CurrentUser) -> d
     symbols = list({p["symbol"] for p in picks})
 
     client = YFinanceClient()
-    results = await asyncio.gather(
-        *[client.get_quote(s) for s in symbols], return_exceptions=True
-    )
+    results = await asyncio.gather(*[client.get_quote(s) for s in symbols], return_exceptions=True)
     prices: dict[str, float] = {}
     for sym, r in zip(symbols, results, strict=True):
         if not isinstance(r, Exception):
@@ -254,7 +254,7 @@ async def get_report_performance(report_id: str, current_user: CurrentUser) -> d
 
     def _status(pick: dict, current: float) -> str:
         entry = pick["entry_price"]
-        stop  = pick["stop_loss"]
+        stop = pick["stop_loss"]
         targets_list = pick.get("targets") or ([pick["target"]] if pick.get("target") else [])
         t1 = targets_list[0] if targets_list else None
         signal = pick.get("signal", "")
@@ -280,17 +280,19 @@ async def get_report_performance(report_id: str, current_user: CurrentUser) -> d
         entry = pick["entry_price"]
         pnl_pct = round((current - entry) / entry * 100, 2) if current else None
         targets_list = pick.get("targets") or ([pick["target"]] if pick.get("target") else [])
-        target_pcts = [
-            round((t - entry) / entry * 100, 2) for t in targets_list
-        ] if targets_list else []
-        enriched.append({
-            **pick,
-            "targets": targets_list,
-            "target_pcts": target_pcts,
-            "current_price": current,
-            "pnl_pct": pnl_pct,
-            "status": _status(pick, current) if current else "NO_DATA",
-        })
+        target_pcts = (
+            [round((t - entry) / entry * 100, 2) for t in targets_list] if targets_list else []
+        )
+        enriched.append(
+            {
+                **pick,
+                "targets": targets_list,
+                "target_pcts": target_pcts,
+                "current_price": current,
+                "pnl_pct": pnl_pct,
+                "status": _status(pick, current) if current else "NO_DATA",
+            }
+        )
 
     return {
         "id": doc["id"],
@@ -303,6 +305,7 @@ async def get_report_performance(report_id: str, current_user: CurrentUser) -> d
 def _universe_size() -> int:
     try:
         from app.infra.discovery.universe import NSE_UNIVERSE
+
         return len(NSE_UNIVERSE)
     except Exception:
         return 0

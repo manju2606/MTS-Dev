@@ -123,7 +123,5 @@ def _analyze(symbol: str, quote: Quote, ta: TechnicalIndicators) -> AIRecommenda
 class LocalAIClient:
     """Synchronous rule-based engine with the same interface as ClaudeAIClient."""
 
-    async def analyze(
-        self, symbol: str, quote: Quote, ta: TechnicalIndicators
-    ) -> AIRecommendation:
+    async def analyze(self, symbol: str, quote: Quote, ta: TechnicalIndicators) -> AIRecommendation:
         return _analyze(symbol, quote, ta)

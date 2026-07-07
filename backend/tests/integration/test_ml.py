@@ -1,4 +1,5 @@
 """Integration tests for ML prediction endpoints."""
+
 import uuid
 from unittest.mock import AsyncMock, patch
 
@@ -15,10 +16,19 @@ _FAKE_PRED = MLPrediction(
     prediction="UP",
     probability=0.73,
     feature_importances={
-        "rsi": 0.18, "macd": 0.14, "macd_hist": 0.12, "sma20_ratio": 0.10,
-        "sma50_ratio": 0.09, "bb_position": 0.08, "atr_pct": 0.07,
-        "vol_ratio": 0.06, "ret_1d": 0.06, "ret_5d": 0.05,
-        "ret_20d": 0.04, "high_low_ratio": 0.04, "price_vs_52w_high": 0.04,
+        "rsi": 0.18,
+        "macd": 0.14,
+        "macd_hist": 0.12,
+        "sma20_ratio": 0.10,
+        "sma50_ratio": 0.09,
+        "bb_position": 0.08,
+        "atr_pct": 0.07,
+        "vol_ratio": 0.06,
+        "ret_1d": 0.06,
+        "ret_5d": 0.05,
+        "ret_20d": 0.04,
+        "high_low_ratio": 0.04,
+        "price_vs_52w_high": 0.04,
         "obv_trend": 0.03,
     },
     training_samples=240,
@@ -97,6 +107,12 @@ async def test_predict_batch_unauthenticated(client: AsyncClient) -> None:
 
 
 def _assert_prediction_shape(body: dict) -> None:
-    for field in ("symbol", "prediction", "probability",
-                  "feature_importances", "training_samples", "accuracy_cv"):
+    for field in (
+        "symbol",
+        "prediction",
+        "probability",
+        "feature_importances",
+        "training_samples",
+        "accuracy_cv",
+    ):
         assert field in body, f"Missing field: {field}"

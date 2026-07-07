@@ -65,6 +65,7 @@ async def get_current_user(
         key_obj = await key_repo.get_by_hash(key_hash)
         if key_obj and not key_obj.revoked:
             import contextlib
+
             with contextlib.suppress(Exception):
                 await key_repo.touch_last_used(key_obj.id)
             user_repo = SQLUserRepository(db)

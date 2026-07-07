@@ -39,6 +39,7 @@ NIFTY_INDEX_SYMBOL = "^NSEI"
 
 # ── Dataclasses ───────────────────────────────────────────────────────────────
 
+
 @dataclass
 class BTSTCandidate:
     rank: int
@@ -86,6 +87,7 @@ class BTSTScan:
 
 # ── Technical helpers (self-contained; mirrors golden_stock_scanner) ──────────
 
+
 def _compute_rsi(close: pd.Series, period: int = 14) -> float:
     try:
         delta = close.diff()
@@ -126,7 +128,7 @@ def _detect_consolidation_breakout(close: pd.Series, lookback: int = 15) -> tupl
     try:
         if len(close) < lookback + 2:
             return False, 0
-        prior = close.iloc[-(lookback + 1):-1]
+        prior = close.iloc[-(lookback + 1) : -1]
         prior_high = float(prior.max())
         prior_low = float(prior.min())
         if prior_high <= 0:
@@ -141,6 +143,7 @@ def _detect_consolidation_breakout(close: pd.Series, lookback: int = 15) -> tupl
 
 
 # ── Pass 1: batch download + Nifty benchmark ──────────────────────────────────
+
 
 def _fetch_nifty_returns() -> tuple[float, float]:
     try:
@@ -162,8 +165,12 @@ def _fetch_nifty_returns() -> tuple[float, float]:
 def _pass1_batch_download(symbols: list[str]) -> list[dict]:
     try:
         raw = yf.download(
-            symbols, period="6mo", group_by="ticker", threads=True,
-            progress=False, auto_adjust=True,
+            symbols,
+            period="6mo",
+            group_by="ticker",
+            threads=True,
+            progress=False,
+            auto_adjust=True,
         )
     except Exception as exc:
         log.error("btst.pass1.download_error", error=str(exc))
@@ -194,7 +201,9 @@ def _pass1_batch_download(symbols: list[str]) -> list[dict]:
             sma50 = float(sma50_val) if not pd.isna(sma50_val) else sma20
 
             rsi = _compute_rsi(close)
-            vol_avg = float(volume.iloc[:-1].rolling(20).mean().iloc[-1]) if len(volume) > 20 else 1.0
+            vol_avg = (
+                float(volume.iloc[:-1].rolling(20).mean().iloc[-1]) if len(volume) > 20 else 1.0
+            )
             if pd.isna(vol_avg) or vol_avg == 0:
                 vol_avg = 1.0
             volume_ratio = float(volume.iloc[-1]) / vol_avg
@@ -212,12 +221,22 @@ def _pass1_batch_download(symbols: list[str]) -> list[dict]:
             if volume_ratio < 1.2:
                 continue
 
-            candidates.append({
-                "symbol": sym, "close": close, "current": current,
-                "sma20": sma20, "sma50": sma50, "rsi": rsi,
-                "volume_ratio": volume_ratio, "ret_5d": ret_5d, "ret_20d": ret_20d,
-                "change_pct": change_pct, "breakout": breakout, "cons_days": cons_days,
-            })
+            candidates.append(
+                {
+                    "symbol": sym,
+                    "close": close,
+                    "current": current,
+                    "sma20": sma20,
+                    "sma50": sma50,
+                    "rsi": rsi,
+                    "volume_ratio": volume_ratio,
+                    "ret_5d": ret_5d,
+                    "ret_20d": ret_20d,
+                    "change_pct": change_pct,
+                    "breakout": breakout,
+                    "cons_days": cons_days,
+                }
+            )
         except Exception as exc:
             log.debug("btst.pass1.sym_error", symbol=sym, error=str(exc))
             continue
@@ -227,10 +246,12 @@ def _pass1_batch_download(symbols: list[str]) -> list[dict]:
 
 # ── News sentiment lookup ──────────────────────────────────────────────────────
 
+
 async def _build_news_sentiment_map() -> dict[str, tuple[float, int]]:
     """symbol -> (avg_sentiment, mention_count), built from live RSS feeds."""
     try:
         from app.infra.discovery.news_fetcher import fetch_all_news
+
         items = await fetch_all_news()
     except Exception as exc:
         log.warning("btst.news.error", error=str(exc))
@@ -245,6 +266,7 @@ async def _build_news_sentiment_map() -> dict[str, tuple[float, int]]:
 
 
 # ── F&O positioning (PCR from yfinance options chain) ─────────────────────────
+
 
 def _fetch_pcr_sync(symbol: str) -> float | None:
     try:
@@ -271,6 +293,7 @@ def _fetch_name_sync(symbol: str) -> str:
 
 
 # ── Scoring ────────────────────────────────────────────────────────────────────
+
 
 def _score_candidate(
     cand: dict,
@@ -381,7 +404,8 @@ def _score_candidate(
     if rel_20d > 0:
         reasons.append(f"Relative strength vs Nifty: {rel_20d:+.1f}% (20D)")
     if news_sentiment is not None and news_mentions > 0:
-        reasons.append(f"Positive news sentiment ({news_mentions} recent mention{'s' if news_mentions != 1 else ''})")
+        plural = "s" if news_mentions != 1 else ""
+        reasons.append(f"Positive news sentiment ({news_mentions} recent mention{plural})")
     if fo_bullish and pcr is not None:
         reasons.append(f"Bullish F&O positioning (PCR {pcr:.2f})")
     if macd_bullish:
@@ -391,22 +415,41 @@ def _score_candidate(
     sector = SYMBOL_SECTOR.get(sym, "Unknown")
 
     return BTSTCandidate(
-        rank=0, symbol=sym, name=name, sector=sector,
-        entry_price=entry, stop_loss=stop_loss, target_1=target_1, target_2=target_2,
-        risk_reward=risk_reward, confidence_score=int(total_score),
-        breakout_score=int(breakout_score), relative_strength_score=int(rel_score),
-        volume_score=int(vol_score), news_score=int(news_score), fo_score=int(fo_score),
-        reasons=reasons, current_price=current, change_pct=round(change_pct, 2),
-        rsi=round(rsi, 1), volume_ratio=round(volume_ratio, 2),
-        breakout_consolidation=breakout, consolidation_days=cons_days,
-        relative_strength_5d=round(rel_5d, 2), relative_strength_20d=round(rel_20d, 2),
+        rank=0,
+        symbol=sym,
+        name=name,
+        sector=sector,
+        entry_price=entry,
+        stop_loss=stop_loss,
+        target_1=target_1,
+        target_2=target_2,
+        risk_reward=risk_reward,
+        confidence_score=int(total_score),
+        breakout_score=int(breakout_score),
+        relative_strength_score=int(rel_score),
+        volume_score=int(vol_score),
+        news_score=int(news_score),
+        fo_score=int(fo_score),
+        reasons=reasons,
+        current_price=current,
+        change_pct=round(change_pct, 2),
+        rsi=round(rsi, 1),
+        volume_ratio=round(volume_ratio, 2),
+        breakout_consolidation=breakout,
+        consolidation_days=cons_days,
+        relative_strength_5d=round(rel_5d, 2),
+        relative_strength_20d=round(rel_20d, 2),
         news_sentiment=round(news_sentiment, 2) if news_sentiment is not None else None,
-        news_mentions=news_mentions, pcr=pcr, fo_bullish=fo_bullish,
-        above_sma20=above_sma20, above_sma50=above_sma50,
+        news_mentions=news_mentions,
+        pcr=pcr,
+        fo_bullish=fo_bullish,
+        above_sma20=above_sma20,
+        above_sma50=above_sma50,
     )
 
 
 # ── Main scan function ────────────────────────────────────────────────────────
+
 
 async def run_btst_scan() -> BTSTScan:
     now_ist = datetime.now(IST)
@@ -454,12 +497,20 @@ async def run_btst_scan() -> BTSTScan:
         pick.rank = i + 1
 
     log.info(
-        "btst.scan.done", universe=len(symbols), pass1=pass1_count, picks=len(picks_raw),
-        nifty_ret_5d=nifty_ret_5d, nifty_ret_20d=nifty_ret_20d,
+        "btst.scan.done",
+        universe=len(symbols),
+        pass1=pass1_count,
+        picks=len(picks_raw),
+        nifty_ret_5d=nifty_ret_5d,
+        nifty_ret_20d=nifty_ret_20d,
     )
 
     return BTSTScan(
-        scan_date=scan_date, scan_time=scan_time, universe_scanned=len(symbols),
-        passed_filter=pass1_count, nifty_ret_5d=round(nifty_ret_5d, 2),
-        nifty_ret_20d=round(nifty_ret_20d, 2), picks=picks_raw,
+        scan_date=scan_date,
+        scan_time=scan_time,
+        universe_scanned=len(symbols),
+        passed_filter=pass1_count,
+        nifty_ret_5d=round(nifty_ret_5d, 2),
+        nifty_ret_20d=round(nifty_ret_20d, 2),
+        picks=picks_raw,
     )

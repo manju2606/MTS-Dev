@@ -65,11 +65,11 @@ def _get_health(name: str) -> SourceHealth:
 def get_all_source_health() -> list[dict]:
     return [
         {
-            "source":         h.name,
-            "success":        h.success,
-            "failure":        h.failure,
-            "healthy":        h.is_healthy,
-            "last_error":     h.last_error,
+            "source": h.name,
+            "success": h.success,
+            "failure": h.failure,
+            "healthy": h.is_healthy,
+            "last_error": h.last_error,
         }
         for h in _HEALTH.values()
     ]
@@ -82,10 +82,10 @@ def _build_priority(order: list[str]) -> list[tuple[str, MarketDataClient]]:
     from app.infra.market_data.yfinance_client import YFinanceClient
 
     _MAP: dict[str, MarketDataClient] = {
-        "nse_india":    NseIndiaClient(),
-        "yahoo":        YFinanceClient(),
+        "nse_india": NseIndiaClient(),
+        "yahoo": YFinanceClient(),
         "moneycontrol": MoneyControlClient(),
-        "google":       GoogleFinanceClient(),
+        "google": GoogleFinanceClient(),
     }
     return [(name, _MAP[name]) for name in order if name in _MAP]
 
@@ -132,15 +132,15 @@ class CompositeMarketDataClient(MarketDataClient):
                 last_exc = exc
                 log.warning(
                     "composite.source.failed",
-                    source=name, symbol=symbol, error=str(exc),
+                    source=name,
+                    symbol=symbol,
+                    error=str(exc),
                 )
 
         raise last_exc
 
     async def get_quotes(self, symbols: list[str]) -> list[Quote]:
-        results = await asyncio.gather(
-            *[self._safe_get(s) for s in symbols]
-        )
+        results = await asyncio.gather(*[self._safe_get(s) for s in symbols])
         return [q for q in results if q is not None]
 
     async def _safe_get(self, symbol: str) -> Quote | None:
@@ -151,13 +151,17 @@ class CompositeMarketDataClient(MarketDataClient):
 
     async def get_quote_multi_source(self, symbol: str) -> dict:
         """Fetch from ALL sources concurrently and return a comparison dict."""
+
         async def _try(name: str, client: MarketDataClient) -> dict:
             try:
                 q = await client.get_quote(symbol)
                 return {
-                    "source": name, "ok": True,
-                    "price": q.price, "change_pct": q.change_pct,
-                    "volume": q.volume, "exchange": q.exchange,
+                    "source": name,
+                    "ok": True,
+                    "price": q.price,
+                    "change_pct": q.change_pct,
+                    "volume": q.volume,
+                    "exchange": q.exchange,
                 }
             except Exception as exc:
                 return {"source": name, "ok": False, "error": str(exc)[:100]}

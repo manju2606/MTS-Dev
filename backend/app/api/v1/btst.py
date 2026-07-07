@@ -14,6 +14,7 @@ _admin_only = Depends(require_role(UserRole.ADMIN))
 async def get_latest(_: CurrentUser) -> dict:
     """Return the most recent BTST scan, or 404 if none exists yet."""
     from app.infra.db.repositories.btst_repo import BTSTRepository
+
     repo = BTSTRepository()
     doc = await repo.get_latest_scan()
     if doc is None:
@@ -28,6 +29,7 @@ async def get_history(
 ) -> list[dict]:
     """Return metadata for recent BTST scans (no picks detail), most recent first."""
     from app.infra.db.repositories.btst_repo import BTSTRepository
+
     repo = BTSTRepository()
     return await repo.get_history(limit=limit)
 
@@ -36,6 +38,7 @@ async def get_history(
 async def get_scan_by_date(date_str: str, _: CurrentUser) -> dict:
     """Return the full BTST scan document for a specific date (YYYY-MM-DD)."""
     from app.infra.db.repositories.btst_repo import BTSTRepository
+
     repo = BTSTRepository()
     doc = await repo.get_scan_by_date(date_str)
     if doc is None:
@@ -49,6 +52,7 @@ async def trigger_scan(_: CurrentUser) -> dict:
     import dataclasses
 
     from app.services.btst_service import run_and_save_btst
+
     scan = await run_and_save_btst()
     return dataclasses.asdict(scan)
 
@@ -57,5 +61,6 @@ async def trigger_scan(_: CurrentUser) -> dict:
 async def get_performance(_: CurrentUser) -> dict:
     """Return accuracy statistics for resolved BTST picks (hit rate, avg return)."""
     from app.infra.db.repositories.btst_repo import BTSTRepository
+
     repo = BTSTRepository()
     return await repo.get_performance_stats()

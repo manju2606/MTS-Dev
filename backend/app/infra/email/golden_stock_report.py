@@ -8,29 +8,36 @@ def _score_bar(score: int, max_score: int, color: str) -> str:
     return (
         f'<div style="background:#e5e7eb;border-radius:4px;height:6px;width:80px;display:inline-block;vertical-align:middle;">'
         f'<div style="background:{color};height:6px;border-radius:4px;width:{pct}%;"></div>'
-        f'</div>'
+        f"</div>"
         f'<span style="font-size:11px;color:#6b7280;margin-left:4px;">{score}/{max_score}</span>'
     )
 
 
 def _pick_row(p: IntradayCandidate) -> str:
     score_color = (
-        "#059669" if p.confidence_score >= 70
-        else "#f59e0b" if p.confidence_score >= 50
+        "#059669"
+        if p.confidence_score >= 70
+        else "#f59e0b"
+        if p.confidence_score >= 50
         else "#dc2626"
     )
     sym = p.symbol.replace(".NS", "").replace(".BO", "")
     reasons_html = "".join(
-        f'<li style="margin:2px 0;font-size:11px;color:#374151;">{r}</li>'
-        for r in p.reasons[:3]
+        f'<li style="margin:2px 0;font-size:11px;color:#374151;">{r}</li>' for r in p.reasons[:3]
     )
     badges = []
     if p.macd_bullish:
-        badges.append('<span style="background:#ede9fe;color:#5b21b6;font-size:10px;padding:2px 5px;border-radius:3px;margin-right:3px;">MACD</span>')
+        badges.append(
+            '<span style="background:#ede9fe;color:#5b21b6;font-size:10px;padding:2px 5px;border-radius:3px;margin-right:3px;">MACD</span>'
+        )
     if p.near_day_high:
-        badges.append('<span style="background:#fef3c7;color:#92400e;font-size:10px;padding:2px 5px;border-radius:3px;margin-right:3px;">Near High</span>')
+        badges.append(
+            '<span style="background:#fef3c7;color:#92400e;font-size:10px;padding:2px 5px;border-radius:3px;margin-right:3px;">Near High</span>'
+        )
     if p.above_sma50:
-        badges.append('<span style="background:#ecfdf5;color:#065f46;font-size:10px;padding:2px 5px;border-radius:3px;">SMA50+</span>')
+        badges.append(
+            '<span style="background:#ecfdf5;color:#065f46;font-size:10px;padding:2px 5px;border-radius:3px;">SMA50+</span>'
+        )
 
     return f"""
   <tr style="border-bottom:1px solid #f3f4f6;">
@@ -48,17 +55,17 @@ def _pick_row(p: IntradayCandidate) -> str:
       <p style="margin:0;font-size:22px;font-weight:800;color:{score_color};">{p.confidence_score}</p>
       <p style="margin:0;font-size:9px;color:#9ca3af;text-transform:uppercase;">Score</p>
       <div style="margin-top:4px;">
-        <div style="font-size:9px;color:#6b7280;margin-bottom:1px;">F {_score_bar(p.fundamental_score, 30, '#4f46e5')}</div>
-        <div style="font-size:9px;color:#6b7280;margin-bottom:1px;">T {_score_bar(p.technical_score, 50, '#0891b2')}</div>
-        <div style="font-size:9px;color:#6b7280;">M {_score_bar(p.momentum_score, 20, '#059669')}</div>
+        <div style="font-size:9px;color:#6b7280;margin-bottom:1px;">F {_score_bar(p.fundamental_score, 30, "#4f46e5")}</div>
+        <div style="font-size:9px;color:#6b7280;margin-bottom:1px;">T {_score_bar(p.technical_score, 50, "#0891b2")}</div>
+        <div style="font-size:9px;color:#6b7280;">M {_score_bar(p.momentum_score, 20, "#059669")}</div>
       </div>
     </td>
     <td style="padding:12px 8px;vertical-align:top;font-size:12px;">
       <table style="border-collapse:collapse;">
         <tr>
           <td style="color:#6b7280;padding:1px 4px 1px 0;">LTP</td>
-          <td style="font-family:monospace;font-weight:700;color:{'#059669' if p.change_pct >= 0 else '#dc2626'};">
-            &#8377;{p.current_price:,.2f} <span style="font-size:10px;">({'+' if p.change_pct >= 0 else ''}{p.change_pct:.2f}%)</span>
+          <td style="font-family:monospace;font-weight:700;color:{"#059669" if p.change_pct >= 0 else "#dc2626"};">
+            &#8377;{p.current_price:,.2f} <span style="font-size:10px;">({"+" if p.change_pct >= 0 else ""}{p.change_pct:.2f}%)</span>
           </td>
         </tr>
         <tr>

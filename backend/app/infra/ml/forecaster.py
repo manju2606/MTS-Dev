@@ -4,6 +4,7 @@ Models : RandomForestRegressor, HistGradientBoostingRegressor, Ridge (all sklear
 Horizons: 1 day (tomorrow), 5 days (week), 22 days (month).
 Trains on 2 years of daily OHLCV from yfinance; results cached 1 hour.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -20,14 +21,25 @@ _CACHE: dict[str, tuple[list[HorizonForecast], float]] = {}
 _CACHE_TTL = 3_600  # 1 hour
 
 _FEATURES = [
-    "rsi", "macd", "macd_hist", "sma20_ratio", "sma50_ratio",
-    "bb_position", "atr_pct", "vol_ratio", "ret_1d", "ret_5d",
-    "ret_20d", "high_low_ratio", "price_vs_52w_high", "obv_trend",
+    "rsi",
+    "macd",
+    "macd_hist",
+    "sma20_ratio",
+    "sma50_ratio",
+    "bb_position",
+    "atr_pct",
+    "vol_ratio",
+    "ret_1d",
+    "ret_5d",
+    "ret_20d",
+    "high_low_ratio",
+    "price_vs_52w_high",
+    "obv_trend",
 ]
 
 HORIZONS: list[tuple[str, int]] = [
-    ("day",   1),
-    ("week",  5),
+    ("day", 1),
+    ("week", 5),
     ("month", 22),
 ]
 
@@ -58,11 +70,14 @@ def _build_features(df: pd.DataFrame) -> pd.DataFrame:
     bb_upper = sma20 + 2 * std20
     bb_lower = sma20 - 2 * std20
     df["bb_position"] = (c - bb_lower) / (bb_upper - bb_lower + 1e-9)
-    tr = pd.concat([
-        df["High"] - df["Low"],
-        (df["High"] - c.shift()).abs(),
-        (df["Low"] - c.shift()).abs(),
-    ], axis=1).max(axis=1)
+    tr = pd.concat(
+        [
+            df["High"] - df["Low"],
+            (df["High"] - c.shift()).abs(),
+            (df["Low"] - c.shift()).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
     df["atr_pct"] = tr.rolling(14).mean() / c
     df["vol_ratio"] = v / v.rolling(20).mean()
     df["ret_1d"] = c.pct_change(1)
@@ -151,9 +166,9 @@ def _forecast_sync(symbol: str) -> list[HorizonForecast]:
         ridge_pred = float(ridge.predict(X_pred_s)[0])
 
         raw_preds = {
-            "random_forest":  max(rf_pred, 0.01),
+            "random_forest": max(rf_pred, 0.01),
             "gradient_boost": max(hgb_pred, 0.01),
-            "ridge":          max(ridge_pred, 0.01),
+            "ridge": max(ridge_pred, 0.01),
         }
 
         ensemble_price = float(np.mean(list(raw_preds.values())))
@@ -166,28 +181,32 @@ def _forecast_sync(symbol: str) -> list[HorizonForecast]:
             # Confidence: higher when the model is close to ensemble & ensemble is tight
             spread_ratio = abs(mprice - ensemble_price) / (current_price + 1e-9)
             conf = max(0.3, min(0.95, 1.0 - spread_ratio * 15))
-            model_forecasts.append(ModelForecast(
-                model=mname,
-                predicted_price=round(mprice, 2),
-                change_pct=round(mpct, 2),
-                confidence=round(conf, 3),
-                direction=_direction(mpct),
-            ))
+            model_forecasts.append(
+                ModelForecast(
+                    model=mname,
+                    predicted_price=round(mprice, 2),
+                    change_pct=round(mpct, 2),
+                    confidence=round(conf, 3),
+                    direction=_direction(mpct),
+                )
+            )
 
         ens_pct = (ensemble_price - current_price) / (current_price + 1e-9) * 100
         band = max(price_std_20, pred_std) * 1.5
 
-        results.append(HorizonForecast(
-            horizon=horizon_name,
-            horizon_days=horizon_days,
-            target_date=_next_trade_date(horizon_days),
-            ensemble_price=round(ensemble_price, 2),
-            ensemble_change_pct=round(ens_pct, 2),
-            lower_bound=round(ensemble_price - band, 2),
-            upper_bound=round(ensemble_price + band, 2),
-            direction=_direction(ens_pct),
-            models=model_forecasts,
-        ))
+        results.append(
+            HorizonForecast(
+                horizon=horizon_name,
+                horizon_days=horizon_days,
+                target_date=_next_trade_date(horizon_days),
+                ensemble_price=round(ensemble_price, 2),
+                ensemble_change_pct=round(ens_pct, 2),
+                lower_bound=round(ensemble_price - band, 2),
+                upper_bound=round(ensemble_price + band, 2),
+                direction=_direction(ens_pct),
+                models=model_forecasts,
+            )
+        )
 
     return results
 

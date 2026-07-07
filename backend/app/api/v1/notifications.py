@@ -1,4 +1,5 @@
 """Notification center — list, read, clear."""
+
 from __future__ import annotations
 
 from fastapi import APIRouter

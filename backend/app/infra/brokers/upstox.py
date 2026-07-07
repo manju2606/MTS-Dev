@@ -27,11 +27,14 @@ _POSITIONS_URL = "https://api.upstox.com/v2/portfolio/short-term-positions"
 
 def get_login_url(api_key: str, redirect_uri: str) -> str:
     from urllib.parse import urlencode
-    params = urlencode({
-        "response_type": "code",
-        "client_id": api_key,
-        "redirect_uri": redirect_uri,
-    })
+
+    params = urlencode(
+        {
+            "response_type": "code",
+            "client_id": api_key,
+            "redirect_uri": redirect_uri,
+        }
+    )
     return f"https://api.upstox.com/v2/login/authorization/dialog?{params}"
 
 

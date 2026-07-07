@@ -1,4 +1,5 @@
 """Enriched watchlist quote fetcher — batch yfinance + static metadata."""
+
 from __future__ import annotations
 
 import asyncio
@@ -166,11 +167,25 @@ _NAMES: dict[str, str] = {
     "MCDOWELL-N.NS": "United Spirits",
 }
 
-_BANK_NIFTY: frozenset[str] = frozenset({
-    "HDFCBANK.NS", "ICICIBANK.NS", "SBIN.NS", "KOTAKBANK.NS", "AXISBANK.NS",
-    "INDUSINDBK.NS", "BANDHANBNK.NS", "FEDERALBNK.NS", "IDFCFIRSTB.NS", "AUBANK.NS",
-    "PNB.NS", "CANBK.NS", "BANKBARODA.NS", "UNIONBANK.NS", "RBLBANK.NS",
-})
+_BANK_NIFTY: frozenset[str] = frozenset(
+    {
+        "HDFCBANK.NS",
+        "ICICIBANK.NS",
+        "SBIN.NS",
+        "KOTAKBANK.NS",
+        "AXISBANK.NS",
+        "INDUSINDBK.NS",
+        "BANDHANBNK.NS",
+        "FEDERALBNK.NS",
+        "IDFCFIRSTB.NS",
+        "AUBANK.NS",
+        "PNB.NS",
+        "CANBK.NS",
+        "BANKBARODA.NS",
+        "UNIONBANK.NS",
+        "RBLBANK.NS",
+    }
+)
 
 _N50 = frozenset(NIFTY_50)
 _NN50 = frozenset(NIFTY_NEXT_50)
@@ -210,6 +225,7 @@ def _index_membership(sym: str) -> list[str]:
 
 
 # ── Technical helpers ─────────────────────────────────────────────────────────
+
 
 def _sf(v: object, default: float = 0.0) -> float:
     try:
@@ -261,8 +277,12 @@ def _fetch_sync(symbols: list[str]) -> list[dict]:
     tickers_str = " ".join(symbols)
     try:
         df = yf.download(
-            tickers_str, period="1y", interval="1d",
-            progress=False, auto_adjust=True, group_by="ticker",
+            tickers_str,
+            period="1y",
+            interval="1d",
+            progress=False,
+            auto_adjust=True,
+            group_by="ticker",
         )
     except Exception:
         return [{"symbol": s, "error": "Download failed"} for s in symbols]
@@ -284,46 +304,46 @@ def _fetch_sync(symbols: list[str]) -> list[dict]:
     for sym in symbols:
         try:
             closes = _series("Close", sym)
-            opens  = _series("Open",  sym)
-            highs  = _series("High",  sym)
-            lows   = _series("Low",   sym)
-            vols   = _series("Volume", sym)
+            opens = _series("Open", sym)
+            highs = _series("High", sym)
+            lows = _series("Low", sym)
+            vols = _series("Volume", sym)
 
             if len(closes) < 2:
                 results.append({"symbol": sym, "error": "No data"})
                 continue
 
-            ltp        = _sf(closes.iloc[-1])
+            ltp = _sf(closes.iloc[-1])
             prev_close = _sf(closes.iloc[-2])
-            change     = round(ltp - prev_close, 2)
+            change = round(ltp - prev_close, 2)
             change_pct = round((change / prev_close * 100) if prev_close else 0.0, 2)
 
-            o = _sf(opens.iloc[-1])  if len(opens)  else ltp
-            h = _sf(highs.iloc[-1])  if len(highs)  else ltp
-            lo = _sf(lows.iloc[-1])  if len(lows)   else ltp
+            o = _sf(opens.iloc[-1]) if len(opens) else ltp
+            h = _sf(highs.iloc[-1]) if len(highs) else ltp
+            lo = _sf(lows.iloc[-1]) if len(lows) else ltp
             v = int(_sf(vols.iloc[-1])) if len(vols) else 0
 
             vwap = round((h + lo + ltp) / 3, 2)
-            atp  = round((o + h + lo + ltp) / 4, 2)
+            atp = round((o + h + lo + ltp) / 4, 2)
 
-            avg_vol   = int(vols.tail(20).mean()) if len(vols) >= 5 else v
+            avg_vol = int(vols.tail(20).mean()) if len(vols) >= 5 else v
             vol_ratio = round(v / avg_vol, 2) if avg_vol > 0 else 1.0
 
             w52h = round(_sf(highs.tail(252).max()), 2)
-            w52l = round(_sf(lows.tail(252).min()),  2)
+            w52l = round(_sf(lows.tail(252).min()), 2)
             pct_h = round((ltp - w52h) / w52h * 100, 2) if w52h else 0.0
             pct_l = round((ltp - w52l) / w52l * 100, 2) if w52l else 0.0
 
-            sma20  = round(float(closes.tail(20).mean()),  2) if len(closes) >= 20  else 0.0
-            sma50  = round(float(closes.tail(50).mean()),  2) if len(closes) >= 50  else 0.0
+            sma20 = round(float(closes.tail(20).mean()), 2) if len(closes) >= 20 else 0.0
+            sma50 = round(float(closes.tail(50).mean()), 2) if len(closes) >= 50 else 0.0
             sma200 = round(float(closes.tail(200).mean()), 2) if len(closes) >= 200 else 0.0
 
             rsi_v = round(_rsi(closes), 1)
             ml, ms, mh = _macd(closes)
             bbu, bbm, bbl = _bb(closes)
 
-            ab20  = bool(ltp > sma20)  if sma20  else None
-            ab50  = bool(ltp > sma50)  if sma50  else None
+            ab20 = bool(ltp > sma20) if sma20 else None
+            ab50 = bool(ltp > sma50) if sma50 else None
             ab200 = bool(ltp > sma200) if sma200 else None
             bullish = sum(1 for x in [ab20, ab50, ab200] if x is True)
             trend = "BULLISH" if bullish >= 2 else "BEARISH" if bullish == 0 else "MIXED"
@@ -331,57 +351,61 @@ def _fetch_sync(symbols: list[str]) -> list[dict]:
             display = sym.replace(".NS", "").replace(".BO", "")
             exchange = "BSE" if sym.endswith(".BO") else "NSE"
 
-            results.append({
-                "symbol": sym,
-                "display_symbol": display,
-                "company_name": _NAMES.get(sym, display),
-                "exchange": exchange,
-                "sector": SYMBOL_SECTOR.get(sym, "—"),
-                "market_cap_category": _market_cap(sym),
-                "index_membership": _index_membership(sym),
-                # Price action
-                "ltp": round(ltp, 2),
-                "prev_close": round(prev_close, 2),
-                "change": change,
-                "change_pct": change_pct,
-                "open": round(o, 2),
-                "day_high": round(h, 2),
-                "day_low": round(lo, 2),
-                "vwap": vwap,
-                "atp": atp,
-                # Volume
-                "volume": v,
-                "avg_volume": avg_vol,
-                "vol_ratio": vol_ratio,
-                # 52W
-                "week52_high": w52h,
-                "week52_low": w52l,
-                "pct_from_52w_high": pct_h,
-                "pct_from_52w_low": pct_l,
-                # Trend
-                "sma20": sma20,
-                "sma50": sma50,
-                "sma200": sma200,
-                "above_sma20": ab20,
-                "above_sma50": ab50,
-                "above_sma200": ab200,
-                "trend": trend,
-                # Technical
-                "rsi": rsi_v,
-                "macd": round(ml, 4),
-                "macd_signal": round(ms, 4),
-                "macd_hist": round(mh, 4),
-                "bb_upper": bbu,
-                "bb_mid": bbm,
-                "bb_lower": bbl,
-                "error": None,
-            })
+            results.append(
+                {
+                    "symbol": sym,
+                    "display_symbol": display,
+                    "company_name": _NAMES.get(sym, display),
+                    "exchange": exchange,
+                    "sector": SYMBOL_SECTOR.get(sym, "—"),
+                    "market_cap_category": _market_cap(sym),
+                    "index_membership": _index_membership(sym),
+                    # Price action
+                    "ltp": round(ltp, 2),
+                    "prev_close": round(prev_close, 2),
+                    "change": change,
+                    "change_pct": change_pct,
+                    "open": round(o, 2),
+                    "day_high": round(h, 2),
+                    "day_low": round(lo, 2),
+                    "vwap": vwap,
+                    "atp": atp,
+                    # Volume
+                    "volume": v,
+                    "avg_volume": avg_vol,
+                    "vol_ratio": vol_ratio,
+                    # 52W
+                    "week52_high": w52h,
+                    "week52_low": w52l,
+                    "pct_from_52w_high": pct_h,
+                    "pct_from_52w_low": pct_l,
+                    # Trend
+                    "sma20": sma20,
+                    "sma50": sma50,
+                    "sma200": sma200,
+                    "above_sma20": ab20,
+                    "above_sma50": ab50,
+                    "above_sma200": ab200,
+                    "trend": trend,
+                    # Technical
+                    "rsi": rsi_v,
+                    "macd": round(ml, 4),
+                    "macd_signal": round(ms, 4),
+                    "macd_hist": round(mh, 4),
+                    "bb_upper": bbu,
+                    "bb_mid": bbm,
+                    "bb_lower": bbl,
+                    "error": None,
+                }
+            )
         except Exception as exc:
-            results.append({
-                "symbol": sym,
-                "display_symbol": sym.replace(".NS", "").replace(".BO", ""),
-                "error": str(exc),
-            })
+            results.append(
+                {
+                    "symbol": sym,
+                    "display_symbol": sym.replace(".NS", "").replace(".BO", ""),
+                    "error": str(exc),
+                }
+            )
 
     return results
 

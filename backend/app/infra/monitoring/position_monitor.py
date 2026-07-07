@@ -24,8 +24,8 @@ class PositionAlert:
     user_id: str
     trade_id: str
     symbol: str
-    signal: str          # "BUY" | "SELL"
-    event: str           # "stop_hit" | "target_hit"
+    signal: str  # "BUY" | "SELL"
+    event: str  # "stop_hit" | "target_hit"
     entry_price: float
     stop_loss: float
     target: float
@@ -117,7 +117,7 @@ async def _send_position_email(alert: PositionAlert) -> None:
       <p style="margin:0;font-size:13px;color:#374151;">{action}</p>
     </div>
     <p style="margin-top:20px;font-size:11px;color:#9ca3af;">
-      Triggered at {alert.triggered_at.strftime('%d %b %Y, %H:%M IST')} · Paper trading only · Not financial advice.
+      Triggered at {alert.triggered_at.strftime("%d %b %Y, %H:%M IST")} · Paper trading only · Not financial advice.
     </p>
   </div>
 </div>
@@ -168,10 +168,10 @@ async def run_position_check() -> None:
                 continue
 
             is_buy = trade.signal.value == "BUY"
-            stop_hit = is_buy and price <= trade.stop_loss or \
-                       not is_buy and price >= trade.stop_loss
-            target_hit = is_buy and price >= trade.target or \
-                         not is_buy and price <= trade.target
+            stop_hit = (
+                is_buy and price <= trade.stop_loss or not is_buy and price >= trade.stop_loss
+            )
+            target_hit = is_buy and price >= trade.target or not is_buy and price <= trade.target
 
             for event, fired in [("stop_hit", stop_hit), ("target_hit", target_hit)]:
                 if not fired:

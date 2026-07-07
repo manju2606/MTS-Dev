@@ -65,11 +65,20 @@ def _fetch_quote_sync(symbol: str) -> Quote:
 
                     prev_close_f = (
                         round(_safe_float(prior_closes.iloc[-1], price_f), 2)
-                        if not prior_closes.empty else price_f
+                        if not prior_closes.empty
+                        else price_f
                     )
-                    day_high = round(_safe_float(today_hist["High"].max(), price_f), 2) if not today_hist.empty else price_f
-                    day_low  = round(_safe_float(today_hist["Low"].min(),  price_f), 2) if not today_hist.empty else price_f
-                    volume   = int(today_hist["Volume"].sum()) if not today_hist.empty else 0
+                    day_high = (
+                        round(_safe_float(today_hist["High"].max(), price_f), 2)
+                        if not today_hist.empty
+                        else price_f
+                    )
+                    day_low = (
+                        round(_safe_float(today_hist["Low"].min(), price_f), 2)
+                        if not today_hist.empty
+                        else price_f
+                    )
+                    volume = int(today_hist["Volume"].sum()) if not today_hist.empty else 0
                     used_intraday = True
     except Exception:
         pass  # fall through to fast_info
@@ -89,8 +98,8 @@ def _fetch_quote_sync(symbol: str) -> Quote:
         price_f = round(_safe_float(price), 2)
         prev_close_f = round(_safe_float(prev_close, price_f), 2)
         day_high = round(_safe_float(fi.day_high, price_f), 2)
-        day_low  = round(_safe_float(fi.day_low,  price_f), 2)
-        volume   = int(_safe_float(fi.last_volume, 0.0))
+        day_low = round(_safe_float(fi.day_low, price_f), 2)
+        volume = int(_safe_float(fi.last_volume, 0.0))
 
     if price_f == 0.0:
         raise ValueError(f"Zero price returned for '{symbol}'")

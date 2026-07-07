@@ -1,4 +1,5 @@
 """Integration tests for scanner watchlist CRUD endpoints."""
+
 import uuid
 
 import pytest
@@ -19,9 +20,14 @@ def _headers(token: str) -> dict:
 @pytest.fixture
 async def auth(client: AsyncClient) -> dict:
     email, pw = _email(), "Secure123!"
-    reg = await client.post(AUTH + "/register", json={
-        "email": email, "password": pw, "full_name": "Scanner Test",
-    })
+    reg = await client.post(
+        AUTH + "/register",
+        json={
+            "email": email,
+            "password": pw,
+            "full_name": "Scanner Test",
+        },
+    )
     assert reg.status_code == 201
     login = await client.post(AUTH + "/login", json={"email": email, "password": pw})
     assert login.status_code == 200

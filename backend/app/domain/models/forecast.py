@@ -7,18 +7,18 @@ from uuid import UUID
 
 @dataclass
 class ModelForecast:
-    model: str           # 'random_forest' | 'gradient_boost' | 'ridge'
+    model: str  # 'random_forest' | 'gradient_boost' | 'ridge'
     predicted_price: float
     change_pct: float
-    confidence: float    # 0.0–1.0
-    direction: str       # 'UP' | 'DOWN' | 'FLAT'
+    confidence: float  # 0.0–1.0
+    direction: str  # 'UP' | 'DOWN' | 'FLAT'
 
 
 @dataclass
 class HorizonForecast:
-    horizon: str         # 'day' | 'week' | 'month'
-    horizon_days: int    # 1 | 5 | 22
-    target_date: str     # YYYY-MM-DD
+    horizon: str  # 'day' | 'week' | 'month'
+    horizon_days: int  # 1 | 5 | 22
+    target_date: str  # YYYY-MM-DD
     ensemble_price: float
     ensemble_change_pct: float
     lower_bound: float
@@ -40,6 +40,6 @@ class ForecastResult:
     low_52w: float
     volume: int
     avg_volume: int
-    forecasts: list[HorizonForecast]   # [day, week, month]
+    forecasts: list[HorizonForecast]  # [day, week, month]
     agent_analysis: str
     generated_at: datetime

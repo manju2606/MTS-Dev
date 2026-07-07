@@ -23,6 +23,7 @@ IST = timezone(timedelta(hours=5, minutes=30))
 
 # ── Public entrypoints ────────────────────────────────────────────────────────
 
+
 async def run_and_save_btst() -> BTSTScan:
     """Run scan, save to MongoDB, update watchlist, send email."""
     scan = await run_btst_scan()
@@ -55,6 +56,7 @@ async def resolve_btst_outcomes(target_date: str) -> int:
         return 0
 
     import yfinance as yf
+
     loop = asyncio.get_event_loop()
     updated = 0
 
@@ -66,6 +68,7 @@ async def resolve_btst_outcomes(target_date: str) -> int:
         if not sym:
             return
         try:
+
             def _fetch() -> float | None:
                 ticker = yf.Ticker(sym)
                 hist = ticker.history(period="2d")
@@ -83,8 +86,10 @@ async def resolve_btst_outcomes(target_date: str) -> int:
             await repo.update_pick_outcome(scan_id, sym, actual_close, round(actual_pct, 2))
             updated += 1
             log.info(
-                "btst.resolve.updated", symbol=sym,
-                actual_close=actual_close, actual_pct=actual_pct,
+                "btst.resolve.updated",
+                symbol=sym,
+                actual_close=actual_close,
+                actual_pct=actual_pct,
             )
         except Exception as exc:
             log.warning("btst.resolve.error", symbol=sym, error=str(exc))
@@ -95,6 +100,7 @@ async def resolve_btst_outcomes(target_date: str) -> int:
 
 
 # ── Watchlist ─────────────────────────────────────────────────────────────────
+
 
 async def _update_btst_watchlist(scan: BTSTScan) -> None:
     """Add the top pick to each admin's persistent "BTST Watchlist" (accumulates)."""
@@ -148,7 +154,8 @@ async def _update_btst_watchlist(scan: BTSTScan) -> None:
 
                 await session.execute(
                     text(
-                        "INSERT INTO watchlist_items (id, user_id, watchlist_id, symbol, exchange, added_at) "
+                        "INSERT INTO watchlist_items "
+                        "(id, user_id, watchlist_id, symbol, exchange, added_at) "
                         "VALUES (:id, :uid, :wlid, :sym, 'NSE', NOW()) ON CONFLICT DO NOTHING"
                     ),
                     {"id": str(uuid4()), "uid": uid, "wlid": wl_id, "sym": top_pick.symbol},
@@ -163,6 +170,7 @@ async def _update_btst_watchlist(scan: BTSTScan) -> None:
 
 
 # ── Email ─────────────────────────────────────────────────────────────────────
+
 
 async def _send_btst_email(scan: BTSTScan) -> None:
     if not scan.picks:

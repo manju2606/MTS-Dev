@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 @dataclass
 class AIRecommendation:
     symbol: str
-    signal: str        # BUY | SELL | HOLD
+    signal: str  # BUY | SELL | HOLD
     confidence: float  # 0.0–1.0
     entry_price: float
     stop_loss: float

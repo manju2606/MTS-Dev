@@ -23,6 +23,7 @@ IST = timezone(timedelta(hours=5, minutes=30))
 
 # ── Public entrypoints ────────────────────────────────────────────────────────
 
+
 async def generate_and_save_daily_pick() -> StockOfDay | None:
     """Main entry: build today's SotD pick and optionally auto-trade it."""
     today = datetime.now(IST).strftime("%Y-%m-%d")
@@ -53,19 +54,28 @@ async def generate_and_save_daily_pick() -> StockOfDay | None:
     await repo.save(sotd)
     await _add_to_sotd_watchlist(sotd)
 
-    await repo.add_journal_entry(today, "PICK_GENERATED", {
-        "symbol": sotd.symbol,
-        "composite_score": sotd.composite_score,
-        "signal": sotd.discovery_signal,
-        "scanner_hits": sotd.scanner_hits,
-        "auto_traded": sotd.auto_traded,
-        "entry_price": sotd.entry_price,
-        "stop_loss": sotd.stop_loss,
-        "target": sotd.target,
-    })
+    await repo.add_journal_entry(
+        today,
+        "PICK_GENERATED",
+        {
+            "symbol": sotd.symbol,
+            "composite_score": sotd.composite_score,
+            "signal": sotd.discovery_signal,
+            "scanner_hits": sotd.scanner_hits,
+            "auto_traded": sotd.auto_traded,
+            "entry_price": sotd.entry_price,
+            "stop_loss": sotd.stop_loss,
+            "target": sotd.target,
+        },
+    )
 
     await _send_sotd_pick_email(sotd)
-    log.info("sotd.generated", symbol=sotd.symbol, score=sotd.composite_score, auto_traded=sotd.auto_traded)
+    log.info(
+        "sotd.generated",
+        symbol=sotd.symbol,
+        score=sotd.composite_score,
+        auto_traded=sotd.auto_traded,
+    )
     return sotd
 
 
@@ -77,6 +87,7 @@ async def run_sotd_price_check() -> None:
         return
 
     from app.infra.market_data.yfinance_client import YFinanceClient
+
     client = YFinanceClient()
 
     symbols = [s.symbol for s in trading]
@@ -93,32 +104,36 @@ async def run_sotd_price_check() -> None:
         if price is None:
             continue
 
-        stop_hit   = price <= sotd.stop_loss
+        stop_hit = price <= sotd.stop_loss
         target_hit = price >= sotd.target
 
         if not (stop_hit or target_hit):
             continue
 
-        event     = "TARGET_HIT" if target_hit else "STOP_HIT"
-        outcome   = "WIN"        if target_hit else "LOSS"
-        pnl_pct   = round((price - sotd.entry_price) / sotd.entry_price * 100, 2)
+        event = "TARGET_HIT" if target_hit else "STOP_HIT"
+        outcome = "WIN" if target_hit else "LOSS"
+        pnl_pct = round((price - sotd.entry_price) / sotd.entry_price * 100, 2)
 
-        sotd.status     = event
+        sotd.status = event
         sotd.exit_price = price
-        sotd.exit_time  = datetime.utcnow().isoformat()
-        sotd.pnl_pct    = pnl_pct
-        sotd.outcome    = outcome
+        sotd.exit_time = datetime.utcnow().isoformat()
+        sotd.pnl_pct = pnl_pct
+        sotd.outcome = outcome
         await repo.update(sotd)
 
-        await repo.add_journal_entry(sotd.date, event, {
-            "symbol": sotd.symbol,
-            "trigger_price": price,
-            "entry_price": sotd.entry_price,
-            "stop_loss": sotd.stop_loss,
-            "target": sotd.target,
-            "pnl_pct": pnl_pct,
-            "outcome": outcome,
-        })
+        await repo.add_journal_entry(
+            sotd.date,
+            event,
+            {
+                "symbol": sotd.symbol,
+                "trigger_price": price,
+                "entry_price": sotd.entry_price,
+                "stop_loss": sotd.stop_loss,
+                "target": sotd.target,
+                "pnl_pct": pnl_pct,
+                "outcome": outcome,
+            },
+        )
 
         # Close the linked paper trade in PostgreSQL
         if sotd.paper_trade_id:
@@ -136,6 +151,7 @@ async def expire_open_picks() -> None:
         return
 
     from app.infra.market_data.yfinance_client import YFinanceClient
+
     client = YFinanceClient()
 
     for sotd in trading:
@@ -148,19 +164,23 @@ async def expire_open_picks() -> None:
         pnl_pct = round((price - sotd.entry_price) / sotd.entry_price * 100, 2)
         outcome = "WIN" if pnl_pct > 0.2 else "LOSS" if pnl_pct < -0.2 else "NEUTRAL"
 
-        sotd.status     = "EXPIRED"
+        sotd.status = "EXPIRED"
         sotd.exit_price = price
-        sotd.exit_time  = datetime.utcnow().isoformat()
-        sotd.pnl_pct    = pnl_pct
-        sotd.outcome    = outcome
+        sotd.exit_time = datetime.utcnow().isoformat()
+        sotd.pnl_pct = pnl_pct
+        sotd.outcome = outcome
         await repo.update(sotd)
 
-        await repo.add_journal_entry(sotd.date, "EXPIRED", {
-            "symbol": sotd.symbol,
-            "exit_price": price,
-            "pnl_pct": pnl_pct,
-            "outcome": outcome,
-        })
+        await repo.add_journal_entry(
+            sotd.date,
+            "EXPIRED",
+            {
+                "symbol": sotd.symbol,
+                "exit_price": price,
+                "pnl_pct": pnl_pct,
+                "outcome": outcome,
+            },
+        )
 
         if sotd.paper_trade_id:
             await _close_paper_trade(sotd.paper_trade_id, price)
@@ -169,6 +189,7 @@ async def expire_open_picks() -> None:
 
 
 # ── Pick generation ───────────────────────────────────────────────────────────
+
 
 async def _build_pick(today: str) -> StockOfDay | None:
     from app.infra.db.repositories.discovery_repo import DiscoveryRepository
@@ -206,6 +227,7 @@ async def _build_pick(today: str) -> StockOfDay | None:
     composite_score, winner = scored[0]
 
     from app.domain.models.discovery import StockScore
+
     w: StockScore = winner  # type: ignore[assignment]
 
     targets: list[float] = w.targets if w.targets else []
@@ -233,6 +255,7 @@ async def _build_pick(today: str) -> StockOfDay | None:
 
 
 # ── Auto trade ────────────────────────────────────────────────────────────────
+
 
 async def _auto_place_trade(sotd: StockOfDay, cfg) -> None:  # type: ignore[type-arg]
     """Place a paper trade for the first active admin user."""
@@ -308,9 +331,7 @@ async def _auto_place_trade(sotd: StockOfDay, cfg) -> None:  # type: ignore[type
         async with Session() as session:
             # Find first active admin user
             result = await session.execute(
-                select(UserORM)
-                .where(UserORM.role == "admin", UserORM.is_active.is_(True))
-                .limit(1)
+                select(UserORM).where(UserORM.role == "admin", UserORM.is_active.is_(True)).limit(1)
             )
             admin_orm = result.scalar_one_or_none()
             if admin_orm is None:
@@ -327,10 +348,17 @@ async def _auto_place_trade(sotd: StockOfDay, cfg) -> None:  # type: ignore[type
 
             if cfg.quantity_type == "pct":
                 # qty = floor(capital × pct% / entry_price), minimum 1
-                qty = max(1, int(cfg.paper_capital * cfg.paper_trade_quantity / 100 / sotd.entry_price))
-                log.info("sotd.auto_trade.qty_calc",
-                         mode="pct", pct=cfg.paper_trade_quantity,
-                         capital=cfg.paper_capital, entry=sotd.entry_price, qty=qty)
+                qty = max(
+                    1, int(cfg.paper_capital * cfg.paper_trade_quantity / 100 / sotd.entry_price)
+                )
+                log.info(
+                    "sotd.auto_trade.qty_calc",
+                    mode="pct",
+                    pct=cfg.paper_trade_quantity,
+                    capital=cfg.paper_capital,
+                    entry=sotd.entry_price,
+                    qty=qty,
+                )
             else:
                 qty = max(1, int(cfg.paper_trade_quantity))
             trade = Trade(
@@ -405,6 +433,7 @@ async def _close_paper_trade(trade_id: str, exit_price: float) -> None:
 
 # ── SotD watchlist ───────────────────────────────────────────────────────────
 
+
 async def _add_to_sotd_watchlist(sotd: StockOfDay) -> None:
     """Ensure a 'Stock of the Day' watchlist exists for every admin user
     and add today's pick to it (skip if already present)."""
@@ -421,9 +450,7 @@ async def _add_to_sotd_watchlist(sotd: StockOfDay) -> None:
         Session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
         async with Session() as session:
-            result = await session.execute(
-                select(UserORM).where(UserORM.is_active.is_(True))
-            )
+            result = await session.execute(select(UserORM).where(UserORM.is_active.is_(True)))
             users = result.scalars().all()
 
             for user in users:
@@ -431,14 +458,18 @@ async def _add_to_sotd_watchlist(sotd: StockOfDay) -> None:
 
                 # Find or create the "Stock of the Day" watchlist
                 wl_row = await session.execute(
-                    text("SELECT id FROM watchlists WHERE user_id = :uid AND name = 'Stock of the Day' LIMIT 1"),
+                    text(
+                        "SELECT id FROM watchlists WHERE user_id = :uid AND name = 'Stock of the Day' LIMIT 1"
+                    ),
                     {"uid": uid},
                 )
                 wl = wl_row.fetchone()
                 if wl is None:
                     wl_id = str(_uuid4())
                     await session.execute(
-                        text("INSERT INTO watchlists (id, user_id, name, created_at) VALUES (:id, :uid, 'Stock of the Day', NOW())"),
+                        text(
+                            "INSERT INTO watchlists (id, user_id, name, created_at) VALUES (:id, :uid, 'Stock of the Day', NOW())"
+                        ),
                         {"id": wl_id, "uid": uid},
                     )
                 else:
@@ -464,9 +495,11 @@ async def _add_to_sotd_watchlist(sotd: StockOfDay) -> None:
 
 # ── Email notifications ───────────────────────────────────────────────────────
 
+
 async def _get_recipients() -> list[str]:
     from app.core.config import settings
     from app.infra.db.repositories.email_list_repo import EmailListRepository
+
     email_repo = EmailListRepository()
     managed = await email_repo.list_active_emails()
     fallback = settings.REPORT_TO_EMAIL or settings.SMTP_USER
@@ -475,6 +508,7 @@ async def _get_recipients() -> list[str]:
 
 async def _send_sotd_pick_email(sotd: StockOfDay) -> None:
     from app.infra.email.client import send_email
+
     recipients = await _get_recipients()
     if not recipients:
         return
@@ -482,14 +516,18 @@ async def _send_sotd_pick_email(sotd: StockOfDay) -> None:
     sym = sotd.symbol.replace(".NS", "").replace(".BO", "")
     score_color = "#059669" if sotd.composite_score >= 85 else "#4f46e5"
     auto_badge = (
-        f'<div style="margin-top:16px;padding:12px;background:#ecfdf5;border-radius:8px;border-left:4px solid #059669;">'
-        f'<p style="margin:0;font-size:13px;font-weight:700;color:#065f46;">✅ Auto-Trade Placed</p>'
-        f'<p style="margin:4px 0 0;font-size:12px;color:#065f46;">A paper trade was automatically placed at ₹{sotd.entry_price:,.2f} with SL ₹{sotd.stop_loss:,.2f} and Target ₹{sotd.target:,.2f}</p>'
-        f'</div>'
-    ) if sotd.auto_traded else (
-        f'<div style="margin-top:16px;padding:12px;background:#fef3c7;border-radius:8px;border-left:4px solid #d97706;">'
-        f'<p style="margin:0;font-size:13px;color:#78350f;">⚠ Confidence {sotd.composite_score:.0f}/100 — below 85 threshold, no auto-trade placed. Review manually.</p>'
-        f'</div>'
+        (
+            f'<div style="margin-top:16px;padding:12px;background:#ecfdf5;border-radius:8px;border-left:4px solid #059669;">'
+            f'<p style="margin:0;font-size:13px;font-weight:700;color:#065f46;">✅ Auto-Trade Placed</p>'
+            f'<p style="margin:4px 0 0;font-size:12px;color:#065f46;">A paper trade was automatically placed at ₹{sotd.entry_price:,.2f} with SL ₹{sotd.stop_loss:,.2f} and Target ₹{sotd.target:,.2f}</p>'
+            f"</div>"
+        )
+        if sotd.auto_traded
+        else (
+            f'<div style="margin-top:16px;padding:12px;background:#fef3c7;border-radius:8px;border-left:4px solid #d97706;">'
+            f'<p style="margin:0;font-size:13px;color:#78350f;">⚠ Confidence {sotd.composite_score:.0f}/100 — below 85 threshold, no auto-trade placed. Review manually.</p>'
+            f"</div>"
+        )
     )
 
     html = f"""<!DOCTYPE html>
@@ -544,13 +582,14 @@ async def _send_sotd_pick_email(sotd: StockOfDay) -> None:
 
 async def _send_auto_trade_email(sotd: StockOfDay) -> None:
     from app.infra.email.client import send_email
+
     recipients = await _get_recipients()
     if not recipients:
         return
 
     sym = sotd.symbol.replace(".NS", "").replace(".BO", "")
-    pct_sl  = (sotd.stop_loss  - sotd.entry_price) / sotd.entry_price * 100
-    pct_tgt = (sotd.target     - sotd.entry_price) / sotd.entry_price * 100
+    pct_sl = (sotd.stop_loss - sotd.entry_price) / sotd.entry_price * 100
+    pct_tgt = (sotd.target - sotd.entry_price) / sotd.entry_price * 100
 
     html = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"></head>
@@ -593,6 +632,7 @@ async def _send_auto_trade_email(sotd: StockOfDay) -> None:
 
 async def _send_sotd_event_email(sotd: StockOfDay, event: str) -> None:
     from app.infra.email.client import send_email
+
     recipients = await _get_recipients()
     if not recipients:
         return
@@ -601,9 +641,19 @@ async def _send_sotd_event_email(sotd: StockOfDay, event: str) -> None:
     pnl = sotd.pnl_pct or 0.0
 
     if event == "TARGET_HIT":
-        emoji, title, color, msg = "🎯", "Target Hit — Profit Booked!", "#059669", "Congratulations! The position has been auto-closed at the target price."
+        emoji, title, color, msg = (
+            "🎯",
+            "Target Hit — Profit Booked!",
+            "#059669",
+            "Congratulations! The position has been auto-closed at the target price.",
+        )
     elif event == "STOP_HIT":
-        emoji, title, color, msg = "⛔", "Stop Loss Triggered — Loss Limited", "#dc2626", "The position has been auto-closed at the stop loss price to limit further downside."
+        emoji, title, color, msg = (
+            "⛔",
+            "Stop Loss Triggered — Loss Limited",
+            "#dc2626",
+            "The position has been auto-closed at the stop loss price to limit further downside.",
+        )
     else:
         emoji, title, color = "🔔", "Position Expired at Market Close", "#6b7280"
         msg = "Trading day ended without SL/target trigger. Position closed at CMP."

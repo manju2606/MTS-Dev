@@ -11,16 +11,16 @@ import yfinance as yf
 class TechnicalIndicators:
     symbol: str
     sma_20: float
-    sma_50: float | None       # None if < 50 data points
+    sma_50: float | None  # None if < 50 data points
     rsi_14: float
     macd: float
     macd_signal: float
     bb_upper: float
     bb_lower: float
     atr_14: float
-    volume_ratio: float        # latest / 20-day avg
+    volume_ratio: float  # latest / 20-day avg
     price_vs_sma20_pct: float  # % above(+)/below(-) SMA-20
-    trend: str                 # "uptrend" | "downtrend" | "sideways"
+    trend: str  # "uptrend" | "downtrend" | "sideways"
 
 
 def _ema_series(values: list[float], period: int) -> list[float]:

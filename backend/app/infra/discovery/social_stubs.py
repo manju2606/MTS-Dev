@@ -11,7 +11,6 @@ credentials:
   Google Trends: Uses pytrends (free, but rate-limited)
 """
 
-
 import structlog
 
 from app.domain.models.discovery import SocialSignal
@@ -58,7 +57,9 @@ async def fetch_google_trends(symbol: str) -> SocialSignal:
     #                             score=score, mention_volume=int(latest), is_stub=False)
     # except Exception as e:
     #     log.warning("social.google_trends.error", symbol=symbol, error=str(e))
-    return SocialSignal(source="google_trends", symbol=symbol, score=0.0, mention_volume=0, is_stub=True)
+    return SocialSignal(
+        source="google_trends", symbol=symbol, score=0.0, mention_volume=0, is_stub=True
+    )
 
 
 async def aggregate_social_score(symbol: str) -> tuple[float, bool]:
@@ -67,6 +68,7 @@ async def aggregate_social_score(symbol: str) -> tuple[float, bool]:
     Falls back to neutral (50) when all providers are stubs.
     """
     import asyncio
+
     signals = await asyncio.gather(
         fetch_twitter_sentiment(symbol),
         fetch_reddit_sentiment(symbol),

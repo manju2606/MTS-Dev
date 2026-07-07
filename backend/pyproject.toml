@@ -46,6 +46,25 @@ line-length = 100
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's parameter-declaration idiom (`body: dict = Body(...)`, likewise
+# Depends/Query/Path/etc.) relies on calling these in argument defaults --
+# that's the framework's documented pattern, not the mutable-default bug B008
+# looks for.
+extend-immutable-calls = [
+    "fastapi.Body", "fastapi.Depends", "fastapi.Query", "fastapi.Path",
+    "fastapi.Header", "fastapi.Cookie", "fastapi.Form", "fastapi.File",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# HTML email templates: long lines come from inline CSS/markup, not Python
+# style -- wrapping them risks breaking rendering for no readability gain.
+"app/infra/email/report.py" = ["E501"]
+"app/infra/email/golden_stock_report.py" = ["E501"]
+"app/infra/email/btst_report.py" = ["E501"]
+"app/services/stock_of_day_service.py" = ["E501"]
+"app/infra/monitoring/position_monitor.py" = ["E501"]
+
 [tool.mypy]
 python_version = "3.11"
 strict = true

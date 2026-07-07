@@ -1,4 +1,5 @@
 """Strategy Builder API — CRUD for rules-based strategies + on-demand backtest."""
+
 from __future__ import annotations
 
 import asyncio
@@ -23,7 +24,7 @@ class ConditionBody(BaseModel):
 
 class StrategyBody(BaseModel):
     name: str
-    action: str          # BUY | SELL
+    action: str  # BUY | SELL
     conditions: list[ConditionBody]
     description: str = ""
 
@@ -101,7 +102,7 @@ async def toggle_strategy(strategy_id: str, current_user: CurrentUser) -> dict:
 
 class BacktestStrategyRequest(BaseModel):
     symbol: str
-    period: str = "1y"   # 1y | 2y | 3y
+    period: str = "1y"  # 1y | 2y | 3y
 
 
 @router.post("/{strategy_id}/backtest")
@@ -129,6 +130,7 @@ async def backtest_strategy(
 
 
 # ── Strategy backtest engine ──────────────────────────────────────────────────
+
 
 def _evaluate_condition(cond: StrategyCondition, row: dict, prev_row: dict | None) -> bool:
     val = row.get(cond.indicator)
@@ -191,7 +193,10 @@ def _run_sync(strategy: Strategy, symbol: str, period: str) -> dict:
     bb_lower = sma20 - 2 * std20
     df["bb_position"] = ((c - bb_lower) / (bb_upper - bb_lower + 1e-9)).fillna(0.5)
 
-    tr = pd.concat([df["High"] - df["Low"], (df["High"] - c.shift()).abs(), (df["Low"] - c.shift()).abs()], axis=1).max(axis=1)
+    tr = pd.concat(
+        [df["High"] - df["Low"], (df["High"] - c.shift()).abs(), (df["Low"] - c.shift()).abs()],
+        axis=1,
+    ).max(axis=1)
     df["atr_pct"] = (tr.rolling(14).mean() / c).fillna(0)
     df["vol_ratio"] = (v / v.rolling(20).mean()).fillna(1)
     df["price"] = c
@@ -205,7 +210,7 @@ def _run_sync(strategy: Strategy, symbol: str, period: str) -> dict:
     entry_price = 0.0
     entry_date = None
 
-    for i, (row, dt) in enumerate(zip(records, dates)):
+    for i, (row, dt) in enumerate(zip(records, dates, strict=True)):
         prev_row = records[i - 1] if i > 0 else None
         signal_met = all(_evaluate_condition(cond, row, prev_row) for cond in strategy.conditions)
 
@@ -221,30 +226,36 @@ def _run_sync(strategy: Strategy, symbol: str, period: str) -> dict:
             if opposite_met or i == len(records) - 1:
                 pnl = price - entry_price if strategy.action == "BUY" else entry_price - price
                 pnl_pct = pnl / entry_price * 100 if entry_price else 0.0
-                trades.append({
-                    "date_in": str(entry_date)[:10],
-                    "date_out": str(dt)[:10],
-                    "signal": strategy.action,
-                    "entry": round(entry_price, 2),
-                    "exit": round(price, 2),
-                    "pnl": round(pnl, 2),
-                    "pnl_pct": round(pnl_pct, 2),
-                })
+                trades.append(
+                    {
+                        "date_in": str(entry_date)[:10],
+                        "date_out": str(dt)[:10],
+                        "signal": strategy.action,
+                        "entry": round(entry_price, 2),
+                        "exit": round(price, 2),
+                        "pnl": round(pnl, 2),
+                        "pnl_pct": round(pnl_pct, 2),
+                    }
+                )
                 in_trade = False
 
     # Equity curve
     capital = 100_000.0
     equity: list[dict] = [{"date": str(dates[0])[:10], "value": capital}]
     for t in trades:
-        capital *= (1 + t["pnl_pct"] / 100)
+        capital *= 1 + t["pnl_pct"] / 100
         equity.append({"date": t["date_out"], "value": round(capital, 2)})
 
     winners = [t for t in trades if t["pnl"] > 0]
-    losers  = [t for t in trades if t["pnl"] <= 0]
+    losers = [t for t in trades if t["pnl"] <= 0]
     total_return = (capital - 100_000) / 100_000 * 100
 
     returns = np.array([t["pnl_pct"] / 100 for t in trades])
-    sharpe = float(np.mean(returns) / (np.std(returns) + 1e-9) * np.sqrt(252)) if len(returns) > 1 else 0.0
+    sharpe = (
+        float(np.mean(returns) / (np.std(returns) + 1e-9) * np.sqrt(252))
+        if len(returns) > 1
+        else 0.0
+    )
 
     # Max drawdown on equity curve
     eq_vals = np.array([e["value"] for e in equity])
@@ -264,7 +275,7 @@ def _run_sync(strategy: Strategy, symbol: str, period: str) -> dict:
         "total_return_pct": round(total_return, 2),
         "max_drawdown_pct": round(max_dd, 2),
         "sharpe_ratio": round(sharpe, 2),
-        "trades": trades[-50:],   # last 50 for response size
+        "trades": trades[-50:],  # last 50 for response size
         "equity_curve": equity,
     }
 
@@ -272,4 +283,5 @@ def _run_sync(strategy: Strategy, symbol: str, period: str) -> dict:
 async def _run_strategy_backtest(strategy: Strategy, symbol: str, period: str) -> dict:
     loop = asyncio.get_event_loop()
     from functools import partial
+
     return await loop.run_in_executor(None, partial(_run_sync, strategy, symbol, period))

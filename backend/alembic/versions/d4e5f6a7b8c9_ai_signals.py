@@ -5,6 +5,7 @@ Revises: b7c4e1d2f3a5
 Create Date: 2026-06-28
 
 """
+
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -19,8 +20,15 @@ depends_on = None
 def upgrade() -> None:
     op.create_table(
         "ai_signals",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("user_id", UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")
+        ),
+        sa.Column(
+            "user_id",
+            UUID(as_uuid=True),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("symbol", sa.String(50), nullable=False),
         sa.Column("signal", sa.String(10), nullable=False),
         sa.Column("confidence", sa.Float, nullable=False),

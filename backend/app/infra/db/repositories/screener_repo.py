@@ -1,4 +1,5 @@
 """MongoDB repository for saved screener configurations."""
+
 from __future__ import annotations
 
 from uuid import UUID
@@ -39,15 +40,19 @@ async def list_by_user(user_id: str) -> list[SavedScreen]:
 
 
 async def create(screen: SavedScreen) -> SavedScreen:
-    await _col().insert_one({
-        "id": str(screen.id),
-        "user_id": screen.user_id,
-        "name": screen.name,
-        "universe": screen.universe,
-        "criteria": [{"field": c.field, "operator": c.operator, "value": c.value}
-                     for c in screen.criteria],
-        "created_at": screen.created_at,
-    })
+    await _col().insert_one(
+        {
+            "id": str(screen.id),
+            "user_id": screen.user_id,
+            "name": screen.name,
+            "universe": screen.universe,
+            "criteria": [
+                {"field": c.field, "operator": c.operator, "value": c.value}
+                for c in screen.criteria
+            ],
+            "created_at": screen.created_at,
+        }
+    )
     return screen
 
 

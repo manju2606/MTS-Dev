@@ -1,4 +1,5 @@
 """Integration tests for AI analysis and signal history endpoints."""
+
 import uuid
 
 import pytest
@@ -8,8 +9,14 @@ BASE = "/api/v1/ai"
 AUTH = "/api/v1/auth"
 
 _REQUIRED_FIELDS = {
-    "signal", "confidence", "entry_price", "stop_loss",
-    "target", "risk_reward_ratio", "holding_period", "explanation",
+    "signal",
+    "confidence",
+    "entry_price",
+    "stop_loss",
+    "target",
+    "risk_reward_ratio",
+    "holding_period",
+    "explanation",
 }
 
 
@@ -24,9 +31,14 @@ def _headers(token: str) -> dict:
 @pytest.fixture
 async def auth(client: AsyncClient) -> dict:
     email, pw = _email(), "Secure123!"
-    await client.post(AUTH + "/register", json={
-        "email": email, "password": pw, "full_name": "AI Test",
-    })
+    await client.post(
+        AUTH + "/register",
+        json={
+            "email": email,
+            "password": pw,
+            "full_name": "AI Test",
+        },
+    )
     login = await client.post(AUTH + "/login", json={"email": email, "password": pw})
     assert login.status_code == 200
     return {"token": login.json()["access_token"], "email": email}

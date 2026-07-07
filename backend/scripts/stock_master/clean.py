@@ -1,4 +1,5 @@
 """Shared cleaning primitives used while parsing every raw NSE file."""
+
 import re
 
 import pandas as pd

@@ -6,11 +6,21 @@ from uuid import UUID, uuid4
 
 CRITERIA_FIELDS = [
     # Technical
-    "rsi", "macd_hist", "sma20_ratio", "sma50_ratio",
-    "volume_ratio", "change_pct", "atr_pct",
+    "rsi",
+    "macd_hist",
+    "sma20_ratio",
+    "sma50_ratio",
+    "volume_ratio",
+    "change_pct",
+    "atr_pct",
     # Fundamental (from yfinance info)
-    "pe_ratio", "pb_ratio", "market_cap_cr", "dividend_yield",
-    "roe", "debt_to_equity", "revenue_growth",
+    "pe_ratio",
+    "pb_ratio",
+    "market_cap_cr",
+    "dividend_yield",
+    "roe",
+    "debt_to_equity",
+    "revenue_growth",
 ]
 
 OPERATORS = ["<", ">", "<=", ">="]

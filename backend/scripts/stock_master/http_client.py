@@ -3,6 +3,7 @@ response to disk so every pipeline run has an auditable snapshot of exactly
 what was downloaded (production data pipelines should never merge from
 memory-only fetches with no trace left behind).
 """
+
 import time
 
 import httpx

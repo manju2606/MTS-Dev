@@ -18,7 +18,7 @@ router = APIRouter(prefix="/market-pulse", tags=["market-pulse"])
 @dataclass
 class SentimentTag:
     label: str
-    color: str   # green | red | amber | blue | zinc
+    color: str  # green | red | amber | blue | zinc
 
 
 @dataclass
@@ -59,7 +59,7 @@ class MarketOverview:
     neutral: int
     bullish_pct: float
     bearish_pct: float
-    sector_sentiment: dict[str, str]   # sector → "bullish"|"bearish"|"neutral"
+    sector_sentiment: dict[str, str]  # sector → "bullish"|"bearish"|"neutral"
 
 
 @dataclass
@@ -194,16 +194,16 @@ async def market_pulse_scan(
     )
 
     # Step 2 — pick top candidates for AI deep analysis
-    buy_candidates = sorted(all_results, key=lambda r: -r.combined_score)[:buy_count * 2]
+    buy_candidates = sorted(all_results, key=lambda r: -r.combined_score)[: buy_count * 2]
     sell_candidates = sorted(all_results, key=lambda r: r.combined_score)[: sell_count * 2]
 
     # Step 3 — parallel AI enrichment
-    buy_enriched_raw = await asyncio.gather(*[
-        _enrich_with_ai(r, market_data, ai_client) for r in buy_candidates
-    ])
-    sell_enriched_raw = await asyncio.gather(*[
-        _enrich_with_ai(r, market_data, ai_client) for r in sell_candidates
-    ])
+    buy_enriched_raw = await asyncio.gather(
+        *[_enrich_with_ai(r, market_data, ai_client) for r in buy_candidates]
+    )
+    sell_enriched_raw = await asyncio.gather(
+        *[_enrich_with_ai(r, market_data, ai_client) for r in sell_candidates]
+    )
 
     buy_picks = [c for c in buy_enriched_raw if c and c.signal in ("BUY", "HOLD")][:buy_count]
     sell_picks = [c for c in sell_enriched_raw if c and c.signal in ("SELL", "HOLD")][:sell_count]
@@ -222,4 +222,5 @@ async def market_pulse_scan(
 @router.get("/sectors")
 async def list_sectors(current_user: CurrentUser) -> list[str]:
     from app.infra.scanner.universe import SECTORS
+
     return list(SECTORS.keys())

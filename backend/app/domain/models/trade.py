@@ -24,8 +24,8 @@ class TradeMode(StrEnum):
 @dataclass
 class Trade:
     user_id: UUID
-    symbol: str         # e.g. "RELIANCE.NS"
-    exchange: str       # "NSE" or "BSE"
+    symbol: str  # e.g. "RELIANCE.NS"
+    exchange: str  # "NSE" or "BSE"
     signal: TradeSignal
     entry_price: float
     stop_loss: float

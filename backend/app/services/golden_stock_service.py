@@ -23,6 +23,7 @@ IST = timezone(timedelta(hours=5, minutes=30))
 
 # ── Public entrypoints ────────────────────────────────────────────────────────
 
+
 async def run_and_save_golden_stock() -> GoldenStockScan:
     """Run scan, save to MongoDB, create watchlist, send email."""
     scan = await run_golden_stock_scan()
@@ -55,6 +56,7 @@ async def resolve_btst_outcomes(target_date: str) -> int:
         return 0
 
     import yfinance as yf
+
     loop = asyncio.get_event_loop()
     updated = 0
 
@@ -66,6 +68,7 @@ async def resolve_btst_outcomes(target_date: str) -> int:
         if not sym:
             return
         try:
+
             def _fetch() -> float | None:
                 ticker = yf.Ticker(sym)
                 hist = ticker.history(period="2d")
@@ -98,8 +101,10 @@ async def resolve_btst_outcomes(target_date: str) -> int:
 
 # ── Watchlist creation ────────────────────────────────────────────────────────
 
+
 async def _create_intraday_watchlist(scan: GoldenStockScan) -> None:
-    """Add the top pick to each admin's persistent "Intraday Watchlist" (accumulates across the day)."""
+    """Add the top pick to each admin's persistent "Intraday Watchlist"
+    (accumulates across the day)."""
     if not scan.picks:
         return
     try:
@@ -119,9 +124,7 @@ async def _create_intraday_watchlist(scan: GoldenStockScan) -> None:
 
         async with Session() as session:
             result = await session.execute(
-                select(UserORM)
-                .where(UserORM.role == "admin", UserORM.is_active.is_(True))
-                .limit(5)
+                select(UserORM).where(UserORM.role == "admin", UserORM.is_active.is_(True)).limit(5)
             )
             admins = result.scalars().all()
 
@@ -153,7 +156,8 @@ async def _create_intraday_watchlist(scan: GoldenStockScan) -> None:
 
                 await session.execute(
                     text(
-                        "INSERT INTO watchlist_items (id, user_id, watchlist_id, symbol, exchange, added_at) "
+                        "INSERT INTO watchlist_items "
+                        "(id, user_id, watchlist_id, symbol, exchange, added_at) "
                         "VALUES (:id, :uid, :wlid, :sym, 'NSE', NOW()) "
                         "ON CONFLICT DO NOTHING"
                     ),
@@ -174,6 +178,7 @@ async def _create_intraday_watchlist(scan: GoldenStockScan) -> None:
 
 
 # ── Email ─────────────────────────────────────────────────────────────────────
+
 
 async def _send_intraday_email(scan: GoldenStockScan) -> None:
     if not scan.picks:

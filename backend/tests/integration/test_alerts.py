@@ -1,4 +1,5 @@
 """Tests for price alerts endpoints."""
+
 from uuid import uuid4
 
 import pytest
@@ -19,9 +20,14 @@ def _headers(token: str) -> dict:
 @pytest.fixture
 async def token(client: AsyncClient) -> str:
     email, pw = _email(), "Secure123!"
-    await client.post(f"{BASE_AUTH}/register", json={
-        "email": email, "password": pw, "full_name": "Alert Tester",
-    })
+    await client.post(
+        f"{BASE_AUTH}/register",
+        json={
+            "email": email,
+            "password": pw,
+            "full_name": "Alert Tester",
+        },
+    )
     login = await client.post(f"{BASE_AUTH}/login", json={"email": email, "password": pw})
     return login.json()["access_token"]
 

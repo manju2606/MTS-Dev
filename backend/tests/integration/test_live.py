@@ -1,4 +1,5 @@
 """Integration tests for live trading endpoints."""
+
 import uuid
 from datetime import datetime
 from unittest.mock import AsyncMock, patch
@@ -33,10 +34,15 @@ _p_place = patch(
 _p_positions = patch(
     "app.infra.brokers.simulated.SimulatedBroker.get_positions",
     new_callable=AsyncMock,
-    return_value=[{
-        "symbol": "RELIANCE.NS", "exchange": "NSE",
-        "signal": "BUY", "quantity": 5, "avg_price": 2450.50,
-    }],
+    return_value=[
+        {
+            "symbol": "RELIANCE.NS",
+            "exchange": "NSE",
+            "signal": "BUY",
+            "quantity": 5,
+            "avg_price": 2450.50,
+        }
+    ],
 )
 _p_cancel = patch(
     "app.infra.brokers.simulated.SimulatedBroker.cancel_order",
@@ -59,7 +65,9 @@ def _headers(token: str) -> dict:
 @pytest.fixture
 async def token(client: AsyncClient) -> str:
     email, pw = _email(), "Secure123!"
-    await client.post(AUTH + "/register", json={"email": email, "password": pw, "full_name": "Trader"})
+    await client.post(
+        AUTH + "/register", json={"email": email, "password": pw, "full_name": "Trader"}
+    )
     r = await client.post(AUTH + "/login", json={"email": email, "password": pw})
     return r.json()["access_token"]
 
@@ -163,7 +171,9 @@ async def test_place_order_viewer_forbidden(client: AsyncClient) -> None:
         await s.execute(update(UserORM).where(UserORM.id == uuid.UUID(uid)).values(role="viewer"))
         await s.commit()
 
-    token = (await client.post(AUTH + "/login", json={"email": email, "password": pw})).json()["access_token"]
+    token = (await client.post(AUTH + "/login", json={"email": email, "password": pw})).json()[
+        "access_token"
+    ]
     r = await client.post(
         BASE + "/orders",
         json={"symbol": "RELIANCE", "signal": "BUY", "quantity": 1},
@@ -173,5 +183,7 @@ async def test_place_order_viewer_forbidden(client: AsyncClient) -> None:
 
 
 async def test_live_unauthenticated(client: AsyncClient) -> None:
-    r = await client.post(BASE + "/orders", json={"symbol": "RELIANCE", "signal": "BUY", "quantity": 1})
+    r = await client.post(
+        BASE + "/orders", json={"symbol": "RELIANCE", "signal": "BUY", "quantity": 1}
+    )
     assert r.status_code in (401, 403)

@@ -21,6 +21,7 @@ async def broker_status(current_user: CurrentUser) -> dict:
 
 # ── Zerodha ───────────────────────────────────────────────────────────────────
 
+
 @router.get("/zerodha/login-url")
 async def zerodha_login_url(current_user: CurrentUser) -> dict:
     if not settings.KITE_API_KEY:
@@ -30,6 +31,7 @@ async def zerodha_login_url(current_user: CurrentUser) -> dict:
         )
     try:
         from app.infra.brokers.zerodha import get_login_url
+
         return {"login_url": get_login_url(settings.KITE_API_KEY)}
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -48,6 +50,7 @@ async def zerodha_connect(body: ZerodhaConnectRequest, current_user: CurrentUser
         )
     try:
         from app.infra.brokers.zerodha import connect
+
         broker = connect(settings.KITE_API_KEY, settings.KITE_API_SECRET, body.request_token)
         session_store.set_broker(str(current_user.id), broker)
         return {"broker": "zerodha", "connected": True}
@@ -59,6 +62,7 @@ async def zerodha_connect(body: ZerodhaConnectRequest, current_user: CurrentUser
 
 # ── Upstox ────────────────────────────────────────────────────────────────────
 
+
 @router.get("/upstox/login-url")
 async def upstox_login_url(current_user: CurrentUser) -> dict:
     if not settings.UPSTOX_API_KEY:
@@ -67,6 +71,7 @@ async def upstox_login_url(current_user: CurrentUser) -> dict:
             detail="UPSTOX_API_KEY not configured in .env",
         )
     from app.infra.brokers.upstox import get_login_url
+
     url = get_login_url(settings.UPSTOX_API_KEY, settings.UPSTOX_REDIRECT_URI)
     return {"login_url": url, "redirect_uri": settings.UPSTOX_REDIRECT_URI}
 
@@ -84,6 +89,7 @@ async def upstox_connect(body: UpstoxConnectRequest, current_user: CurrentUser) 
         )
     try:
         from app.infra.brokers.upstox import UpstoxBroker, exchange_code
+
         access_token = await exchange_code(
             settings.UPSTOX_API_KEY,
             settings.UPSTOX_API_SECRET,
@@ -99,6 +105,7 @@ async def upstox_connect(body: UpstoxConnectRequest, current_user: CurrentUser) 
 
 # ── Simulated / Disconnect ────────────────────────────────────────────────────
 
+
 @router.post("/disconnect")
 async def disconnect(current_user: CurrentUser) -> dict:
     session_store.remove(str(current_user.id))
@@ -112,6 +119,7 @@ async def use_simulated(current_user: CurrentUser) -> dict:
 
 
 # ── Broker position import (for Portfolio Assistant) ──────────────────────────
+
 
 @router.get("/positions")
 async def get_broker_positions(current_user: CurrentUser) -> list[dict]:

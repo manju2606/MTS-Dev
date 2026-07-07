@@ -5,6 +5,7 @@ Revises: d4e5f6a7b8c9
 Create Date: 2026-06-29
 
 """
+
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID
 

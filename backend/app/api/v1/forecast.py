@@ -16,6 +16,7 @@ def _norm(symbol: str) -> str:
 
 def _serialise(result: object) -> dict:
     from app.domain.models.forecast import ForecastResult
+
     r: ForecastResult = result  # type: ignore[assignment]
     d = asdict(r)
     d["id"] = str(d["id"])
@@ -31,6 +32,7 @@ async def get_forecast_history(
     limit: int = Query(default=30, le=100),
 ) -> list[dict]:
     from app.infra.db.repositories.forecast_repo import ForecastRepository
+
     sym = _norm(symbol)
     repo = ForecastRepository()
     return await repo.list_history(sym, horizon=horizon, limit=limit)
@@ -42,6 +44,7 @@ async def get_forecast(
     current_user: CurrentUser,
 ) -> dict:
     from app.services.forecast_service import generate_forecast
+
     sym = _norm(symbol)
     try:
         result = await generate_forecast(sym)

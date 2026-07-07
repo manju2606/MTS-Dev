@@ -88,9 +88,7 @@ class WatchlistORM(Base):
 
 class WatchlistItemORM(Base):
     __tablename__ = "watchlist_items"
-    __table_args__ = (
-        UniqueConstraint("watchlist_id", "symbol", name="uq_watchlist_item_symbol"),
-    )
+    __table_args__ = (UniqueConstraint("watchlist_id", "symbol", name="uq_watchlist_item_symbol"),)
 
     id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4

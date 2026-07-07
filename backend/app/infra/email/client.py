@@ -83,6 +83,7 @@ async def send_email(*, to: str, subject: str, html: str) -> None:
     # ── 2. Resend API ─────────────────────────────────────────────────────────
     if settings.RESEND_API_KEY:
         import httpx
+
         try:
             async with httpx.AsyncClient(timeout=15) as client:
                 resp = await client.post(

@@ -23,26 +23,26 @@ log = structlog.get_logger()
 
 # Indian financial RSS feeds
 _FEEDS: list[tuple[str, str]] = [
-    ("ET Markets",         "https://economictimes.indiatimes.com/markets/rss.cms"),
-    ("ET Stocks",          "https://economictimes.indiatimes.com/markets/stocks/rss.cms"),
-    ("Moneycontrol",       "https://www.moneycontrol.com/rss/latestnews.xml"),
-    ("Moneycontrol Markets","https://www.moneycontrol.com/rss/marketreports.xml"),
-    ("Business Standard",  "https://www.business-standard.com/rss/markets-106.rss"),
-    ("Business Standard 2","https://www.business-standard.com/rss/finance-103.rss"),
-    ("LiveMint Markets",   "https://www.livemint.com/rss/markets"),
+    ("ET Markets", "https://economictimes.indiatimes.com/markets/rss.cms"),
+    ("ET Stocks", "https://economictimes.indiatimes.com/markets/stocks/rss.cms"),
+    ("Moneycontrol", "https://www.moneycontrol.com/rss/latestnews.xml"),
+    ("Moneycontrol Markets", "https://www.moneycontrol.com/rss/marketreports.xml"),
+    ("Business Standard", "https://www.business-standard.com/rss/markets-106.rss"),
+    ("Business Standard 2", "https://www.business-standard.com/rss/finance-103.rss"),
+    ("LiveMint Markets", "https://www.livemint.com/rss/markets"),
     ("LiveMint Companies", "https://www.livemint.com/rss/companies"),
-    ("Financial Express",  "https://www.financialexpress.com/market/feed/"),
-    ("NDTV Profit",        "https://www.ndtvprofit.com/feed"),
+    ("Financial Express", "https://www.financialexpress.com/market/feed/"),
+    ("NDTV Profit", "https://www.ndtvprofit.com/feed"),
     ("Hindu BusinessLine", "https://www.thehindubusinessline.com/feeder/default.rss"),
-    ("Zee Business",       "https://www.zeebiz.com/rss"),
-    ("CNBCTV18 Markets",   "https://www.cnbctv18.com/commonfeeds/v1/eng/rss/market.xml"),
-    ("Investing.com IN",   "https://in.investing.com/rss/news.rss"),
-    ("Reuters India Biz",  "https://feeds.reuters.com/reuters/INbusinessNews"),
-    ("Bloomberg Quint",    "https://www.bqprime.com/feeds/latest"),
-    ("NSE Press",          "https://www.nseindia.com/feed/news.xml"),
-    ("Mint Tech",          "https://www.livemint.com/rss/technology"),
-    ("FE Companies",       "https://www.financialexpress.com/companies/feed/"),
-    ("MC Earnings",        "https://www.moneycontrol.com/rss/earnings.xml"),
+    ("Zee Business", "https://www.zeebiz.com/rss"),
+    ("CNBCTV18 Markets", "https://www.cnbctv18.com/commonfeeds/v1/eng/rss/market.xml"),
+    ("Investing.com IN", "https://in.investing.com/rss/news.rss"),
+    ("Reuters India Biz", "https://feeds.reuters.com/reuters/INbusinessNews"),
+    ("Bloomberg Quint", "https://www.bqprime.com/feeds/latest"),
+    ("NSE Press", "https://www.nseindia.com/feed/news.xml"),
+    ("Mint Tech", "https://www.livemint.com/rss/technology"),
+    ("FE Companies", "https://www.financialexpress.com/companies/feed/"),
+    ("MC Earnings", "https://www.moneycontrol.com/rss/earnings.xml"),
 ]
 
 _SYMBOL_PATTERN = re.compile(r"\b([A-Z]{2,10})\b")
@@ -68,15 +68,17 @@ def _parse_feed_sync(content: bytes, source: str) -> list[NewsItem]:
         sentiment = score_text(text)
         symbols = _extract_symbols(text)
 
-        items.append(NewsItem(
-            title=title,
-            source=source,
-            url=link,
-            published_at=published_at,
-            sentiment_score=sentiment,
-            mentioned_symbols=symbols,
-            summary=summary[:300],
-        ))
+        items.append(
+            NewsItem(
+                title=title,
+                source=source,
+                url=link,
+                published_at=published_at,
+                sentiment_score=sentiment,
+                mentioned_symbols=symbols,
+                summary=summary[:300],
+            )
+        )
     return items
 
 
@@ -100,6 +102,7 @@ _known_symbols: set[str] = set()
 
 def _init_symbol_set() -> None:
     from app.infra.discovery.universe import UNIVERSE_SYMBOLS
+
     _known_symbols.update(UNIVERSE_SYMBOLS)
 
 
@@ -113,7 +116,9 @@ async def fetch_all_news() -> list[NewsItem]:
     async def _fetch_one(source: str, url: str) -> list[NewsItem]:
         async with semaphore:
             try:
-                async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT, follow_redirects=True) as client:
+                async with httpx.AsyncClient(
+                    timeout=_HTTP_TIMEOUT, follow_redirects=True
+                ) as client:
                     resp = await client.get(url)
                     if resp.status_code >= 400:
                         return []

@@ -4,6 +4,7 @@ Merge order documents provenance: a `data_sources` column on every row lists
 exactly which raw files contributed to it, so nothing in the final CSV is
 unexplainable.
 """
+
 import pandas as pd
 import structlog
 
@@ -18,15 +19,34 @@ _SEGMENT_SOURCE = {"EQUITY": "EQUITY_L", "SME": "SME_EQUITY_L", "ETF": "eq_etfse
 _INDUSTRY_PRIORITY = ["nifty500", "nifty200", "nifty100", "nifty_next50", "nifty50"]
 
 _FINAL_COLUMNS = [
-    "symbol", "yahoo_symbol", "company_name", "isin", "isin_valid",
-    "segment", "exchange", "listing_series", "current_series",
-    "surveillance_band", "surveillance_remarks", "listing_date",
-    "face_value", "paidup_value", "market_lot", "etf_underlying",
-    "previous_symbol", "symbol_change_date",
-    "previous_company_name", "name_change_date",
+    "symbol",
+    "yahoo_symbol",
+    "company_name",
+    "isin",
+    "isin_valid",
+    "segment",
+    "exchange",
+    "listing_series",
+    "current_series",
+    "surveillance_band",
+    "surveillance_remarks",
+    "listing_date",
+    "face_value",
+    "paidup_value",
+    "market_lot",
+    "etf_underlying",
+    "previous_symbol",
+    "symbol_change_date",
+    "previous_company_name",
+    "name_change_date",
     "nifty_industry",
-    "in_nifty50", "in_nifty_next50", "in_nifty100", "in_nifty200", "in_nifty500",
-    "data_sources", "pipeline_run_at",
+    "in_nifty50",
+    "in_nifty_next50",
+    "in_nifty100",
+    "in_nifty200",
+    "in_nifty500",
+    "data_sources",
+    "pipeline_run_at",
 ]
 
 
@@ -47,20 +67,18 @@ def build_master(sources: dict[str, pd.DataFrame], run_timestamp: str) -> pd.Dat
     universe = universe.merge(sb, on="symbol", how="left")
     universe.loc[universe["current_series"].notna(), "data_sources"] += ";sec_list"
 
-    sc = (
-        sources["symbol_change"][["new_symbol", "old_symbol", "change_date"]]
-        .rename(columns={
+    sc = sources["symbol_change"][["new_symbol", "old_symbol", "change_date"]].rename(
+        columns={
             "new_symbol": "symbol",
             "old_symbol": "previous_symbol",
             "change_date": "symbol_change_date",
-        })
+        }
     )
     universe = universe.merge(sc, on="symbol", how="left")
     universe.loc[universe["previous_symbol"].notna(), "data_sources"] += ";symbolchange"
 
-    nc = (
-        sources["name_change"][["symbol", "previous_company_name", "change_date"]]
-        .rename(columns={"change_date": "name_change_date"})
+    nc = sources["name_change"][["symbol", "previous_company_name", "change_date"]].rename(
+        columns={"change_date": "name_change_date"}
     )
     universe = universe.merge(nc, on="symbol", how="left")
     universe.loc[universe["previous_company_name"].notna(), "data_sources"] += ";namechange"

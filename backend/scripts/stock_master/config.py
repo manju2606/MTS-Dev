@@ -4,6 +4,7 @@ All URLs point at NSE's static archive host (archives.nseindia.com), which
 serves official exchange files without the bot-protection layer that
 nseindia.com itself uses. Nothing here is a mirror or third-party copy.
 """
+
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -72,7 +73,6 @@ SKIPPED_SOURCES = {
         "data on the unblocked archive host."
     ),
     "SEBI datasets": (
-        "No confirmed official bulk-download endpoint was identified for "
-        "SEBI security master data."
+        "No confirmed official bulk-download endpoint was identified for SEBI security master data."
     ),
 }

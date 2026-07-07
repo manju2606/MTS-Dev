@@ -12,11 +12,12 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
+
 # Derive a sync psycopg2 URL from the asyncpg URL for use in migrations
 def _sync_url() -> str:
-    return settings.DATABASE_URL.replace(
-        "postgresql+asyncpg://", "postgresql+psycopg2://"
-    ).split("?")[0]  # strip query params like ssl=disable
+    return settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql+psycopg2://").split(
+        "?"
+    )[0]  # strip query params like ssl=disable
 
 
 def run_migrations_offline() -> None:

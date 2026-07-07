@@ -1,4 +1,5 @@
 """Integration tests for API key management and API-key-based authentication."""
+
 import uuid
 
 import pytest
@@ -78,9 +79,7 @@ async def test_revoke_api_key(client: AsyncClient, token: str) -> None:
 
 
 async def test_revoke_nonexistent_key(client: AsyncClient, token: str) -> None:
-    r = await client.delete(
-        AUTH + f"/api-keys/{uuid.uuid4()}", headers=_headers(token)
-    )
+    r = await client.delete(AUTH + f"/api-keys/{uuid.uuid4()}", headers=_headers(token))
     assert r.status_code == 404
 
 

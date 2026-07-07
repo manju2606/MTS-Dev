@@ -1,4 +1,5 @@
 """Admin audit log — read-only access for admins."""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Query

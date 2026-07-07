@@ -1,4 +1,5 @@
 """Create a notification record and broadcast it to any open WebSocket connections."""
+
 from __future__ import annotations
 
 import asyncio
@@ -30,18 +31,21 @@ async def push(
     )
     await notification_repo.create(n)
 
-    await cm.broadcast(user_id, {
-        "type": "notification",
-        "data": {
-            "id": str(n.id),
-            "type": n.type,
-            "title": n.title,
-            "body": n.body,
-            "link": n.link,
-            "read": n.read,
-            "created_at": n.created_at.isoformat(),
+    await cm.broadcast(
+        user_id,
+        {
+            "type": "notification",
+            "data": {
+                "id": str(n.id),
+                "type": n.type,
+                "title": n.title,
+                "body": n.body,
+                "link": n.link,
+                "read": n.read,
+                "created_at": n.created_at.isoformat(),
+            },
         },
-    })
+    )
     return n
 
 

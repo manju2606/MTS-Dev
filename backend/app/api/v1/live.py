@@ -37,7 +37,7 @@ def _serialize_order(order: LiveOrder) -> dict:
 
 class PlaceOrderRequest(BaseModel):
     symbol: str
-    signal: str        # BUY | SELL
+    signal: str  # BUY | SELL
     quantity: int
     order_type: str = "MARKET"
     price: float | None = None
@@ -90,10 +90,17 @@ async def place_live_order(
 
     from app.infra.notifications.push import fire as notif_fire
     from app.infra.webhooks.dispatcher import fire as wh_fire
-    wh_fire("trade.executed", {
-        "symbol": order.symbol, "signal": signal, "quantity": body.quantity,
-        "broker": broker.name, "order_type": body.order_type,
-    })
+
+    wh_fire(
+        "trade.executed",
+        {
+            "symbol": order.symbol,
+            "signal": signal,
+            "quantity": body.quantity,
+            "broker": broker.name,
+            "order_type": body.order_type,
+        },
+    )
     notif_fire(
         str(current_user.id),
         "trade.executed",
@@ -149,7 +156,9 @@ async def positions(current_user: CurrentUser) -> list[dict]:
             info = await loop.run_in_executor(
                 None, partial(lambda s: yf.Ticker(s).fast_info, ticker_sym)
             )
-            ltp = float(getattr(info, "last_price", None) or getattr(info, "previous_close", None) or avg)
+            ltp = float(
+                getattr(info, "last_price", None) or getattr(info, "previous_close", None) or avg
+            )
         except Exception:
             ltp = avg
         signal = p.get("signal", "BUY")

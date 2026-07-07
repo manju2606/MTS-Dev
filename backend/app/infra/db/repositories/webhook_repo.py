@@ -1,4 +1,5 @@
 """MongoDB repository for webhook subscriptions and delivery logs."""
+
 from __future__ import annotations
 
 from dataclasses import asdict
@@ -57,7 +58,9 @@ class WebhookRepository:
         doc = asdict(wh)
         doc["id"] = str(wh.id)
         doc["created_at"] = wh.created_at.isoformat()
-        doc["last_triggered_at"] = wh.last_triggered_at.isoformat() if wh.last_triggered_at else None
+        doc["last_triggered_at"] = (
+            wh.last_triggered_at.isoformat() if wh.last_triggered_at else None
+        )
         await _col().update_one({"id": doc["id"]}, {"$set": doc}, upsert=True)
         return wh
 
@@ -93,14 +96,16 @@ class WebhookRepository:
         self, wh_id: str, event: str, status_code: int | None, ok: bool, error: str = ""
     ) -> None:
         now = datetime.now(UTC)
-        await _log_col().insert_one({
-            "webhook_id": wh_id,
-            "event": event,
-            "status_code": status_code,
-            "ok": ok,
-            "error": error,
-            "delivered_at": now.isoformat(),
-        })
+        await _log_col().insert_one(
+            {
+                "webhook_id": wh_id,
+                "event": event,
+                "status_code": status_code,
+                "ok": ok,
+                "error": error,
+                "delivered_at": now.isoformat(),
+            }
+        )
         update: dict = {"last_triggered_at": now.isoformat()}
         if not ok:
             await _col().update_one({"id": wh_id}, {"$set": update, "$inc": {"failure_count": 1}})
@@ -109,5 +114,7 @@ class WebhookRepository:
             await _col().update_one({"id": wh_id}, {"$set": update})
 
     async def list_deliveries(self, wh_id: str, limit: int = 50) -> list[dict]:
-        cursor = _log_col().find({"webhook_id": wh_id}, {"_id": 0}).sort("delivered_at", -1).limit(limit)
+        cursor = (
+            _log_col().find({"webhook_id": wh_id}, {"_id": 0}).sort("delivered_at", -1).limit(limit)
+        )
         return await cursor.to_list(length=limit)

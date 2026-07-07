@@ -1,4 +1,5 @@
 """Webhook subscription management API."""
+
 from __future__ import annotations
 
 import secrets
@@ -21,30 +22,50 @@ router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 # the actual body sent by the "Send test event" button.
 _SAMPLE_PAYLOADS: dict[str, dict] = {
     "alert.triggered": {
-        "symbol": "RELIANCE.NS", "direction": "above",
-        "price_target": 1400.0, "triggered_price": 1402.35,
+        "symbol": "RELIANCE.NS",
+        "direction": "above",
+        "price_target": 1400.0,
+        "triggered_price": 1402.35,
     },
     "signal.generated": {
-        "symbol": "TCS.NS", "signal": "BUY", "confidence": 0.82,
-        "entry_price": 3850.0, "stop_loss": 3780.0, "target": 3990.0,
-        "risk_reward_ratio": 2.0, "holding_period": "3-5 days",
+        "symbol": "TCS.NS",
+        "signal": "BUY",
+        "confidence": 0.82,
+        "entry_price": 3850.0,
+        "stop_loss": 3780.0,
+        "target": 3990.0,
+        "risk_reward_ratio": 2.0,
+        "holding_period": "3-5 days",
         "explanation": "RSI bullish crossover with above-average volume.",
     },
     "trade.executed": {
-        "symbol": "INFY.NS", "signal": "BUY", "quantity": 10,
-        "broker": "paper", "order_type": "MARKET",
+        "symbol": "INFY.NS",
+        "signal": "BUY",
+        "quantity": 10,
+        "broker": "paper",
+        "order_type": "MARKET",
     },
     "discovery.scan_complete": {
-        "universe_size": 152, "picks_found": 50,
-        "strong_buy_count": 5, "scan_duration_seconds": 12.4,
+        "universe_size": 152,
+        "picks_found": 50,
+        "strong_buy_count": 5,
+        "scan_duration_seconds": 12.4,
     },
     "position.stop_hit": {
-        "symbol": "SBIN.NS", "entry_price": 800.0, "stop_loss": 780.0,
-        "exit_price": 779.5, "pnl": -20.5, "pnl_pct": -2.56,
+        "symbol": "SBIN.NS",
+        "entry_price": 800.0,
+        "stop_loss": 780.0,
+        "exit_price": 779.5,
+        "pnl": -20.5,
+        "pnl_pct": -2.56,
     },
     "position.target_hit": {
-        "symbol": "HDFCBANK.NS", "entry_price": 1650.0, "target": 1700.0,
-        "exit_price": 1701.2, "pnl": 51.2, "pnl_pct": 3.10,
+        "symbol": "HDFCBANK.NS",
+        "entry_price": 1650.0,
+        "target": 1700.0,
+        "exit_price": 1701.2,
+        "pnl": 51.2,
+        "pnl_pct": 3.10,
     },
 }
 
@@ -65,7 +86,7 @@ def _serialize(wh: WebhookSubscription, include_secret: bool = False) -> dict:
     d["created_at"] = wh.created_at.isoformat()
     d["last_triggered_at"] = wh.last_triggered_at.isoformat() if wh.last_triggered_at else None
     if not include_secret:
-        d["secret"] = d["secret"][:8] + "…"   # show only prefix
+        d["secret"] = d["secret"][:8] + "…"  # show only prefix
     return d
 
 
@@ -96,7 +117,9 @@ async def list_webhooks(current_user: CurrentUser) -> list[dict]:
 async def create_webhook(body: CreateWebhookBody, current_user: CurrentUser) -> dict:
     unknown = [e for e in body.events if e not in WEBHOOK_EVENTS]
     if unknown:
-        raise HTTPException(400, detail=f"Unknown events: {', '.join(unknown)}. Valid: {', '.join(WEBHOOK_EVENTS)}")
+        raise HTTPException(
+            400, detail=f"Unknown events: {', '.join(unknown)}. Valid: {', '.join(WEBHOOK_EVENTS)}"
+        )
     if not body.url.startswith(("http://", "https://")):
         raise HTTPException(400, detail="url must start with http:// or https://")
 

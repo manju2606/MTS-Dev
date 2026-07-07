@@ -24,33 +24,130 @@ UNIVERSE = NIFTY_500
 
 SCAN_CATALOG: list[dict] = [
     # Volume & Breakout
-    {"id": "high_volume_breakout", "name": "High Volume Breakout",       "category": "Volume & Breakout", "available": True,  "desc": "Volume > 1.5× average with positive price move"},
-    {"id": "price_breakout",       "name": "Price Breakout",             "category": "Volume & Breakout", "available": True,  "desc": "Price within 2% of 52-week high"},
-    {"id": "vwap_breakout",        "name": "VWAP Breakout",              "category": "Volume & Breakout", "available": True,  "desc": "Close above intraday VWAP approximation"},
+    {
+        "id": "high_volume_breakout",
+        "name": "High Volume Breakout",
+        "category": "Volume & Breakout",
+        "available": True,
+        "desc": "Volume > 1.5× average with positive price move",
+    },
+    {
+        "id": "price_breakout",
+        "name": "Price Breakout",
+        "category": "Volume & Breakout",
+        "available": True,
+        "desc": "Price within 2% of 52-week high",
+    },
+    {
+        "id": "vwap_breakout",
+        "name": "VWAP Breakout",
+        "category": "Volume & Breakout",
+        "available": True,
+        "desc": "Close above intraday VWAP approximation",
+    },
     # Price Action
-    {"id": "gap_up",               "name": "Gap Up",                     "category": "Price Action",      "available": True,  "desc": "Opened ≥ 1.5% above previous close"},
-    {"id": "gap_down",             "name": "Gap Down",                   "category": "Price Action",      "available": True,  "desc": "Opened ≥ 1.5% below previous close"},
+    {
+        "id": "gap_up",
+        "name": "Gap Up",
+        "category": "Price Action",
+        "available": True,
+        "desc": "Opened ≥ 1.5% above previous close",
+    },
+    {
+        "id": "gap_down",
+        "name": "Gap Down",
+        "category": "Price Action",
+        "available": True,
+        "desc": "Opened ≥ 1.5% below previous close",
+    },
     # Oscillators
-    {"id": "rsi_oversold",         "name": "RSI Oversold",               "category": "Oscillators",       "available": True,  "desc": "RSI(14) ≤ 35 — potential bounce zone"},
-    {"id": "rsi_overbought",       "name": "RSI Overbought",             "category": "Oscillators",       "available": True,  "desc": "RSI(14) ≥ 65 — stretched, watch for reversal"},
+    {
+        "id": "rsi_oversold",
+        "name": "RSI Oversold",
+        "category": "Oscillators",
+        "available": True,
+        "desc": "RSI(14) ≤ 35 — potential bounce zone",
+    },
+    {
+        "id": "rsi_overbought",
+        "name": "RSI Overbought",
+        "category": "Oscillators",
+        "available": True,
+        "desc": "RSI(14) ≥ 65 — stretched, watch for reversal",
+    },
     # Trend
-    {"id": "macd_crossover",       "name": "MACD Crossover",             "category": "Trend",             "available": True,  "desc": "MACD histogram flipped positive/negative in last 3 days"},
-    {"id": "ma_crossover",         "name": "Moving Average Crossover",   "category": "Trend",             "available": True,  "desc": "20 DMA crossed above 50 DMA (golden cross) in last 5 days"},
-    {"id": "bb_breakout",          "name": "Bollinger Band Breakout",    "category": "Trend",             "available": True,  "desc": "Price outside Bollinger Bands (2 SD)"},
+    {
+        "id": "macd_crossover",
+        "name": "MACD Crossover",
+        "category": "Trend",
+        "available": True,
+        "desc": "MACD histogram flipped positive/negative in last 3 days",
+    },
+    {
+        "id": "ma_crossover",
+        "name": "Moving Average Crossover",
+        "category": "Trend",
+        "available": True,
+        "desc": "20 DMA crossed above 50 DMA (golden cross) in last 5 days",
+    },
+    {
+        "id": "bb_breakout",
+        "name": "Bollinger Band Breakout",
+        "category": "Trend",
+        "available": True,
+        "desc": "Price outside Bollinger Bands (2 SD)",
+    },
     # Momentum
-    {"id": "momentum",             "name": "Momentum Stocks",            "category": "Momentum",          "available": True,  "desc": "Top 20-day price performers"},
-    {"id": "relative_strength",    "name": "Relative Strength",          "category": "Momentum",          "available": True,  "desc": "Outperforming Nifty 50 over 20 days by ≥ 3%"},
+    {
+        "id": "momentum",
+        "name": "Momentum Stocks",
+        "category": "Momentum",
+        "available": True,
+        "desc": "Top 20-day price performers",
+    },
+    {
+        "id": "relative_strength",
+        "name": "Relative Strength",
+        "category": "Momentum",
+        "available": True,
+        "desc": "Outperforming Nifty 50 over 20 days by ≥ 3%",
+    },
     # Institutional — require premium data
-    {"id": "delivery_volume",      "name": "Delivery Volume",            "category": "Institutional",     "available": False, "desc": "High delivery %; requires NSE delivery data API"},
-    {"id": "unusual_options",      "name": "Unusual Options Activity",   "category": "Institutional",     "available": False, "desc": "Unusual OI or premium; requires NSE F&O data"},
-    {"id": "fii_dii_buying",       "name": "FII / DII Buying",           "category": "Institutional",     "available": False, "desc": "Net institutional inflows; requires NSE bulk data"},
-    {"id": "block_deals",          "name": "Block Deals",                "category": "Institutional",     "available": False, "desc": "Large block transactions; requires NSE block deal feed"},
+    {
+        "id": "delivery_volume",
+        "name": "Delivery Volume",
+        "category": "Institutional",
+        "available": False,
+        "desc": "High delivery %; requires NSE delivery data API",
+    },
+    {
+        "id": "unusual_options",
+        "name": "Unusual Options Activity",
+        "category": "Institutional",
+        "available": False,
+        "desc": "Unusual OI or premium; requires NSE F&O data",
+    },
+    {
+        "id": "fii_dii_buying",
+        "name": "FII / DII Buying",
+        "category": "Institutional",
+        "available": False,
+        "desc": "Net institutional inflows; requires NSE bulk data",
+    },
+    {
+        "id": "block_deals",
+        "name": "Block Deals",
+        "category": "Institutional",
+        "available": False,
+        "desc": "Large block transactions; requires NSE block deal feed",
+    },
 ]
 
 SCAN_IDS = {s["id"] for s in SCAN_CATALOG}
 
 
 # ── Legacy ScanResult (used by market-pulse) ──────────────────────────────────
+
 
 @dataclass
 class ScanResult:
@@ -79,6 +176,7 @@ def _clamp(v: float, lo: float = 0.0, hi: float = 100.0) -> float:
 
 # ── Extended per-stock data fetch (for market scanner) ────────────────────────
 
+
 def _fetch_scan_data_sync(symbol: str) -> dict | None:
     import numpy as np
 
@@ -88,18 +186,18 @@ def _fetch_scan_data_sync(symbol: str) -> dict | None:
         if hist.empty or len(hist) < 55:
             return None
 
-        close  = hist["Close"]
-        high   = hist["High"]
-        low    = hist["Low"]
-        vol    = hist["Volume"]
-        open_  = hist["Open"]
+        close = hist["Close"]
+        high = hist["High"]
+        low = hist["Low"]
+        vol = hist["Volume"]
+        open_ = hist["Open"]
 
-        cur        = float(close.iloc[-1])
+        cur = float(close.iloc[-1])
         prev_close = float(close.iloc[-2])
         today_open = float(open_.iloc[-1])
 
         change_pct = (cur - prev_close) / prev_close * 100 if prev_close else 0.0
-        gap_pct    = (today_open - prev_close) / prev_close * 100 if prev_close else 0.0
+        gap_pct = (today_open - prev_close) / prev_close * 100 if prev_close else 0.0
 
         # Volume
         vol_avg20 = float(vol.rolling(20).mean().iloc[-1]) or 1.0
@@ -108,21 +206,21 @@ def _fetch_scan_data_sync(symbol: str) -> dict | None:
         # Moving averages
         sma20_s = close.rolling(20).mean()
         sma50_s = close.rolling(50).mean()
-        sma20   = float(sma20_s.iloc[-1])
-        sma50   = float(sma50_s.iloc[-1]) if not np.isnan(sma50_s.iloc[-1]) else sma20
+        sma20 = float(sma20_s.iloc[-1])
+        sma50 = float(sma50_s.iloc[-1]) if not np.isnan(sma50_s.iloc[-1]) else sma20
 
         # RSI (Wilder EMA)
         delta = close.diff()
-        gain  = delta.clip(lower=0).ewm(com=13, adjust=False).mean()
-        loss  = (-delta.clip(upper=0)).ewm(com=13, adjust=False).mean()
-        rs    = gain / loss.replace(0, np.nan)
-        rsi   = float((100 - 100 / (1 + rs)).iloc[-1])
+        gain = delta.clip(lower=0).ewm(com=13, adjust=False).mean()
+        loss = (-delta.clip(upper=0)).ewm(com=13, adjust=False).mean()
+        rs = gain / loss.replace(0, np.nan)
+        rsi = float((100 - 100 / (1 + rs)).iloc[-1])
 
         # MACD (12, 26, 9)
-        ema12     = close.ewm(span=12, adjust=False).mean()
-        ema26     = close.ewm(span=26, adjust=False).mean()
+        ema12 = close.ewm(span=12, adjust=False).mean()
+        ema26 = close.ewm(span=26, adjust=False).mean()
         macd_line = ema12 - ema26
-        sig_line  = macd_line.ewm(span=9, adjust=False).mean()
+        sig_line = macd_line.ewm(span=9, adjust=False).mean()
         hist_line = macd_line - sig_line
 
         macd_cross_up = any(
@@ -137,12 +235,12 @@ def _fetch_scan_data_sync(symbol: str) -> dict | None:
         )
 
         # Bollinger Bands (20, 2)
-        bb_mid   = close.rolling(20).mean()
-        bb_std   = close.rolling(20).std()
+        bb_mid = close.rolling(20).mean()
+        bb_std = close.rolling(20).std()
         bb_upper = float((bb_mid + 2 * bb_std).iloc[-1])
         bb_lower = float((bb_mid - 2 * bb_std).iloc[-1])
         bb_range = bb_upper - bb_lower
-        bb_pos   = (cur - bb_lower) / bb_range if bb_range > 0 else 0.5
+        bb_pos = (cur - bb_lower) / bb_range if bb_range > 0 else 0.5
 
         # VWAP approximation (today's candle)
         vwap = float((high.iloc[-1] + low.iloc[-1] + close.iloc[-1]) / 3)
@@ -172,31 +270,31 @@ def _fetch_scan_data_sync(symbol: str) -> dict | None:
         name = getattr(info, "company_name", None) or symbol.replace(".NS", "").replace(".BO", "")
 
         return {
-            "symbol":       symbol,
-            "name":         name or symbol.split(".")[0],
-            "sector":       SYMBOL_SECTOR.get(symbol, "Other"),
-            "cmp":          round(cur, 2),
-            "prev_close":   round(prev_close, 2),
-            "today_open":   round(today_open, 2),
-            "change_pct":   round(change_pct, 2),
-            "gap_pct":      round(gap_pct, 2),
-            "volume":       int(vol.iloc[-1]),
-            "vol_avg20":    int(vol_avg20),
-            "vol_ratio":    round(vol_ratio, 2),
-            "rsi":          round(rsi, 1),
-            "macd_cross_up":  macd_cross_up,
-            "macd_cross_dn":  macd_cross_dn,
-            "macd_val":     round(float(macd_line.iloc[-1]), 4),
-            "bb_upper":     round(bb_upper, 2),
-            "bb_lower":     round(bb_lower, 2),
-            "bb_pos":       round(bb_pos, 3),
-            "vwap":         round(vwap, 2),
-            "sma20":        round(sma20, 2),
-            "sma50":        round(sma50, 2),
-            "ret_20d":      round(ret_20d, 2),
-            "week52_high":  round(week52_high, 2),
+            "symbol": symbol,
+            "name": name or symbol.split(".")[0],
+            "sector": SYMBOL_SECTOR.get(symbol, "Other"),
+            "cmp": round(cur, 2),
+            "prev_close": round(prev_close, 2),
+            "today_open": round(today_open, 2),
+            "change_pct": round(change_pct, 2),
+            "gap_pct": round(gap_pct, 2),
+            "volume": int(vol.iloc[-1]),
+            "vol_avg20": int(vol_avg20),
+            "vol_ratio": round(vol_ratio, 2),
+            "rsi": round(rsi, 1),
+            "macd_cross_up": macd_cross_up,
+            "macd_cross_dn": macd_cross_dn,
+            "macd_val": round(float(macd_line.iloc[-1]), 4),
+            "bb_upper": round(bb_upper, 2),
+            "bb_lower": round(bb_lower, 2),
+            "bb_pos": round(bb_pos, 3),
+            "vwap": round(vwap, 2),
+            "sma20": round(sma20, 2),
+            "sma50": round(sma50, 2),
+            "ret_20d": round(ret_20d, 2),
+            "week52_high": round(week52_high, 2),
             "pct_from_52w": round(pct_from_52w, 2),
-            "ma_cross_up":  ma_cross_up,
+            "ma_cross_up": ma_cross_up,
         }
     except Exception:
         return None
@@ -242,6 +340,7 @@ async def _cached_nifty_ret20() -> float:
 
 
 # ── Scan filter logic ─────────────────────────────────────────────────────────
+
 
 def _apply_filter(rows: list[dict], scan_id: str, nifty_ret20: float) -> list[dict]:
     out: list[dict] = []
@@ -323,21 +422,22 @@ def _apply_filter(rows: list[dict], scan_id: str, nifty_ret20: float) -> list[di
 def _sort_key(scan_id: str) -> str:
     return {
         "high_volume_breakout": "vol_ratio",
-        "price_breakout":       "pct_from_52w",
-        "vwap_breakout":        "change_pct",
-        "gap_up":               "gap_pct",
-        "gap_down":             "gap_pct",
-        "rsi_oversold":         "rsi",
-        "rsi_overbought":       "rsi",
-        "macd_crossover":       "macd_val",
-        "ma_crossover":         "ret_20d",
-        "bb_breakout":          "bb_pos",
-        "momentum":             "ret_20d",
-        "relative_strength":    "ret_20d",
+        "price_breakout": "pct_from_52w",
+        "vwap_breakout": "change_pct",
+        "gap_up": "gap_pct",
+        "gap_down": "gap_pct",
+        "rsi_oversold": "rsi",
+        "rsi_overbought": "rsi",
+        "macd_crossover": "macd_val",
+        "ma_crossover": "ret_20d",
+        "bb_breakout": "bb_pos",
+        "momentum": "ret_20d",
+        "relative_strength": "ret_20d",
     }.get(scan_id, "change_pct")
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
+
 
 async def run_market_scan(scan_id: str, limit: int = 25) -> dict:
     """Run a named market scan. Returns matching stocks with key_metric and signal."""
@@ -374,33 +474,36 @@ async def run_market_scan(scan_id: str, limit: int = 25) -> dict:
     # Slim output — only fields the frontend needs
     slim = []
     for r in results:
-        slim.append({
-            "symbol":     r["symbol"],
-            "name":       r["name"],
-            "sector":     r["sector"],
-            "cmp":        r["cmp"],
-            "change_pct": r["change_pct"],
-            "volume":     r["volume"],
-            "vol_ratio":  r["vol_ratio"],
-            "rsi":        r["rsi"],
-            "key_metric": r.get("key_metric", ""),
-            "signal":     r.get("signal", "NEUTRAL"),
-        })
+        slim.append(
+            {
+                "symbol": r["symbol"],
+                "name": r["name"],
+                "sector": r["sector"],
+                "cmp": r["cmp"],
+                "change_pct": r["change_pct"],
+                "volume": r["volume"],
+                "vol_ratio": r["vol_ratio"],
+                "rsi": r["rsi"],
+                "key_metric": r.get("key_metric", ""),
+                "signal": r.get("signal", "NEUTRAL"),
+            }
+        )
 
     return {
-        "scan_id":    scan_id,
-        "name":       meta["name"],
-        "results":    slim,
-        "count":      len(slim),
-        "available":  True,
-        "note":       None,
-        "universe":   len(universe_data),
+        "scan_id": scan_id,
+        "name": meta["name"],
+        "results": slim,
+        "count": len(slim),
+        "available": True,
+        "note": None,
+        "universe": len(universe_data),
         "scanned_at": time.time(),
-        "cached":     cached,
+        "cached": cached,
     }
 
 
 # ── Legacy scan (used by market-pulse) ───────────────────────────────────────
+
 
 def _fetch_single_sync(symbol: str) -> ScanResult | None:
     import numpy as np
@@ -411,68 +514,90 @@ def _fetch_single_sync(symbol: str) -> ScanResult | None:
         if hist.empty or len(hist) < 55:
             return None
 
-        close  = hist["Close"]
+        close = hist["Close"]
         volume = hist["Volume"]
         current = float(close.iloc[-1])
-        prev    = float(close.iloc[-2]) if len(close) > 1 else current
+        prev = float(close.iloc[-2]) if len(close) > 1 else current
         change_pct = (current - prev) / prev * 100 if prev else 0.0
 
-        sma20       = float(close.rolling(20).mean().iloc[-1])
-        sma50       = float(close.rolling(50).mean().iloc[-1])
+        sma20 = float(close.rolling(20).mean().iloc[-1])
+        sma50 = float(close.rolling(50).mean().iloc[-1])
         week52_high = float(close.max())
-        week52_low  = float(close.min())
+        week52_low = float(close.min())
 
         delta = close.diff()
-        gain  = delta.clip(lower=0).ewm(com=13, adjust=False).mean()
-        loss  = (-delta.clip(upper=0)).ewm(com=13, adjust=False).mean()
-        rs    = gain / loss.replace(0, np.nan)
-        rsi   = float((100 - 100 / (1 + rs)).iloc[-1])
+        gain = delta.clip(lower=0).ewm(com=13, adjust=False).mean()
+        loss = (-delta.clip(upper=0)).ewm(com=13, adjust=False).mean()
+        rs = gain / loss.replace(0, np.nan)
+        rsi = float((100 - 100 / (1 + rs)).iloc[-1])
 
-        vol_avg   = float(volume.rolling(20).mean().iloc[-1]) or 1
+        vol_avg = float(volume.rolling(20).mean().iloc[-1]) or 1
         vol_ratio = float(volume.iloc[-1]) / vol_avg
 
-        ret_5d  = (current / float(close.iloc[-6])  - 1) * 100 if len(close) >= 6  else 0.0
+        ret_5d = (current / float(close.iloc[-6]) - 1) * 100 if len(close) >= 6 else 0.0
         ret_20d = (current / float(close.iloc[-21]) - 1) * 100 if len(close) >= 21 else 0.0
 
         w52_range = week52_high - week52_low
-        w52_pos   = (current - week52_low) / w52_range if w52_range else 0.5
+        w52_pos = (current - week52_low) / w52_range if w52_range else 0.5
 
         mom = 50.0
-        if current > sma20 > sma50:      mom += 15
-        elif current > sma20:             mom += 7
-        elif current < sma20 < sma50:    mom -= 15
-        if 50 <= rsi <= 70:               mom += 12
-        elif rsi > 70:                    mom += 5
-        elif rsi < 40:                    mom -= 10
+        if current > sma20 > sma50:
+            mom += 15
+        elif current > sma20:
+            mom += 7
+        elif current < sma20 < sma50:
+            mom -= 15
+        if 50 <= rsi <= 70:
+            mom += 12
+        elif rsi > 70:
+            mom += 5
+        elif rsi < 40:
+            mom -= 10
         mom += min(ret_5d * 2, 15)
         mom += min(ret_20d * 0.5, 10)
-        if vol_ratio > 1.5 and change_pct > 0:   mom += 8
-        elif vol_ratio > 1.5 and change_pct < 0: mom -= 8
+        if vol_ratio > 1.5 and change_pct > 0:
+            mom += 8
+        elif vol_ratio > 1.5 and change_pct < 0:
+            mom -= 8
         momentum_score = _clamp(mom)
 
         val = 50.0
         val += (1 - w52_pos) * 30
-        if rsi < 35:      val += 20
-        elif rsi < 45:    val += 10
-        elif rsi > 65:    val -= 10
+        if rsi < 35:
+            val += 20
+        elif rsi < 45:
+            val += 10
+        elif rsi > 65:
+            val -= 10
         pct_vs_sma20 = (current - sma20) / sma20 * 100
-        if pct_vs_sma20 < -5:   val += 15
-        elif pct_vs_sma20 < -2: val += 8
+        if pct_vs_sma20 < -5:
+            val += 15
+        elif pct_vs_sma20 < -2:
+            val += 8
         value_score = _clamp(val)
 
         combined = momentum_score * 0.6 + value_score * 0.4
 
         rationale: list[str] = []
-        if combined >= 65:   signal = "BUY"
-        elif combined <= 38: signal = "SELL"
-        else:                signal = "HOLD"
+        if combined >= 65:
+            signal = "BUY"
+        elif combined <= 38:
+            signal = "SELL"
+        else:
+            signal = "HOLD"
 
-        if current > sma20 > sma50:  rationale.append("SMA 20>50 uptrend")
-        elif current < sma20 < sma50: rationale.append("SMA 20<50 downtrend")
-        if rsi < 35:    rationale.append(f"RSI {rsi:.0f} — oversold")
-        elif rsi > 65:  rationale.append(f"RSI {rsi:.0f} — overbought")
-        if abs(ret_5d) > 3:   rationale.append(f"{ret_5d:+.1f}% in 5 days")
-        if vol_ratio > 1.8:   rationale.append(f"Vol {vol_ratio:.1f}× avg")
+        if current > sma20 > sma50:
+            rationale.append("SMA 20>50 uptrend")
+        elif current < sma20 < sma50:
+            rationale.append("SMA 20<50 downtrend")
+        if rsi < 35:
+            rationale.append(f"RSI {rsi:.0f} — oversold")
+        elif rsi > 65:
+            rationale.append(f"RSI {rsi:.0f} — overbought")
+        if abs(ret_5d) > 3:
+            rationale.append(f"{ret_5d:+.1f}% in 5 days")
+        if vol_ratio > 1.8:
+            rationale.append(f"Vol {vol_ratio:.1f}× avg")
 
         info = ticker.fast_info
         name = getattr(info, "company_name", symbol.replace(".NS", ""))

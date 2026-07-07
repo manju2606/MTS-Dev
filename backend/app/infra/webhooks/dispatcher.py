@@ -1,4 +1,5 @@
 """Async webhook delivery — fires and forgets HTTP POST to subscriber URLs."""
+
 from __future__ import annotations
 
 import asyncio
@@ -21,8 +22,12 @@ def _sign(secret: str, payload: bytes) -> str:
     return "sha256=" + hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
 
 
-async def _deliver_one(url: str, secret: str, wh_id: str, event: str, data: dict) -> tuple[int | None, bool, str]:
-    body = json.dumps({"event": event, "data": data, "timestamp": datetime.now(UTC).isoformat()}).encode()
+async def _deliver_one(
+    url: str, secret: str, wh_id: str, event: str, data: dict
+) -> tuple[int | None, bool, str]:
+    body = json.dumps(
+        {"event": event, "data": data, "timestamp": datetime.now(UTC).isoformat()}
+    ).encode()
     sig = _sign(secret, body)
     headers = {
         "Content-Type": "application/json",
@@ -40,7 +45,7 @@ async def _deliver_one(url: str, secret: str, wh_id: str, event: str, data: dict
         except Exception as exc:
             if attempt == _MAX_RETRIES:
                 return None, False, str(exc)
-            await asyncio.sleep(2 ** attempt)
+            await asyncio.sleep(2**attempt)
     return None, False, "max retries"
 
 
@@ -57,6 +62,7 @@ async def deliver_test(
 async def dispatch(event: str, data: dict) -> None:
     """Dispatch event to all active subscribers. Call fire-and-forget."""
     from app.infra.db.repositories.webhook_repo import WebhookRepository
+
     repo = WebhookRepository()
     try:
         subscribers = await repo.list_for_event(event)

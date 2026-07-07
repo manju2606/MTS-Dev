@@ -7,6 +7,7 @@ predictor trains on real yfinance data.
 Claude is not called in the default test env (no ANTHROPIC_API_KEY set).
 A separate test exercises the 3-engine path by patching get_claude_client.
 """
+
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -142,13 +143,11 @@ async def test_ensemble_viewer_forbidden(client: AsyncClient) -> None:
     me = await client.get(AUTH + "/me", headers=_headers(tok))
     uid = me.json()["id"]
     async with TestSession() as s:
-        await s.execute(
-            update(UserORM).where(UserORM.id == uuid.UUID(uid)).values(role="viewer")
-        )
+        await s.execute(update(UserORM).where(UserORM.id == uuid.UUID(uid)).values(role="viewer"))
         await s.commit()
 
-    tok2 = (
-        await client.post(AUTH + "/login", json={"email": email, "password": pw})
-    ).json()["access_token"]
+    tok2 = (await client.post(AUTH + "/login", json={"email": email, "password": pw})).json()[
+        "access_token"
+    ]
     r = await client.post(BASE + "/ensemble/RELIANCE", headers=_headers(tok2))
     assert r.status_code == 403

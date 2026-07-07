@@ -41,24 +41,30 @@ class HoldingsRepository:
             async for doc in cursor:
                 pid = doc["portfolio_id"]
                 count = await self._col.count_documents({"user_id": user_id, "portfolio_id": pid})
-                portfolios.append({
-                    "id": str(doc["_id"]),
-                    "portfolio_id": pid,
-                    "name": doc["name"],
-                    "created_at": doc.get("created_at", "").isoformat() if isinstance(doc.get("created_at"), datetime) else "",
-                    "holdings_count": count,
-                })
+                portfolios.append(
+                    {
+                        "id": str(doc["_id"]),
+                        "portfolio_id": pid,
+                        "name": doc["name"],
+                        "created_at": doc.get("created_at", "").isoformat()
+                        if isinstance(doc.get("created_at"), datetime)
+                        else "",
+                        "holdings_count": count,
+                    }
+                )
             # If user has no portfolios but has legacy holdings (no portfolio_id), surface a default
             if not portfolios:
                 legacy = await self._col.count_documents({"user_id": user_id})
                 if legacy > 0:
-                    portfolios.append({
-                        "id": "default",
-                        "portfolio_id": "default",
-                        "name": "My Portfolio",
-                        "created_at": "",
-                        "holdings_count": legacy,
-                    })
+                    portfolios.append(
+                        {
+                            "id": "default",
+                            "portfolio_id": "default",
+                            "name": "My Portfolio",
+                            "created_at": "",
+                            "holdings_count": legacy,
+                        }
+                    )
             return portfolios
         except Exception as exc:
             log.error("portfolios.list_error", error=str(exc))
@@ -66,6 +72,7 @@ class HoldingsRepository:
 
     async def create_portfolio(self, user_id: str, name: str) -> dict:
         import re
+
         slug = re.sub(r"[^a-z0-9-]", "-", name.lower().strip())[:40] or "portfolio"
         # Ensure unique slug per user
         existing = await self._meta.count_documents({"user_id": user_id, "portfolio_id": slug})
@@ -106,12 +113,16 @@ class HoldingsRepository:
 
     async def list_holdings(self, user_id: str, portfolio_id: str = "default") -> list[dict]:
         try:
-            # Match either exact portfolio_id or legacy docs with no portfolio_id (treat as "default")
+            # Match either exact portfolio_id or legacy docs with no portfolio_id
+            # (treat as "default")
             if portfolio_id == "default":
-                query = {"user_id": user_id, "$or": [
-                    {"portfolio_id": "default"},
-                    {"portfolio_id": {"$exists": False}},
-                ]}
+                query = {
+                    "user_id": user_id,
+                    "$or": [
+                        {"portfolio_id": "default"},
+                        {"portfolio_id": {"$exists": False}},
+                    ],
+                }
             else:
                 query = {"user_id": user_id, "portfolio_id": portfolio_id}
             cursor = self._col.find(query).sort("symbol", 1)
@@ -171,15 +182,15 @@ class HoldingsRepository:
 
     async def delete_holding(self, user_id: str, holding_id: str) -> bool:
         try:
-            res = await self._col.delete_one(
-                {"_id": ObjectId(holding_id), "user_id": user_id}
-            )
+            res = await self._col.delete_one({"_id": ObjectId(holding_id), "user_id": user_id})
             return res.deleted_count > 0
         except Exception as exc:
             log.error("holdings.delete_error", error=str(exc))
             return False
 
-    async def bulk_upsert(self, user_id: str, rows: list[dict], portfolio_id: str = "default") -> int:
+    async def bulk_upsert(
+        self, user_id: str, rows: list[dict], portfolio_id: str = "default"
+    ) -> int:
         """Replace all holdings for a user+portfolio with the supplied list."""
         try:
             await self._col.delete_many({"user_id": user_id, "portfolio_id": portfolio_id})

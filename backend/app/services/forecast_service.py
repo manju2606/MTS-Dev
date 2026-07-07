@@ -1,4 +1,5 @@
 """Orchestrates ML forecast + Claude agent analysis + persistence."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -27,8 +28,7 @@ async def _claude_analysis(
         lines = []
         for f in forecasts:
             model_summary = ", ".join(
-                f"{m.model.replace('_', ' ')} ₹{m.predicted_price:.2f}"
-                for m in f.models
+                f"{m.model.replace('_', ' ')} ₹{m.predicted_price:.2f}" for m in f.models
             )
             lines.append(
                 f"  {f.horizon.title():6s} ({f.horizon_days}d): "
@@ -77,14 +77,12 @@ async def generate_forecast(symbol: str) -> ForecastResult:
 
     try:
         info = ticker.info
-        name_str      = info.get("longName") or info.get("shortName") or symbol
+        name_str = info.get("longName") or info.get("shortName") or symbol
         current_price = float(info.get("currentPrice") or info.get("regularMarketPrice") or 0)
-        prev_close    = float(
-            info.get("regularMarketPreviousClose") or info.get("previousClose") or 0
-        )
-        high_52w      = float(info.get("fiftyTwoWeekHigh") or 0)
-        low_52w       = float(info.get("fiftyTwoWeekLow") or 0)
-        volume        = int(info.get("averageVolume") or 0)
+        prev_close = float(info.get("regularMarketPreviousClose") or info.get("previousClose") or 0)
+        high_52w = float(info.get("fiftyTwoWeekHigh") or 0)
+        low_52w = float(info.get("fiftyTwoWeekLow") or 0)
+        volume = int(info.get("averageVolume") or 0)
     except Exception as exc:
         log.warning("forecast.info.failed", symbol=symbol, error=str(exc))
 
@@ -100,7 +98,7 @@ async def generate_forecast(symbol: str) -> ForecastResult:
                     year_hist = ticker.history(period="1y")
                     if not year_hist.empty:
                         high_52w = float(year_hist["Close"].max())
-                        low_52w  = float(year_hist["Close"].min())
+                        low_52w = float(year_hist["Close"].min())
         except Exception as exc:
             log.warning("forecast.history_fallback.failed", symbol=symbol, error=str(exc))
 
@@ -143,6 +141,7 @@ async def generate_forecast(symbol: str) -> ForecastResult:
     # Persist (fire-and-forget)
     try:
         from app.infra.db.repositories.forecast_repo import ForecastRepository
+
         repo = ForecastRepository()
         await repo.save_result(result)
 
@@ -150,22 +149,24 @@ async def generate_forecast(symbol: str) -> ForecastResult:
         records = []
         for f in forecasts:
             for m in f.models:
-                records.append({
-                    "symbol": symbol,
-                    "horizon": f.horizon,
-                    "horizon_days": f.horizon_days,
-                    "model": m.model,
-                    "predicted_price": m.predicted_price,
-                    "predicted_change_pct": m.change_pct,
-                    "direction": m.direction,
-                    "base_price": current_price,
-                    "target_date": f.target_date,
-                    "generated_at": result.generated_at.isoformat(),
-                    "actual_price": None,
-                    "error_pct": None,
-                    "direction_correct": None,
-                    "resolved_at": None,
-                })
+                records.append(
+                    {
+                        "symbol": symbol,
+                        "horizon": f.horizon,
+                        "horizon_days": f.horizon_days,
+                        "model": m.model,
+                        "predicted_price": m.predicted_price,
+                        "predicted_change_pct": m.change_pct,
+                        "direction": m.direction,
+                        "base_price": current_price,
+                        "target_date": f.target_date,
+                        "generated_at": result.generated_at.isoformat(),
+                        "actual_price": None,
+                        "error_pct": None,
+                        "direction_correct": None,
+                        "resolved_at": None,
+                    }
+                )
         await repo.save_accuracy_records(records)
     except Exception as exc:
         log.warning("forecast.persist.failed", error=str(exc))

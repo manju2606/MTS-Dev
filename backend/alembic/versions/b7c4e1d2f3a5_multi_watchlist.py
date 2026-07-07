@@ -5,6 +5,7 @@ Revises: 78fd3faef12a
 Create Date: 2026-06-28 10:00:00.000000
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -60,7 +61,9 @@ def upgrade() -> None:
     op.execute("""
         INSERT INTO watchlists (id, user_id, name, created_at)
         SELECT gen_random_uuid(), DISTINCT_USERS.user_id, 'My Watchlist', NOW()
-        FROM (SELECT DISTINCT user_id FROM watchlist_items WHERE watchlist_id IS NULL) AS DISTINCT_USERS
+        FROM (
+            SELECT DISTINCT user_id FROM watchlist_items WHERE watchlist_id IS NULL
+        ) AS DISTINCT_USERS
     """)
     op.execute("""
         UPDATE watchlist_items wi

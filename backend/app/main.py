@@ -20,10 +20,12 @@ async def lifespan(app: FastAPI):
     configure_logging()
     if settings.ENVIRONMENT != "testing":
         from app.core.scheduler import start_scheduler
+
         start_scheduler()
     yield
     if settings.ENVIRONMENT != "testing":
         from app.core.scheduler import stop_scheduler
+
         stop_scheduler()
 
 
@@ -81,10 +83,12 @@ async def audit_middleware(request, call_next):
                 ip=ip,
             )
             import asyncio as _asyncio
+
             _asyncio.create_task(audit_repo.log_event(event))
         except Exception:
             pass
     return response
+
 
 app.include_router(api_v1_router, prefix="/api/v1")
 

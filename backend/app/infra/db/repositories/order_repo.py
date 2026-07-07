@@ -17,6 +17,7 @@ def _get_db() -> motor.motor_asyncio.AsyncIOMotorDatabase:  # type: ignore[type-
     global _client
     if _client is None:
         from app.core.config import settings
+
         _client = motor.motor_asyncio.AsyncIOMotorClient(settings.MONGODB_URL)
     return _client["mts_journal"]
 

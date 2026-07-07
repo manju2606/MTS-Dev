@@ -1,4 +1,5 @@
 """MongoDB repository for audit events."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -39,15 +40,17 @@ def _from_doc(doc: dict) -> AuditEvent:
 
 
 async def log_event(event: AuditEvent) -> None:
-    await _col().insert_one({
-        "id": str(event.id),
-        "user_id": event.user_id,
-        "action": event.action,
-        "resource": event.resource,
-        "details": event.details,
-        "ip": event.ip,
-        "created_at": event.created_at,
-    })
+    await _col().insert_one(
+        {
+            "id": str(event.id),
+            "user_id": event.user_id,
+            "action": event.action,
+            "resource": event.resource,
+            "details": event.details,
+            "ip": event.ip,
+            "created_at": event.created_at,
+        }
+    )
 
 
 async def list_events(

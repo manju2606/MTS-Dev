@@ -28,15 +28,15 @@ _HEADERS = {
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/124.0.0.0 Safari/537.36"
     ),
-    "Accept":          "application/json, text/plain, */*",
+    "Accept": "application/json, text/plain, */*",
     "Accept-Language": "en-US,en;q=0.9",
     "Accept-Encoding": "gzip, deflate, br",
-    "Referer":         "https://www.nseindia.com/",
-    "Connection":      "keep-alive",
-    "sec-fetch-site":  "same-origin",
-    "sec-fetch-mode":  "cors",
-    "sec-fetch-dest":  "empty",
-    "X-Requested-With":"XMLHttpRequest",
+    "Referer": "https://www.nseindia.com/",
+    "Connection": "keep-alive",
+    "sec-fetch-site": "same-origin",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-dest": "empty",
+    "X-Requested-With": "XMLHttpRequest",
 }
 
 # ── Session cache (module-level, single process) ──────────────────────────────
@@ -105,7 +105,9 @@ async def _fetch_equity_quote(raw_symbol: str) -> Quote:
         _cookie_expires = datetime.utcnow()
         cookies = await _get_session_cookies()
         async with httpx.AsyncClient(
-            headers=_HEADERS, cookies=cookies, timeout=12.0,
+            headers=_HEADERS,
+            cookies=cookies,
+            timeout=12.0,
         ) as client:
             resp = await client.get(
                 f"{_BASE}/api/quote-equity",
@@ -121,13 +123,15 @@ async def _fetch_equity_quote(raw_symbol: str) -> Quote:
     if not pi:
         raise ValueError(f"No priceInfo in NSE India response for '{nse_symbol}'")
 
-    last   = _safe_float(pi.get("lastPrice") or pi.get("last"))
-    prev   = _safe_float(pi.get("previousClose"), last)
+    last = _safe_float(pi.get("lastPrice") or pi.get("last"))
+    prev = _safe_float(pi.get("previousClose"), last)
     change = round(_safe_float(pi.get("change"), last - prev), 2)
-    pct    = round(_safe_float(pi.get("pChange"), change / prev * 100 if prev else 0), 4)
+    pct = round(_safe_float(pi.get("pChange"), change / prev * 100 if prev else 0), 4)
 
     return Quote(
-        symbol=raw_symbol.upper() if raw_symbol.upper().endswith((".NS", ".BO")) else f"{nse_symbol}.NS",
+        symbol=raw_symbol.upper()
+        if raw_symbol.upper().endswith((".NS", ".BO"))
+        else f"{nse_symbol}.NS",
         price=round(last, 2),
         change=change,
         change_pct=pct,

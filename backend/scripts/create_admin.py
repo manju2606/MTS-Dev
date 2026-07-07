@@ -1,6 +1,7 @@
 """One-off script to seed an admin user. Run from backend/:
-    python -m scripts.create_admin
+python -m scripts.create_admin
 """
+
 import asyncio
 import sys
 

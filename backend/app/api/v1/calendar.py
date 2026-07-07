@@ -1,4 +1,5 @@
 """Economic calendar — Indian market events + earnings from yfinance."""
+
 from __future__ import annotations
 
 import asyncio
@@ -15,6 +16,7 @@ log = structlog.get_logger()
 
 # ── Static Indian market events (recurring / known) ──────────────────────────
 
+
 def _static_events(from_date: date, to_date: date) -> list[dict]:
     """Generate well-known recurring NSE events within the date range."""
     events: list[dict] = []
@@ -23,20 +25,26 @@ def _static_events(from_date: date, to_date: date) -> list[dict]:
     cur = date(from_date.year, from_date.month, 1)
     while cur <= to_date:
         # find last Thursday of cur.month
-        last_day = date(cur.year, cur.month + 1, 1) - timedelta(days=1) if cur.month < 12 else date(cur.year, 12, 31)
+        last_day = (
+            date(cur.year, cur.month + 1, 1) - timedelta(days=1)
+            if cur.month < 12
+            else date(cur.year, 12, 31)
+        )
         thursday = last_day
         while thursday.weekday() != 3:  # 3 = Thursday
             thursday -= timedelta(days=1)
         if from_date <= thursday <= to_date:
-            events.append({
-                "id": f"fo_expiry_{thursday.isoformat()}",
-                "date": thursday.isoformat(),
-                "type": "fo_expiry",
-                "title": "NSE F&O Monthly Expiry",
-                "description": "Monthly Futures & Options contracts expire on NSE.",
-                "impact": "high",
-                "symbol": None,
-            })
+            events.append(
+                {
+                    "id": f"fo_expiry_{thursday.isoformat()}",
+                    "date": thursday.isoformat(),
+                    "type": "fo_expiry",
+                    "title": "NSE F&O Monthly Expiry",
+                    "description": "Monthly Futures & Options contracts expire on NSE.",
+                    "impact": "high",
+                    "symbol": None,
+                }
+            )
         cur = date(cur.year + (1 if cur.month == 12 else 0), cur.month % 12 + 1, 1)
 
     # Weekly F&O expiry — every Thursday
@@ -45,17 +53,21 @@ def _static_events(from_date: date, to_date: date) -> list[dict]:
         thursday += timedelta(days=1)
     while thursday <= to_date:
         # Skip if it's already the monthly expiry date (already added above)
-        already = any(e["date"] == thursday.isoformat() and e["type"] == "fo_expiry" for e in events)
+        already = any(
+            e["date"] == thursday.isoformat() and e["type"] == "fo_expiry" for e in events
+        )
         if not already:
-            events.append({
-                "id": f"weekly_expiry_{thursday.isoformat()}",
-                "date": thursday.isoformat(),
-                "type": "weekly_expiry",
-                "title": "NSE Weekly Expiry (Nifty / BankNifty)",
-                "description": "Weekly index options expire on NSE every Thursday.",
-                "impact": "medium",
-                "symbol": None,
-            })
+            events.append(
+                {
+                    "id": f"weekly_expiry_{thursday.isoformat()}",
+                    "date": thursday.isoformat(),
+                    "type": "weekly_expiry",
+                    "title": "NSE Weekly Expiry (Nifty / BankNifty)",
+                    "description": "Weekly index options expire on NSE every Thursday.",
+                    "impact": "medium",
+                    "symbol": None,
+                }
+            )
         thursday += timedelta(days=7)
 
     # RBI Monetary Policy Committee — typically 6 times a year (Feb, Apr, Jun, Aug, Oct, Dec)
@@ -71,15 +83,17 @@ def _static_events(from_date: date, to_date: date) -> list[dict]:
             while rbi_date.weekday() != 4:
                 rbi_date += timedelta(days=1)
             if from_date <= rbi_date <= to_date:
-                events.append({
-                    "id": f"rbi_mpc_{rbi_date.isoformat()}",
-                    "date": rbi_date.isoformat(),
-                    "type": "central_bank",
-                    "title": "RBI Monetary Policy Decision",
-                    "description": "RBI MPC announces repo rate decision and policy statement.",
-                    "impact": "high",
-                    "symbol": None,
-                })
+                events.append(
+                    {
+                        "id": f"rbi_mpc_{rbi_date.isoformat()}",
+                        "date": rbi_date.isoformat(),
+                        "type": "central_bank",
+                        "title": "RBI Monetary Policy Decision",
+                        "description": "RBI MPC announces repo rate decision and policy statement.",
+                        "impact": "high",
+                        "symbol": None,
+                    }
+                )
 
     # NSE/BSE market holidays 2026 (approximate)
     holidays_2026 = [
@@ -100,15 +114,17 @@ def _static_events(from_date: date, to_date: date) -> list[dict]:
         except ValueError:
             continue
         if from_date <= hd <= to_date:
-            events.append({
-                "id": f"holiday_{hdate}",
-                "date": hdate,
-                "type": "market_holiday",
-                "title": f"Market Holiday: {hname}",
-                "description": f"NSE and BSE closed for {hname}.",
-                "impact": "info",
-                "symbol": None,
-            })
+            events.append(
+                {
+                    "id": f"holiday_{hdate}",
+                    "date": hdate,
+                    "type": "market_holiday",
+                    "title": f"Market Holiday: {hname}",
+                    "description": f"NSE and BSE closed for {hname}.",
+                    "impact": "info",
+                    "symbol": None,
+                }
+            )
 
     return events
 
@@ -116,15 +132,32 @@ def _static_events(from_date: date, to_date: date) -> list[dict]:
 # ── Earnings from yfinance ────────────────────────────────────────────────────
 
 _NIFTY50_SAMPLE = [
-    "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS",
-    "HINDUNILVR.NS", "SBIN.NS", "BAJFINANCE.NS", "BHARTIARTL.NS", "KOTAKBANK.NS",
-    "WIPRO.NS", "AXISBANK.NS", "MARUTI.NS", "LT.NS", "ASIANPAINT.NS",
-    "TATAMOTORS.NS", "SUNPHARMA.NS", "TITAN.NS", "NESTLEIND.NS", "POWERGRID.NS",
+    "RELIANCE.NS",
+    "TCS.NS",
+    "HDFCBANK.NS",
+    "INFY.NS",
+    "ICICIBANK.NS",
+    "HINDUNILVR.NS",
+    "SBIN.NS",
+    "BAJFINANCE.NS",
+    "BHARTIARTL.NS",
+    "KOTAKBANK.NS",
+    "WIPRO.NS",
+    "AXISBANK.NS",
+    "MARUTI.NS",
+    "LT.NS",
+    "ASIANPAINT.NS",
+    "TATAMOTORS.NS",
+    "SUNPHARMA.NS",
+    "TITAN.NS",
+    "NESTLEIND.NS",
+    "POWERGRID.NS",
 ]
 
 
 def _earnings_for(symbol: str, from_date: date, to_date: date) -> list[dict]:
     import yfinance as yf
+
     try:
         cal = yf.Ticker(symbol).calendar
         if cal is None or cal.empty:
@@ -133,18 +166,22 @@ def _earnings_for(symbol: str, from_date: date, to_date: date) -> list[dict]:
             if col in cal.columns if hasattr(cal, "columns") else col in cal.index:
                 try:
                     raw = cal[col].iloc[0] if hasattr(cal, "columns") else cal.loc[col]
-                    edate = raw.date() if hasattr(raw, "date") else date.fromisoformat(str(raw)[:10])
+                    edate = (
+                        raw.date() if hasattr(raw, "date") else date.fromisoformat(str(raw)[:10])
+                    )
                     if from_date <= edate <= to_date:
                         short = symbol.replace(".NS", "").replace(".BO", "")
-                        return [{
-                            "id": f"earnings_{symbol}_{edate.isoformat()}",
-                            "date": edate.isoformat(),
-                            "type": "earnings",
-                            "title": f"{short} Quarterly Results",
-                            "description": f"{short} Q earnings announcement.",
-                            "impact": "medium",
-                            "symbol": symbol,
-                        }]
+                        return [
+                            {
+                                "id": f"earnings_{symbol}_{edate.isoformat()}",
+                                "date": edate.isoformat(),
+                                "type": "earnings",
+                                "title": f"{short} Quarterly Results",
+                                "description": f"{short} Q earnings announcement.",
+                                "impact": "medium",
+                                "symbol": symbol,
+                            }
+                        ]
                 except Exception:
                     pass
     except Exception:
@@ -167,6 +204,7 @@ async def _fetch_earnings(from_date: date, to_date: date) -> list[dict]:
 
 
 # ── endpoint ──────────────────────────────────────────────────────────────────
+
 
 @router.get("/events")
 async def get_events(

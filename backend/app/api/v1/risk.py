@@ -85,7 +85,9 @@ async def get_risk_status(
     circuit_breaker_active = daily_pnl < 0 and abs(daily_pnl) >= max_daily_loss
 
     # Also trip on max drawdown breach (total unrealised + realised)
-    all_closed_pnl = sum(t.pnl for t in all_trades if t.status == TradeStatus.CLOSED and t.pnl is not None)
+    all_closed_pnl = sum(
+        t.pnl for t in all_trades if t.status == TradeStatus.CLOSED and t.pnl is not None
+    )
     if not circuit_breaker_active and cfg.max_drawdown_pct:
         max_drawdown = cfg.capital * cfg.max_drawdown_pct
         circuit_breaker_active = all_closed_pnl < 0 and abs(all_closed_pnl) >= max_drawdown

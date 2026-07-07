@@ -14,6 +14,7 @@ blocked by bot-protection from wherever this pipeline is executed) are listed
 explicitly in config.SKIPPED_SOURCES and echoed in the report below — see
 data/stock_master_report.json after a run.
 """
+
 import argparse
 import json
 import sys

@@ -1,4 +1,5 @@
 """MongoDB repository for organizations — multi-client SaaS."""
+
 from __future__ import annotations
 
 from dataclasses import asdict
@@ -53,7 +54,14 @@ class OrgRepository:
         await _col().insert_one(doc)
         await _member_col().update_one(
             {"org_id": str(org.id), "user_id": owner_user_id},
-            {"$set": {"org_id": str(org.id), "user_id": owner_user_id, "role": "owner", "joined_at": datetime.now(UTC).isoformat()}},
+            {
+                "$set": {
+                    "org_id": str(org.id),
+                    "user_id": owner_user_id,
+                    "role": "owner",
+                    "joined_at": datetime.now(UTC).isoformat(),
+                }
+            },
             upsert=True,
         )
         log.info("org.created", org_id=str(org.id), name=org.name)
@@ -92,7 +100,14 @@ class OrgRepository:
     async def add_member(self, org_id: str, user_id: str, role: str = "member") -> None:
         await _member_col().update_one(
             {"org_id": org_id, "user_id": user_id},
-            {"$set": {"org_id": org_id, "user_id": user_id, "role": role, "joined_at": datetime.now(UTC).isoformat()}},
+            {
+                "$set": {
+                    "org_id": org_id,
+                    "user_id": user_id,
+                    "role": role,
+                    "joined_at": datetime.now(UTC).isoformat(),
+                }
+            },
             upsert=True,
         )
 
@@ -108,11 +123,16 @@ class OrgRepository:
         token = str(uuid4())
         await _invite_col().update_one(
             {"org_id": org_id, "email": email},
-            {"$set": {
-                "org_id": org_id, "email": email, "invited_by": invited_by,
-                "token": token, "accepted": False,
-                "created_at": datetime.now(UTC).isoformat(),
-            }},
+            {
+                "$set": {
+                    "org_id": org_id,
+                    "email": email,
+                    "invited_by": invited_by,
+                    "token": token,
+                    "accepted": False,
+                    "created_at": datetime.now(UTC).isoformat(),
+                }
+            },
             upsert=True,
         )
         return token

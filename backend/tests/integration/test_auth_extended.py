@@ -1,4 +1,5 @@
 """Tests for change-password, update-profile, forgot/reset-password."""
+
 from uuid import uuid4
 
 import pytest
@@ -18,9 +19,14 @@ def _headers(token: str) -> dict:
 @pytest.fixture
 async def auth(client: AsyncClient) -> dict:
     email, pw = _email(), "Secure123!"
-    reg = await client.post(f"{BASE}/register", json={
-        "email": email, "password": pw, "full_name": "Test User",
-    })
+    reg = await client.post(
+        f"{BASE}/register",
+        json={
+            "email": email,
+            "password": pw,
+            "full_name": "Test User",
+        },
+    )
     assert reg.status_code == 201
     login = await client.post(f"{BASE}/login", json={"email": email, "password": pw})
     assert login.status_code == 200
@@ -28,6 +34,7 @@ async def auth(client: AsyncClient) -> dict:
 
 
 # ── change-password ───────────────────────────────────────────────────────────
+
 
 async def test_change_password_success(client: AsyncClient, auth: dict):
     resp = await client.post(
@@ -39,7 +46,9 @@ async def test_change_password_success(client: AsyncClient, auth: dict):
     assert "successfully" in resp.json()["message"].lower()
 
     # Old password no longer works
-    r = await client.post(f"{BASE}/login", json={"email": auth["email"], "password": auth["password"]})
+    r = await client.post(
+        f"{BASE}/login", json={"email": auth["email"], "password": auth["password"]}
+    )
     assert r.status_code == 401
 
     # New password works
@@ -76,6 +85,7 @@ async def test_change_password_unauthenticated(client: AsyncClient):
 
 # ── update profile ────────────────────────────────────────────────────────────
 
+
 async def test_update_profile_success(client: AsyncClient, auth: dict):
     resp = await client.patch(
         f"{BASE}/me",
@@ -101,6 +111,7 @@ async def test_update_profile_empty_name(client: AsyncClient, auth: dict):
 
 # ── forgot / reset password ───────────────────────────────────────────────────
 
+
 async def test_forgot_password_known_email(client: AsyncClient, auth: dict):
     resp = await client.post(f"{BASE}/forgot-password", json={"email": auth["email"]})
     assert resp.status_code == 200
@@ -117,12 +128,20 @@ async def test_reset_password_flow(client: AsyncClient, auth: dict):
     fp = await client.post(f"{BASE}/forgot-password", json={"email": auth["email"]})
     token = fp.json()["reset_token"]
 
-    rp = await client.post(f"{BASE}/reset-password", json={
-        "token": token, "new_password": "ResetPass789!",
-    })
+    rp = await client.post(
+        f"{BASE}/reset-password",
+        json={
+            "token": token,
+            "new_password": "ResetPass789!",
+        },
+    )
     assert rp.status_code == 200
 
-    login = await client.post(f"{BASE}/login", json={
-        "email": auth["email"], "password": "ResetPass789!",
-    })
+    login = await client.post(
+        f"{BASE}/login",
+        json={
+            "email": auth["email"],
+            "password": "ResetPass789!",
+        },
+    )
     assert login.status_code == 200

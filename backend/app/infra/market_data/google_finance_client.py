@@ -81,9 +81,9 @@ async def _fetch_via_quote_page(exchange: str, ticker: str) -> dict:
 
     # Google embeds a c-wiz data attribute with JSON in the page
     # Pattern: data-last-price="2847.5"
-    price_match  = re.search(r'data-last-price="([0-9.,]+)"', html)
+    price_match = re.search(r'data-last-price="([0-9.,]+)"', html)
     change_match = re.search(r'data-last-normal-market-change="(-?[0-9.,]+)"', html)
-    pct_match    = re.search(r'data-last-normal-market-change-percent="(-?[0-9.,]+)"', html)
+    pct_match = re.search(r'data-last-normal-market-change-percent="(-?[0-9.,]+)"', html)
 
     if not price_match:
         # Try alternative pattern (div text with currency symbol)

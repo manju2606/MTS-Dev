@@ -122,9 +122,7 @@ async def get_trade(
 ) -> dict:
     trade = await repo.get_by_id(trade_id)
     if not trade or trade.user_id != current_user.id:
-        raise HTTPException(
-            status_code=http_status.HTTP_404_NOT_FOUND, detail="Trade not found"
-        )
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Trade not found")
     return _trade_dict(trade)
 
 
@@ -134,27 +132,30 @@ async def close_trade(
     current_user: CurrentUser,
     repo: TradeDep,
     market_data: MarketDataDep,
+    exit_price: float | None = Query(default=None, gt=0),
 ) -> dict:
     trade = await repo.get_by_id(trade_id)
     if not trade or trade.user_id != current_user.id:
-        raise HTTPException(
-            status_code=http_status.HTTP_404_NOT_FOUND, detail="Trade not found"
-        )
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Trade not found")
     if trade.status != TradeStatus.OPEN:
         raise HTTPException(
             status_code=http_status.HTTP_409_CONFLICT,
             detail=f"Trade is already {trade.status}",
         )
 
-    try:
-        quote = await market_data.get_quote(trade.symbol)
-    except Exception as exc:
-        raise HTTPException(
-            status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Market data unavailable",
-        ) from exc
+    if exit_price is not None:
+        price = exit_price
+    else:
+        try:
+            quote = await market_data.get_quote(trade.symbol)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Market data unavailable",
+            ) from exc
+        price = quote.price
 
-    trade.exit_price = quote.price
+    trade.exit_price = price
     trade.closed_at = datetime.utcnow()
     trade.status = TradeStatus.CLOSED
 

@@ -4,11 +4,12 @@ import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { NavBar } from '@/components/nav-bar'
 import {
-  closeTrade, getJournalEntry, getMe, getQuote,
+  closeTrade, getHistory, getJournalEntry, getMe, getQuote,
   getSotDSettings, listTrades, listWatchlists, placeTrade, saveJournalEntry, searchStocks, updateSotDSettings,
 } from '@/lib/api'
-import type { JournalEntry, PlaceTradeBody, SotDSettings, StockSearchResult, Trade, User, Watchlist } from '@/lib/api'
+import type { ChartPeriod, HistoryBar, JournalEntry, PlaceTradeBody, SotDSettings, StockSearchResult, Trade, User, Watchlist } from '@/lib/api'
 import { AddToWatchlistBtn } from '@/components/add-to-watchlist-btn'
+import { PriceChart } from '@/components/price-chart'
 
 // ── Symbol search dropdown ────────────────────────────────────────────────────
 
@@ -178,6 +179,8 @@ export default function PaperView() {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('open')
   const [closing, setClosing] = useState<string | null>(null)
+  const [manualCloseId, setManualCloseId] = useState<string | null>(null)
+  const [manualClosePrice, setManualClosePrice] = useState('')
 
   // Journal state
   const [journalOpen, setJournalOpen] = useState<string | null>(null)
@@ -208,6 +211,12 @@ export default function PaperView() {
   const [sotdSettings, setSotdSettings] = useState<SotDSettings | null>(null)
   const [autoTradeToggling, setAutoTradeToggling] = useState(false)
 
+  const [chartTradeId, setChartTradeId] = useState<string | null>(null)
+  const [chartSymbol, setChartSymbol] = useState<string | null>(null)
+  const [chartPeriod, setChartPeriod] = useState<ChartPeriod>('1D')
+  const [chartBars, setChartBars] = useState<HistoryBar[]>([])
+  const [chartLoading, setChartLoading] = useState(false)
+
   const fetchPrices = useCallback(async (openTrades: Trade[], isManual = false) => {
     if (openTrades.length === 0) return
     if (isManual) setPricesRefreshing(true)
@@ -221,6 +230,22 @@ export default function PaperView() {
     setPricesUpdatedAt(new Date())
     if (isManual) setPricesRefreshing(false)
   }, [])
+
+  useEffect(() => {
+    if (!chartTradeId || !chartSymbol) return
+    setChartLoading(true)
+    getHistory(tokenRef.current, chartSymbol, chartPeriod)
+      .then(setChartBars)
+      .catch(() => setChartBars([]))
+      .finally(() => setChartLoading(false))
+  }, [chartTradeId, chartSymbol, chartPeriod])
+
+  function toggleChart(tradeId: string, symbol: string) {
+    if (chartTradeId === tradeId) { setChartTradeId(null); setChartSymbol(null); return }
+    setChartTradeId(tradeId)
+    setChartSymbol(symbol)
+    setChartPeriod('1D')
+  }
 
   const fetchTrades = useCallback(async () => {
     const all = await listTrades(tokenRef.current)
@@ -294,16 +319,27 @@ export default function PaperView() {
     }
   }
 
-  async function handleClose(tradeId: string) {
+  async function handleClose(tradeId: string, exitPrice?: number) {
     setClosing(tradeId)
     try {
-      const updated = await closeTrade(tokenRef.current, tradeId)
+      const updated = await closeTrade(tokenRef.current, tradeId, exitPrice)
       setTrades(prev => prev.map(t => t.id === tradeId ? updated : t))
+      setManualCloseId(null)
+      setManualClosePrice('')
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to close trade')
     } finally {
       setClosing(null)
     }
+  }
+
+  function handleManualClose(tradeId: string) {
+    const price = Number(manualClosePrice)
+    if (!manualClosePrice || !(price > 0)) {
+      alert('Enter a valid close price')
+      return
+    }
+    handleClose(tradeId, price)
   }
 
   async function openJournal(tradeId: string) {
@@ -614,12 +650,14 @@ export default function PaperView() {
                   : null
                 const up = pnl !== null ? pnl >= 0 : null
 
-                // Price progress bar: position of current between SL and target
+                // Price progress bar: position of current (and entry) between SL and target
+                const barRange = trade.target - trade.stop_loss
                 const barPct = (current !== undefined)
-                  ? Math.min(100, Math.max(0,
-                      (current - trade.stop_loss) / (trade.target - trade.stop_loss) * 100
-                    ))
+                  ? Math.min(100, Math.max(0, (current - trade.stop_loss) / barRange * 100))
                   : null
+                const entryPct = Math.min(100, Math.max(0,
+                  (trade.entry_price - trade.stop_loss) / barRange * 100
+                ))
 
                 // Holding duration
                 const holdingStr = trade.opened_at ? (() => {
@@ -687,11 +725,33 @@ export default function PaperView() {
                           </span>
                           <span>Target ₹{trade.target.toFixed(2)}</span>
                         </div>
-                        <div className="relative h-2 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+                        <div className="relative h-2 w-full overflow-visible rounded-full bg-zinc-100 dark:bg-zinc-800">
                           <div className="h-full rounded-full bg-gradient-to-r from-red-400 via-amber-400 to-emerald-500"
-                            style={{ width: `${barPct}%` }} />
-                          <div className="absolute top-1/2 -translate-y-1/2 h-3 w-1 rounded-sm bg-zinc-700 dark:bg-zinc-200"
-                            style={{ left: `calc(${barPct}% - 2px)` }} />
+                            style={{ width: `${barPct ?? 0}%` }} />
+                          {/* Buy price marker */}
+                          <div
+                            className="group absolute top-1/2 z-10 -translate-x-1/2 -translate-y-1/2"
+                            style={{ left: `${entryPct}%` }}
+                            title={`Buy ₹${trade.entry_price.toFixed(2)}`}
+                          >
+                            <div className="h-3 w-3 rounded-full border-2 border-white bg-indigo-600 shadow dark:border-zinc-900" />
+                            <span className="pointer-events-none absolute left-1/2 top-full mt-1 -translate-x-1/2 whitespace-nowrap rounded bg-zinc-800 px-1.5 py-0.5 text-[9px] font-semibold text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-zinc-700">
+                              Buy ₹{trade.entry_price.toFixed(2)}
+                            </span>
+                          </div>
+                          {/* Current price marker (the ball moving from buy toward target) */}
+                          {barPct !== null && (
+                            <div
+                              className="group absolute top-1/2 z-20 -translate-x-1/2 -translate-y-1/2"
+                              style={{ left: `${barPct}%` }}
+                              title={`CMP ₹${current!.toFixed(2)}`}
+                            >
+                              <div className={`h-3.5 w-3.5 rounded-full border-2 border-white shadow-md dark:border-zinc-900 ${up ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                              <span className="pointer-events-none absolute left-1/2 top-full mt-1 -translate-x-1/2 whitespace-nowrap rounded bg-zinc-800 px-1.5 py-0.5 text-[9px] font-semibold text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-zinc-700">
+                                CMP ₹{current!.toFixed(2)}
+                              </span>
+                            </div>
+                          )}
                         </div>
                         <div className="mt-1.5 flex justify-between text-[10px]">
                           <span className="text-red-400">Risk {slDist !== null ? `-${slDist.toFixed(1)}%` : ''}</span>
@@ -739,17 +799,85 @@ export default function PaperView() {
 
                     {/* Actions row */}
                     <div className="mt-4 flex items-center justify-between">
-                      <AddToWatchlistBtn symbol={trade.symbol} token={tokenRef.current} watchlists={watchlists} />
-                      {user?.role !== 'viewer' && (
+                      <div className="flex items-center gap-2">
+                        <AddToWatchlistBtn symbol={trade.symbol} token={tokenRef.current} watchlists={watchlists} />
                         <button
-                          onClick={() => handleClose(trade.id)}
-                          disabled={closing === trade.id}
-                          className="rounded-lg bg-red-50 px-4 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/30"
+                          onClick={() => toggleChart(trade.id, trade.symbol)}
+                          className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                            chartTradeId === trade.id
+                              ? 'bg-indigo-600 text-white'
+                              : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700'
+                          }`}
                         >
-                          {closing === trade.id ? 'Closing…' : 'Close Position'}
+                          📈 {chartTradeId === trade.id ? 'Hide Chart' : 'Chart'}
                         </button>
+                      </div>
+                      {user?.role !== 'viewer' && (
+                        <div className="flex flex-col items-end gap-1.5">
+                          <label className="flex items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+                            <input
+                              type="checkbox"
+                              checked={manualCloseId === trade.id}
+                              onChange={e => {
+                                setManualCloseId(e.target.checked ? trade.id : null)
+                                setManualClosePrice('')
+                              }}
+                              className="h-3.5 w-3.5 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
+                            />
+                            Enter close price manually
+                          </label>
+                          {manualCloseId === trade.id && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-zinc-500">₹</span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0.01"
+                                autoFocus
+                                value={manualClosePrice}
+                                onChange={e => setManualClosePrice(e.target.value)}
+                                onKeyDown={e => { if (e.key === 'Enter') handleManualClose(trade.id) }}
+                                placeholder="Exit price"
+                                className="w-24 rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                              />
+                            </div>
+                          )}
+                          <button
+                            onClick={() => {
+                              if (manualCloseId === trade.id) {
+                                handleManualClose(trade.id)
+                              } else {
+                                handleClose(trade.id)
+                              }
+                            }}
+                            disabled={closing === trade.id}
+                            className="rounded-lg bg-red-50 px-4 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/30"
+                          >
+                            {closing === trade.id ? 'Closing…' : 'Close Position'}
+                          </button>
+                        </div>
                       )}
                     </div>
+
+                    {/* Inline chart: LTP, buy price, SL and target overlaid on candles */}
+                    {chartTradeId === trade.id && (
+                      <div className="mt-4">
+                        <PriceChart
+                          symbol={trade.symbol}
+                          data={chartBars}
+                          period={chartPeriod}
+                          onPeriodChange={setChartPeriod}
+                          loading={chartLoading}
+                          currentPrice={current ?? null}
+                          aiLevels={{
+                            signal: trade.signal,
+                            entry: trade.entry_price,
+                            stopLoss: trade.stop_loss,
+                            target: trade.target,
+                          }}
+                        />
+                      </div>
+                    )}
                   </div>
                 )
               })}

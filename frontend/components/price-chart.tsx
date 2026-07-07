@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import type { IChartApi, UTCTimestamp } from 'lightweight-charts'
+import type { IChartApi, ISeriesApi, IPriceLine, UTCTimestamp } from 'lightweight-charts'
 import type { HistoryBar, ChartPeriod } from '@/lib/api'
 
 export type AILevels = {
@@ -18,13 +18,16 @@ type PriceChartProps = {
   onPeriodChange: (p: ChartPeriod) => void
   loading: boolean
   aiLevels?: AILevels
+  currentPrice?: number | null
 }
 
 const PERIODS: ChartPeriod[] = ['1m', '5m', '15m', '30m', '45m', '1h', '1D', '5D', '1W', '1M', '3M', '6M', '1Y']
 
-export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLevels }: PriceChartProps) {
+export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLevels, currentPrice }: PriceChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
+  const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
+  const ltpLineRef = useRef<IPriceLine | null>(null)
   const cardRef = useRef<HTMLDivElement>(null)
   const [fullscreen, setFullscreen] = useState(false)
 
@@ -90,6 +93,8 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
           wickUpColor: '#10b981',
           wickDownColor: '#ef4444',
         })
+        candleSeriesRef.current = candleSeries
+        ltpLineRef.current = null
 
         const volSeries = chart.addSeries(HistogramSeries, {
           color: '#6366f140',
@@ -166,6 +171,19 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
           }
         }
 
+        // LTP line — current/live price, kept separate from the AI levels so it can be
+        // nudged on each price poll (see the effect below) without rebuilding the chart.
+        if (currentPrice != null) {
+          ltpLineRef.current = candleSeries.createPriceLine({
+            price: currentPrice,
+            color: '#f59e0b',
+            lineWidth: 2,
+            lineStyle: LineStyle.Solid,
+            axisLabelVisible: true,
+            title: `LTP ₹${currentPrice.toFixed(2)}`,
+          })
+        }
+
         chart.timeScale().fitContent()
 
         const ro = new ResizeObserver(() => {
@@ -187,8 +205,30 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
         chartRef.current.remove()
         chartRef.current = null
       }
+      candleSeriesRef.current = null
+      ltpLineRef.current = null
     }
   }, [data, aiLevels])
+
+  // Nudge the LTP line on each live-price update without rebuilding the whole chart.
+  useEffect(() => {
+    if (currentPrice == null || !candleSeriesRef.current) return
+    if (ltpLineRef.current) {
+      ltpLineRef.current.applyOptions({ price: currentPrice, title: `LTP ₹${currentPrice.toFixed(2)}` })
+      return
+    }
+    import('lightweight-charts').then(({ LineStyle }) => {
+      if (!candleSeriesRef.current || ltpLineRef.current) return
+      ltpLineRef.current = candleSeriesRef.current.createPriceLine({
+        price: currentPrice,
+        color: '#f59e0b',
+        lineWidth: 2,
+        lineStyle: LineStyle.Solid,
+        axisLabelVisible: true,
+        title: `LTP ₹${currentPrice.toFixed(2)}`,
+      })
+    })
+  }, [currentPrice])
 
   return (
     <div

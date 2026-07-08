@@ -80,6 +80,24 @@ class StockOfDayRepository:
         cursor = self._col.find({"status": "TRADING"})
         return [_from_doc(d) async for d in cursor]
 
+    async def get_resolved_picks_between(self, start_date: str, end_date: str) -> list[dict]:
+        """Flat list of resolved picks in a date range, for cross-engine
+        report comparisons (see dsws_service.get_report). One entry per day
+        since Stock of the Day generates a single pick per date."""
+        cursor = self._col.find(
+            {"date": {"$gte": start_date, "$lte": end_date}, "outcome": {"$ne": None}},
+            {"symbol": 1, "name": 1, "date": 1, "pnl_pct": 1},
+        )
+        return [
+            {
+                "symbol": doc["symbol"],
+                "name": doc.get("name", doc["symbol"]),
+                "scan_date": doc["date"],
+                "pct_change": doc["pnl_pct"],
+            }
+            async for doc in cursor
+        ]
+
     # ── Journal entries ───────────────────────────────────────────────────────
 
     async def add_journal_entry(

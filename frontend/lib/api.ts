@@ -289,11 +289,19 @@ export async function login(email: string, password: string) {
   return res.json() as Promise<{ access_token: string; token_type: string }>
 }
 
+export class ApiError extends Error {
+  status: number
+  constructor(message: string, status: number) {
+    super(message)
+    this.status = status
+  }
+}
+
 export async function getMe(token: string): Promise<User> {
   const res = await fetch(`${BASE}/api/v1/auth/me`, {
     headers: authHeaders(token),
   })
-  if (!res.ok) throw new Error('Unauthorized')
+  if (!res.ok) throw new ApiError('Unauthorized', res.status)
   return res.json()
 }
 
@@ -2844,12 +2852,15 @@ export type DswsBucketStats = {
   worst: DswsReportEntry | null
 }
 
+export type DswsEngine = 'STOCK_OF_DAY' | 'GOLDEN_STOCK' | 'BTST'
+
 export type DswsReport = {
   period: 'day' | 'week' | 'month'
   start_date: string
   end_date: string
   days_included: number
   buckets: Record<DswsBucket, DswsBucketStats>
+  engines: Record<DswsEngine, DswsBucketStats>
   best_stock: DswsReportEntry | null
   worst_stock: DswsReportEntry | null
 }

@@ -125,6 +125,34 @@ class BTSTRepository:
             },
         )
 
+    async def get_resolved_picks_between(self, start_date: str, end_date: str) -> list[dict]:
+        """Flat list of resolved picks in a date range, for cross-engine
+        report comparisons (see dsws_service.get_report)."""
+        cursor = self._col.find(
+            {"scan_date": {"$gte": start_date, "$lte": end_date}},
+            {
+                "scan_date": 1,
+                "picks.symbol": 1,
+                "picks.name": 1,
+                "picks.outcome": 1,
+                "picks.actual_pct": 1,
+            },
+        )
+        entries: list[dict] = []
+        async for doc in cursor:
+            for pick in doc.get("picks", []):
+                if pick.get("outcome") is None:
+                    continue
+                entries.append(
+                    {
+                        "symbol": pick["symbol"],
+                        "name": pick.get("name", pick["symbol"]),
+                        "scan_date": doc["scan_date"],
+                        "pct_change": pick["actual_pct"],
+                    }
+                )
+        return entries
+
     async def get_performance_stats(self) -> dict:
         pipeline = [
             {"$unwind": "$picks"},

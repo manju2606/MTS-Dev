@@ -173,39 +173,52 @@ async def get_report(period: str, date: str) -> dict:
                     }
                 )
 
-    bucket_stats = {}
-    all_entries: list[dict] = []
-    for bucket, entries in per_bucket.items():
+    bucket_stats = {bucket: _compute_stats(entries) for bucket, entries in per_bucket.items()}
+
+    # Other pick-generating engines, folded into the same report so their
+    # performance is directly comparable to the Discovery Engine's buckets.
+    start_str = start.strftime("%Y-%m-%d")
+    from app.infra.db.repositories.btst_repo import BTSTRepository
+    from app.infra.db.repositories.golden_stock_repo import GoldenStockRepository
+    from app.infra.db.repositories.stock_of_day_repo import StockOfDayRepository
+
+    engine_entries = {
+        "STOCK_OF_DAY": await StockOfDayRepository().get_resolved_picks_between(start_str, date),
+        "GOLDEN_STOCK": await GoldenStockRepository().get_resolved_picks_between(start_str, date),
+        "BTST": await BTSTRepository().get_resolved_picks_between(start_str, date),
+    }
+    engine_stats = {name: _compute_stats(entries) for name, entries in engine_entries.items()}
+
+    all_entries = [e for entries in per_bucket.values() for e in entries]
+    for entries in engine_entries.values():
         all_entries.extend(entries)
-        if not entries:
-            bucket_stats[bucket] = {
-                "count": 0,
-                "avg_return_pct": 0.0,
-                "win_rate_pct": 0.0,
-                "best": None,
-                "worst": None,
-            }
-            continue
-        wins = sum(1 for e in entries if e["pct_change"] > 0)
-        best = max(entries, key=lambda e: e["pct_change"])
-        worst = min(entries, key=lambda e: e["pct_change"])
-        bucket_stats[bucket] = {
-            "count": len(entries),
-            "avg_return_pct": round(sum(e["pct_change"] for e in entries) / len(entries), 2),
-            "win_rate_pct": round(wins / len(entries) * 100, 1),
-            "best": best,
-            "worst": worst,
-        }
 
     best_overall = max(all_entries, key=lambda e: e["pct_change"]) if all_entries else None
     worst_overall = min(all_entries, key=lambda e: e["pct_change"]) if all_entries else None
 
     return {
         "period": period,
-        "start_date": start.strftime("%Y-%m-%d"),
+        "start_date": start_str,
         "end_date": date,
         "days_included": len(docs),
         "buckets": bucket_stats,
+        "engines": engine_stats,
         "best_stock": best_overall,
         "worst_stock": worst_overall,
+    }
+
+
+def _compute_stats(entries: list[dict]) -> dict:
+    """count/avg-return/win-rate/best/worst over a flat list of
+    {symbol, name, scan_date, pct_change} entries — shared by DSWS's own
+    signal buckets and the other pick-generating engines' resolved picks."""
+    if not entries:
+        return {"count": 0, "avg_return_pct": 0.0, "win_rate_pct": 0.0, "best": None, "worst": None}
+    wins = sum(1 for e in entries if e["pct_change"] > 0)
+    return {
+        "count": len(entries),
+        "avg_return_pct": round(sum(e["pct_change"] for e in entries) / len(entries), 2),
+        "win_rate_pct": round(wins / len(entries) * 100, 1),
+        "best": max(entries, key=lambda e: e["pct_change"]),
+        "worst": min(entries, key=lambda e: e["pct_change"]),
     }

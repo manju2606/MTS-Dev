@@ -8,7 +8,7 @@ import {
   triggerDswsGenerate,
   triggerDswsTrack,
 } from '@/lib/api'
-import type { DswsBucket, DswsScan, DswsPick, DswsReport, DswsReportEntry } from '@/lib/api'
+import type { DswsBucket, DswsEngine, DswsScan, DswsPick, DswsReport, DswsReportEntry } from '@/lib/api'
 
 const BUCKETS: DswsBucket[] = ['STRONG_BUY', 'BUY', 'SELL', 'STRONG_SELL']
 
@@ -17,6 +17,14 @@ const BUCKET_META: Record<DswsBucket, { label: string; accent: string; text: str
   BUY: { label: 'Buy', accent: 'bg-emerald-400', text: 'text-emerald-500' },
   SELL: { label: 'Sell', accent: 'bg-red-400', text: 'text-red-500' },
   STRONG_SELL: { label: 'Strong Sell', accent: 'bg-red-600', text: 'text-red-600' },
+}
+
+const ENGINES: DswsEngine[] = ['STOCK_OF_DAY', 'GOLDEN_STOCK', 'BTST']
+
+const ENGINE_META: Record<DswsEngine, { label: string; text: string }> = {
+  STOCK_OF_DAY: { label: 'Stock of the Day', text: 'text-indigo-600' },
+  GOLDEN_STOCK: { label: 'Golden Stock', text: 'text-amber-600' },
+  BTST: { label: 'BTST', text: 'text-cyan-600' },
 }
 
 function fmt(n: number) {
@@ -208,6 +216,28 @@ function ReportPanel({
                   const meta = BUCKET_META[bucket]
                   return (
                     <tr key={bucket} className="border-b border-zinc-100 dark:border-zinc-800">
+                      <td className={`px-3 py-2 font-semibold ${meta.text}`}>{meta.label}</td>
+                      <td className="px-3 py-2 text-zinc-600 dark:text-zinc-300">{stats.count}</td>
+                      <td className="px-3 py-2"><PctBadge pct={stats.count > 0 ? stats.avg_return_pct : null} /></td>
+                      <td className="px-3 py-2 text-zinc-600 dark:text-zinc-300">
+                        {stats.count > 0 ? `${stats.win_rate_pct.toFixed(0)}%` : '—'}
+                      </td>
+                      <td className="px-3 py-2 text-zinc-600 dark:text-zinc-300">
+                        {stats.best ? stats.best.symbol.replace('.NS', '').replace('.BO', '') : '—'}
+                      </td>
+                    </tr>
+                  )
+                })}
+                <tr>
+                  <td colSpan={5} className="px-3 pb-1 pt-4 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
+                    Other Engines
+                  </td>
+                </tr>
+                {ENGINES.map(engine => {
+                  const stats = report.engines[engine]
+                  const meta = ENGINE_META[engine]
+                  return (
+                    <tr key={engine} className="border-b border-zinc-100 dark:border-zinc-800">
                       <td className={`px-3 py-2 font-semibold ${meta.text}`}>{meta.label}</td>
                       <td className="px-3 py-2 text-zinc-600 dark:text-zinc-300">{stats.count}</td>
                       <td className="px-3 py-2"><PctBadge pct={stats.count > 0 ? stats.avg_return_pct : null} /></td>

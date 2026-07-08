@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { NavBar } from '@/components/nav-bar'
 import {
   getMe, getTopPicks, getDiscoveryStatus, listTrades, listAlerts, getQuote, getMarketOverview,
-  getSotDToday, listWatchlists, addItemToWatchlist, getGoldenStockLatest, getBTSTLatest,
+  getSotDToday, listWatchlists, addItemToWatchlist, getGoldenStockLatest, getBTSTLatest, ApiError,
 } from '@/lib/api'
 import type {
   User, StockScore, DiscoveryStatus, Trade, AlertRule,
@@ -741,8 +741,8 @@ export default function DashboardView() {
     // Critical data first — renders SotD, picks, trades without waiting for market-overview
     const [me, p, s, t, a, sotdRes, gsRes, btstRes] = await Promise.all([
       getMe(token),
-      getTopPicks(token, 50, undefined, 0),
-      getDiscoveryStatus(token),
+      getTopPicks(token, 50, undefined, 0).catch(() => [] as StockScore[]),
+      getDiscoveryStatus(token).catch(() => null),
       listTrades(token, 'open').catch(() => [] as Trade[]),
       listAlerts(token).catch(() => [] as AlertRule[]),
       getSotDToday(token).catch(() => null),
@@ -787,11 +787,19 @@ export default function DashboardView() {
     const cached = localStorage.getItem(CACHE_KEY)
     if (cached) applyCache(cached)
 
-    const run = async () => { try { await load(t) } catch { router.replace('/login') } }
-    void run()
+    // Only a genuine 401 (session actually expired/invalid) sends the user back
+    // to login — any other failure (transient network blip, a slow backend
+    // restart, etc.) just leaves the page as-is with whatever data it has.
+    const runOrRedirect = async () => {
+      try {
+        await load(t)
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401) router.replace('/login')
+      }
+    }
+    void runOrRedirect()
 
-    
-    const id = setInterval(() => { void load(t) }, 30000)
+    const id = setInterval(() => { void runOrRedirect() }, 30000)
     return () => clearInterval(id)
   }, [router, load, applyCache])
 

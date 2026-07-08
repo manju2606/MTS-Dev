@@ -2796,6 +2796,99 @@ export async function getGoldenStockPerformance(token: string): Promise<Record<s
   return r.json()
 }
 
+// ── DSWS (Daily Discovery Watchlist Summary) ─────────────────────────────────
+
+export type DswsBucket = 'STRONG_BUY' | 'BUY' | 'SELL' | 'STRONG_SELL'
+
+export type DswsCheckpoint = {
+  time: string
+  price: number
+  pct_change: number
+  captured_at: string
+}
+
+export type DswsPick = {
+  symbol: string
+  name: string
+  signal: DswsBucket
+  score: number
+  entry_price: number
+  stop_loss: number
+  target: number
+  added_at: string
+  checkpoints: DswsCheckpoint[]
+  close_price?: number | null
+  close_pct?: number | null
+}
+
+export type DswsScan = {
+  id?: string
+  scan_date: string
+  generated_at: string
+  closed_out: boolean
+  buckets: Record<DswsBucket, DswsPick[]>
+}
+
+export type DswsReportEntry = {
+  symbol: string
+  name: string
+  scan_date: string
+  pct_change: number
+}
+
+export type DswsBucketStats = {
+  count: number
+  avg_return_pct: number
+  win_rate_pct: number
+  best: DswsReportEntry | null
+  worst: DswsReportEntry | null
+}
+
+export type DswsReport = {
+  period: 'day' | 'week' | 'month'
+  start_date: string
+  end_date: string
+  days_included: number
+  buckets: Record<DswsBucket, DswsBucketStats>
+  best_stock: DswsReportEntry | null
+  worst_stock: DswsReportEntry | null
+}
+
+export async function getDswsToday(token: string): Promise<DswsScan> {
+  const r = await fetch(`${BASE}/api/v1/dsws/today`, { headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+export async function getDswsByDate(token: string, date: string): Promise<DswsScan> {
+  const r = await fetch(`${BASE}/api/v1/dsws/history/${date}`, { headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+export async function getDswsReport(
+  token: string,
+  period: 'day' | 'week' | 'month',
+  date?: string,
+): Promise<DswsReport> {
+  const q = date ? `period=${period}&date=${date}` : `period=${period}`
+  const r = await fetch(`${BASE}/api/v1/dsws/report?${q}`, { headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+export async function triggerDswsGenerate(token: string): Promise<DswsScan> {
+  const r = await fetch(`${BASE}/api/v1/dsws/generate`, { method: 'POST', headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+export async function triggerDswsTrack(token: string): Promise<{ recorded: number }> {
+  const r = await fetch(`${BASE}/api/v1/dsws/track`, { method: 'POST', headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
 // ── BTST (Buy Today, Sell Tomorrow) ──────────────────────────────────────────
 
 export type BTSTPick = {

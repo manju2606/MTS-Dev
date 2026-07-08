@@ -142,6 +142,40 @@ async def _run_sotd_expire() -> None:
     await expire_open_picks()
 
 
+async def _run_dsws_generate() -> None:
+    """09:30:45 IST weekdays: bucket today's Discovery Engine picks by signal
+    strength (Strong Buy/Buy/Sell/Strong Sell). Runs 15s after full_scan's
+    09:30:30 slot so today's discovery scores are already saved."""
+    try:
+        from app.services.dsws_service import generate_daily_watchlist
+
+        await generate_daily_watchlist()
+    except Exception as exc:
+        log.error("scheduler.dsws_generate.error", error=str(exc))
+
+
+async def _run_dsws_track() -> None:
+    """Every 30 min, 10:00-15:30 IST weekdays: record a price checkpoint for
+    every pick in today's DSWS watchlist."""
+    try:
+        from app.services.dsws_service import track_checkpoint
+
+        await track_checkpoint()
+    except Exception as exc:
+        log.error("scheduler.dsws_track.error", error=str(exc))
+
+
+async def _run_dsws_close() -> None:
+    """15:35:30 IST weekdays: close out today's DSWS watchlist using each
+    pick's last checkpoint as its close price."""
+    try:
+        from app.services.dsws_service import close_out_day
+
+        await close_out_day()
+    except Exception as exc:
+        log.error("scheduler.dsws_close.error", error=str(exc))
+
+
 async def _resolve_forecast_accuracy() -> None:
     """16:30 IST weekdays: fill actual prices into today's forecast records."""
     from datetime import date
@@ -373,6 +407,43 @@ def start_scheduler() -> None:
         CronTrigger(day_of_week="mon-fri", hour=15, minute=35, second=0, timezone="Asia/Kolkata"),
         id="sotd_expire",
         name="Stock of the Day — Expire Open Positions",
+        max_instances=1,
+        misfire_grace_time=None,
+    )
+
+    # DSWS: bucket today's Discovery Engine picks by signal strength at 09:30:45 IST
+    # (15s after full_scan's 09:30:30 slot, so today's discovery scores exist first)
+    _scheduler.add_job(
+        _run_dsws_generate,
+        CronTrigger(day_of_week="mon-fri", hour=9, minute=30, second=45, timezone="Asia/Kolkata"),
+        id="dsws_generate",
+        name="DSWS — Generate Daily Watchlist",
+        max_instances=1,
+        misfire_grace_time=300,
+    )
+
+    # DSWS: price checkpoint every 30 min, 10:00-15:30 IST
+    _scheduler.add_job(
+        _run_dsws_track,
+        CronTrigger(
+            day_of_week="mon-fri",
+            hour="10-15",
+            minute="0,30",
+            second=15,
+            timezone="Asia/Kolkata",
+        ),
+        id="dsws_track",
+        name="DSWS — Price Checkpoint",
+        max_instances=1,
+        misfire_grace_time=None,
+    )
+
+    # DSWS: close out the day at 15:35:30 IST (after SotD expire / BTST resolve)
+    _scheduler.add_job(
+        _run_dsws_close,
+        CronTrigger(day_of_week="mon-fri", hour=15, minute=35, second=30, timezone="Asia/Kolkata"),
+        id="dsws_close",
+        name="DSWS — Close Out Day",
         max_instances=1,
         misfire_grace_time=None,
     )

@@ -14,6 +14,7 @@ from app.api.v1 import (
     custom_screener,
     dashboard,
     discovery,
+    dsws,
     forecast,
     golden_stock,
     journal,
@@ -83,3 +84,4 @@ router.include_router(btst.router)
 router.include_router(sentiment_forecast.router)
 router.include_router(trading_agent.router)
 router.include_router(alerting.router)
+router.include_router(dsws.router)

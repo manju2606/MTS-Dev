@@ -1,0 +1,36 @@
+# Runs the ops dashboard against whichever MTS-Dev stack is currently up
+# (dev or prod) by joining its docker network and using container DNS names
+# instead of host-published ports — those differ between dev and prod.
+#
+# Run with: docker compose -f ops-dashboard/docker-compose.yml up -d --build
+services:
+  ops-dashboard:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "4600:4600"
+    environment:
+      DATABASE_URL: postgresql://mts:mts_password@postgres:5432/mts_dev
+      REDIS_URL: redis://redis:6379
+      MONGODB_URL: mongodb://mongodb:27017
+      BACKEND_URL: http://backend:8000/health
+      FRONTEND_URL: http://frontend:3000
+      GRAFANA_URL: http://grafana:3000
+      PROMETHEUS_URL: http://prometheus:9090/-/healthy
+      ALERTMANAGER_URL: http://alertmanager:9093/-/healthy
+      KUBE_CONTEXT: kind-mts-dev
+      KUBE_NAMESPACE: mts
+      K8S_DOCKER_HOST_REMAP: "true"
+    volumes:
+      - ${USERPROFILE}/.kube:/root/.kube:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      - mts-dev
+
+networks:
+  mts-dev:
+    name: mts-dev_default
+    external: true

@@ -58,3 +58,21 @@ k8s-logs:
 
 k8s-migrate:
 	kubectl exec -n mts deploy/backend -- alembic upgrade head
+
+# ── Ops dashboard (local) ─────────────────────────────────────────────────────
+# ops-dashboard: native run — needs `make dev` up (uses host-published dev ports).
+# ops-dashboard-docker: containerized — works against `make dev` OR `make prod`
+# (joins the stack's docker network and uses container DNS names).
+.PHONY: ops-dashboard ops-dashboard-install ops-dashboard-docker ops-dashboard-docker-down
+
+ops-dashboard-install:
+	cd ops-dashboard/backend && npm install
+
+ops-dashboard:
+	cd ops-dashboard/backend && npm start
+
+ops-dashboard-docker:
+	docker compose -f ops-dashboard/docker-compose.yml up -d --build
+
+ops-dashboard-docker-down:
+	docker compose -f ops-dashboard/docker-compose.yml down

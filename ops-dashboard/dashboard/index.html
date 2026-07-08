@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MTS Ops Dashboard</title>
+  <link rel="stylesheet" href="assets/style.css" />
+  <script>(function(){document.documentElement.setAttribute('data-theme',localStorage.getItem('mts-ops-theme')||'light')})();</script>
+  <style>
+    .card-icon.pg     { background: #eef2ff; }
+    .card-icon.redis  { background: #fdecea; }
+    .card-icon.mongo  { background: #eafaf1; }
+    .card-icon.backend{ background: #e8f4fd; }
+    .card-icon.frontend{ background: #f3e8fd; }
+    .card-icon.k8s    { background: #e8eefb; }
+    .card-icon.grafana{ background: #fff3e0; }
+    .card-icon.prom   { background: #fdf3e3; }
+    .card-icon.am     { background: #fdecea; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="logo">&#9830; MTS Ops</div>
+    <div class="subtitle">Local Dev Stack Dashboard</div>
+  </div>
+  <button id="theme-btn" class="theme-btn" onclick="toggleTheme()" title="Toggle theme"></button>
+</header>
+
+<div class="banner">
+  Stack: <span>docker compose (dev)</span> &nbsp;|&nbsp;
+  Kind cluster: <span>mts-dev</span> &nbsp;|&nbsp;
+  Namespace: <span>mts</span>
+</div>
+
+<main>
+
+  <div class="section-hd">
+    <div class="folder-icon" style="background:#fdf3e3;">&#128452;</div>
+    <h2>Data Stores</h2>
+    <div class="section-divider"></div>
+  </div>
+  <div class="grid">
+
+    <div class="card" onclick="location.href='postgres.html'">
+      <div class="card-icon pg">&#x1F418;</div>
+      <h3>PostgreSQL</h3>
+      <p>User accounts, trades, portfolio positions, audit logs.</p>
+      <div class="endpoint" id="pg-endpoint">localhost:5435 &middot; <span id="pg-status">checking…</span></div>
+      <a class="open-btn" href="postgres.html">Open</a>
+    </div>
+
+    <div class="card" onclick="location.href='redis.html'">
+      <div class="card-icon redis">&#x1F525;</div>
+      <h3>Redis</h3>
+      <p>Real-time price cache, session store, rate limiting.</p>
+      <div class="endpoint" id="redis-endpoint">localhost:6381 &middot; <span id="redis-status">checking…</span></div>
+      <a class="open-btn" href="redis.html">Open</a>
+    </div>
+
+    <div class="card" onclick="location.href='mongodb.html'">
+      <div class="card-icon mongo">&#x1F333;</div>
+      <h3>MongoDB</h3>
+      <p>Trade journal entries, AI explanation logs, unstructured analysis.</p>
+      <div class="endpoint" id="mongo-endpoint">localhost:27018 &middot; <span id="mongo-status">checking…</span></div>
+      <a class="open-btn" href="mongodb.html">Open</a>
+    </div>
+
+  </div>
+
+  <div class="section-hd">
+    <div class="folder-icon" style="background:#e8f4fd;">&#9881;</div>
+    <h2>Application</h2>
+    <div class="section-divider"></div>
+  </div>
+  <div class="grid">
+
+    <div class="card" onclick="location.href='services.html'">
+      <div class="card-icon backend">&#x1F5A5;</div>
+      <h3>Backend API</h3>
+      <p>FastAPI service — auth, scanner, paper trading, admin.</p>
+      <div class="endpoint" id="backend-endpoint">localhost:8000 &middot; <span id="backend-status">checking…</span></div>
+      <a class="open-btn" href="services.html">Open</a>
+    </div>
+
+    <div class="card" onclick="location.href='services.html'">
+      <div class="card-icon frontend">&#127760;</div>
+      <h3>Frontend</h3>
+      <p>Next.js dashboard, admin panel, scanner UI.</p>
+      <div class="endpoint" id="frontend-endpoint">localhost:3000 &middot; <span id="frontend-status">checking…</span></div>
+      <a class="open-btn" href="services.html">Open</a>
+    </div>
+
+    <div class="card" onclick="location.href='kubernetes.html'">
+      <div class="card-icon k8s">&#9096;</div>
+      <h3>Kubernetes</h3>
+      <p><strong>mts-dev</strong> kind cluster &mdash; nodes, pods, deployments in <code>mts</code> namespace.</p>
+      <div class="endpoint" id="k8s-endpoint">kind-mts-dev &middot; <span id="k8s-status">checking…</span></div>
+      <a class="open-btn" href="kubernetes.html">Open</a>
+    </div>
+
+  </div>
+
+  <div class="section-hd">
+    <div class="folder-icon" style="background:#fff3e0;">&#128202;</div>
+    <h2>Monitoring</h2>
+    <div class="section-divider"></div>
+  </div>
+  <div class="grid">
+
+    <div class="card" onclick="window.open('http://localhost:3001','_blank')">
+      <div class="card-icon grafana">&#128200;</div>
+      <h3>Grafana</h3>
+      <p>Dashboards for infrastructure and application metrics.</p>
+      <div class="endpoint">localhost:3001 &middot; prod stack only</div>
+      <a class="open-btn" href="http://localhost:3001" target="_blank">Open &#8599;</a>
+    </div>
+
+    <div class="card" onclick="window.open('http://localhost:9090','_blank')">
+      <div class="card-icon prom">&#128225;</div>
+      <h3>Prometheus</h3>
+      <p>Metrics collection and alert rule evaluation.</p>
+      <div class="endpoint">localhost:9090 &middot; prod stack only</div>
+      <a class="open-btn" href="http://localhost:9090" target="_blank">Open &#8599;</a>
+    </div>
+
+    <div class="card" onclick="window.open('http://localhost:9093','_blank')">
+      <div class="card-icon am">&#128276;</div>
+      <h3>Alertmanager</h3>
+      <p>Alert routing and notification delivery.</p>
+      <div class="endpoint">localhost:9093 &middot; prod stack only</div>
+      <a class="open-btn" href="http://localhost:9093" target="_blank">Open &#8599;</a>
+    </div>
+
+  </div>
+
+</main>
+
+<footer>MTS Ops Dashboard &mdash; local dev stack visibility</footer>
+
+<script src="assets/common.js"></script>
+<script>
+async function loadStatuses() {
+  const [pg, redis, mongo, services, k8s] = await Promise.all([
+    fetchJSON('/api/postgres/status'),
+    fetchJSON('/api/redis/status'),
+    fetchJSON('/api/mongodb/status'),
+    fetchJSON('/api/services/status'),
+    fetchJSON('/api/k8s/summary'),
+  ]);
+  document.getElementById('pg-status').innerHTML = statusDot(pg.status);
+  document.getElementById('redis-status').innerHTML = statusDot(redis.status);
+  document.getElementById('mongo-status').innerHTML = statusDot(mongo.status);
+  document.getElementById('backend-status').innerHTML = statusDot((services.backend || {}).status);
+  document.getElementById('frontend-status').innerHTML = statusDot((services.frontend || {}).status);
+  document.getElementById('k8s-status').innerHTML = statusDot(k8s.status);
+}
+loadStatuses();
+</script>
+
+</body>
+</html>

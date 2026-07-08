@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Redis – MTS Ops Dashboard</title>
+  <link rel="stylesheet" href="assets/style.css" />
+  <script>(function(){document.documentElement.setAttribute('data-theme',localStorage.getItem('mts-ops-theme')||'light')})();</script>
+</head>
+<body>
+<header>
+  <div><div class="logo">&#9830; MTS Ops</div><div class="subtitle">Local Dev Stack Dashboard</div></div>
+  <div style="display:flex;align-items:center;gap:8px;">
+    <a class="back" href="index.html">&#8592; Dashboard</a>
+    <button class="theme-btn" onclick="toggleTheme()" id="theme-btn"></button>
+  </div>
+</header>
+<div class="breadcrumb"><a href="index.html">MTS Ops</a> &rsaquo; Data Stores &rsaquo; Redis</div>
+
+<main>
+  <h1>&#x1F525; Redis</h1>
+  <div class="page-sub">Real-time price cache, session store, rate limiting &mdash; <span id="status-text">checking…</span></div>
+
+  <div class="info-grid">
+    <div class="info-card"><div class="lbl">Host</div><div class="val">localhost</div><div class="sub">dev compose port</div></div>
+    <div class="info-card"><div class="lbl">Port</div><div class="val">6381</div><div class="sub">mapped from 6379</div></div>
+    <div class="info-card"><div class="lbl">Keys</div><div class="val" id="dbsize">—</div></div>
+    <div class="info-card"><div class="lbl">Latency</div><div class="val" id="latency">—</div></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd">Memory</div>
+    <div class="panel-body">
+      <div style="font-size:13px;">Used memory: <strong id="memory">—</strong></div>
+      <div style="font-size:13px;margin-top:6px;">PING response: <strong id="pong">—</strong></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd">CLI Commands</div>
+    <div class="panel-body">
+      <div class="cli-cmd" onclick="copyCmd(this)">redis-cli -h localhost -p 6381<span class="copy-hint">click to copy</span></div>
+      <div class="cli-cmd" onclick="copyCmd(this)">docker compose exec redis redis-cli<span class="copy-hint">click to copy</span></div>
+      <div class="cli-cmd" onclick="copyCmd(this)">redis-cli -h localhost -p 6381 --scan --count 100<span class="copy-hint">click to copy</span></div>
+    </div>
+  </div>
+</main>
+<footer>MTS Ops Dashboard &mdash; local dev stack visibility</footer>
+
+<script src="assets/common.js"></script>
+<script>
+async function load() {
+  const data = await fetchJSON('/api/redis/status', 8000);
+  document.getElementById('status-text').innerHTML = statusDot(data.status);
+  if (data.status !== 'up') {
+    document.getElementById('pong').textContent = data.error || 'unreachable';
+    return;
+  }
+  document.getElementById('latency').textContent = data.latency_ms + ' ms';
+  document.getElementById('dbsize').textContent = data.dbsize;
+  document.getElementById('memory').textContent = data.used_memory;
+  document.getElementById('pong').textContent = data.pong;
+}
+load();
+</script>
+</body>
+</html>

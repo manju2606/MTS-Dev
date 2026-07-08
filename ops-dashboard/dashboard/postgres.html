@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PostgreSQL – MTS Ops Dashboard</title>
+  <link rel="stylesheet" href="assets/style.css" />
+  <script>(function(){document.documentElement.setAttribute('data-theme',localStorage.getItem('mts-ops-theme')||'light')})();</script>
+</head>
+<body>
+<header>
+  <div><div class="logo">&#9830; MTS Ops</div><div class="subtitle">Local Dev Stack Dashboard</div></div>
+  <div style="display:flex;align-items:center;gap:8px;">
+    <a class="back" href="index.html">&#8592; Dashboard</a>
+    <button class="theme-btn" onclick="toggleTheme()" id="theme-btn"></button>
+  </div>
+</header>
+<div class="breadcrumb"><a href="index.html">MTS Ops</a> &rsaquo; Data Stores &rsaquo; PostgreSQL</div>
+
+<main>
+  <h1>&#x1F418; PostgreSQL</h1>
+  <div class="page-sub">User accounts, trades, portfolio positions, audit logs &mdash; <span id="status-text">checking…</span></div>
+
+  <div class="info-grid" id="info-grid">
+    <div class="info-card"><div class="lbl">Host</div><div class="val">localhost</div><div class="sub">dev compose port</div></div>
+    <div class="info-card"><div class="lbl">Port</div><div class="val">5435</div><div class="sub">mapped from 5432</div></div>
+    <div class="info-card"><div class="lbl">Database</div><div class="val">mts_dev</div></div>
+    <div class="info-card"><div class="lbl">Latency</div><div class="val" id="latency">—</div></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd">Server</div>
+    <div class="panel-body">
+      <div id="version" style="font-family:monospace;font-size:12px;color:var(--text-secondary);margin-bottom:8px;">—</div>
+      <div style="font-size:13px;">Database size: <strong id="size">—</strong></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd">Tables</div>
+    <div class="panel-body" style="padding:0;">
+      <table>
+        <thead><tr><th>Table</th><th>Row estimate</th></tr></thead>
+        <tbody id="tables-body"><tr><td colspan="2">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd">CLI Commands</div>
+    <div class="panel-body">
+      <div class="cli-cmd" onclick="copyCmd(this)">psql -h localhost -p 5435 -U mts -d mts_dev<span class="copy-hint">click to copy</span></div>
+      <div class="cli-cmd" onclick="copyCmd(this)">make shell-db<span class="copy-hint">click to copy</span></div>
+      <div class="cli-cmd" onclick="copyCmd(this)">docker compose exec postgres psql -U mts -d mts_dev -c '\dt'<span class="copy-hint">click to copy</span></div>
+    </div>
+  </div>
+</main>
+<footer>MTS Ops Dashboard &mdash; local dev stack visibility</footer>
+
+<script src="assets/common.js"></script>
+<script>
+async function load() {
+  const data = await fetchJSON('/api/postgres/status', 8000);
+  document.getElementById('status-text').innerHTML = statusDot(data.status);
+  if (data.status !== 'up') {
+    document.getElementById('tables-body').innerHTML = `<tr><td colspan="2">${data.error || 'unreachable'}</td></tr>`;
+    return;
+  }
+  document.getElementById('latency').textContent = data.latency_ms + ' ms';
+  document.getElementById('version').textContent = data.version;
+  document.getElementById('size').textContent = data.size;
+  const rows = (data.tables || []).map(t => `<tr><td>${t.table_name}</td><td>${t.row_estimate}</td></tr>`).join('');
+  document.getElementById('tables-body').innerHTML = rows || '<tr><td colspan="2">No tables found</td></tr>';
+}
+load();
+</script>
+</body>
+</html>

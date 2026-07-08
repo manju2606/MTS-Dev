@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MongoDB – MTS Ops Dashboard</title>
+  <link rel="stylesheet" href="assets/style.css" />
+  <script>(function(){document.documentElement.setAttribute('data-theme',localStorage.getItem('mts-ops-theme')||'light')})();</script>
+</head>
+<body>
+<header>
+  <div><div class="logo">&#9830; MTS Ops</div><div class="subtitle">Local Dev Stack Dashboard</div></div>
+  <div style="display:flex;align-items:center;gap:8px;">
+    <a class="back" href="index.html">&#8592; Dashboard</a>
+    <button class="theme-btn" onclick="toggleTheme()" id="theme-btn"></button>
+  </div>
+</header>
+<div class="breadcrumb"><a href="index.html">MTS Ops</a> &rsaquo; Data Stores &rsaquo; MongoDB</div>
+
+<main>
+  <h1>&#x1F333; MongoDB</h1>
+  <div class="page-sub">Trade journal entries, AI explanation logs, unstructured analysis &mdash; <span id="status-text">checking…</span></div>
+
+  <div class="info-grid">
+    <div class="info-card"><div class="lbl">Host</div><div class="val">localhost</div><div class="sub">dev compose port</div></div>
+    <div class="info-card"><div class="lbl">Port</div><div class="val">27018</div><div class="sub">mapped from 27017</div></div>
+    <div class="info-card"><div class="lbl">Databases</div><div class="val" id="db-count">—</div></div>
+    <div class="info-card"><div class="lbl">Latency</div><div class="val" id="latency">—</div></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd">Databases</div>
+    <div class="panel-body" style="padding:0;">
+      <table>
+        <thead><tr><th>Name</th><th>Size on disk</th></tr></thead>
+        <tbody id="db-body"><tr><td colspan="2">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd">CLI Commands</div>
+    <div class="panel-body">
+      <div class="cli-cmd" onclick="copyCmd(this)">mongosh mongodb://localhost:27018<span class="copy-hint">click to copy</span></div>
+      <div class="cli-cmd" onclick="copyCmd(this)">docker compose exec mongodb mongosh<span class="copy-hint">click to copy</span></div>
+    </div>
+  </div>
+</main>
+<footer>MTS Ops Dashboard &mdash; local dev stack visibility</footer>
+
+<script src="assets/common.js"></script>
+<script>
+function formatBytes(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+  return (n / (1024 * 1024)).toFixed(1) + ' MB';
+}
+async function load() {
+  const data = await fetchJSON('/api/mongodb/status', 8000);
+  document.getElementById('status-text').innerHTML = statusDot(data.status);
+  if (data.status !== 'up') {
+    document.getElementById('db-body').innerHTML = `<tr><td colspan="2">${data.error || 'unreachable'}</td></tr>`;
+    return;
+  }
+  document.getElementById('latency').textContent = data.latency_ms + ' ms';
+  document.getElementById('db-count').textContent = data.databases.length;
+  document.getElementById('db-body').innerHTML = data.databases
+    .map(d => `<tr><td>${d.name}</td><td>${formatBytes(d.size_bytes)}</td></tr>`).join('');
+}
+load();
+</script>
+</body>
+</html>

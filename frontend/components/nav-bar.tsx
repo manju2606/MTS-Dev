@@ -134,6 +134,7 @@ const NAV_GROUPS: NavGroup[] = [
     roles: ['admin'],
     items: [
       { href: '/admin',          label: 'Admin',        icon: 'users',    desc: 'User management & system health' },
+      { href: '/mts-ops',        label: 'MTS Ops',      icon: 'cpu',      desc: 'Local dev stack — DB, cache, K8s & monitoring health' },
       { href: '/api-keys',       label: 'API Keys',     icon: 'key',      desc: 'Manage your API credentials' },
       { href: '/market-sources', label: 'Data Sources', icon: 'database', desc: 'Live source health & quote comparison' },
     ],

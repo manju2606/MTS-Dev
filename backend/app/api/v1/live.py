@@ -20,8 +20,8 @@ router = APIRouter(prefix="/live", tags=["live-trading"])
 _trader_or_admin = Depends(require_role(UserRole.ADMIN, UserRole.TRADER))
 
 
-def _get_broker(user_id: str):
-    broker = session_store.get(user_id)
+async def _get_broker(user_id: str):
+    broker = await session_store.get(user_id)
     return broker if broker is not None else SimulatedBroker()
 
 
@@ -70,7 +70,7 @@ async def place_live_order(
 
     sym = body.symbol.upper()
     exchange = "BSE" if sym.endswith(".BO") else "NSE"
-    broker = _get_broker(str(current_user.id))
+    broker = await _get_broker(str(current_user.id))
 
     try:
         order = await broker.place_order(
@@ -119,7 +119,7 @@ async def list_orders(current_user: CurrentUser) -> list[dict]:
     if orders:
         return [_serialize_order(o) for o in orders]
     # Fall back to in-memory (for simulated broker in same session)
-    broker = _get_broker(str(current_user.id))
+    broker = await _get_broker(str(current_user.id))
     if hasattr(broker, "_orders"):
         return [_serialize_order(o) for o in broker._orders.values()]
     return []
@@ -127,7 +127,7 @@ async def list_orders(current_user: CurrentUser) -> list[dict]:
 
 @router.delete("/orders/{broker_order_id}", dependencies=[_trader_or_admin])
 async def cancel_order(broker_order_id: str, current_user: CurrentUser) -> dict:
-    broker = _get_broker(str(current_user.id))
+    broker = await _get_broker(str(current_user.id))
     cancelled = await broker.cancel_order(broker_order_id)
     if not cancelled:
         raise HTTPException(status_code=404, detail="Order not found or already terminal")
@@ -138,7 +138,7 @@ async def cancel_order(broker_order_id: str, current_user: CurrentUser) -> dict:
 
 @router.get("/positions")
 async def positions(current_user: CurrentUser) -> list[dict]:
-    broker = _get_broker(str(current_user.id))
+    broker = await _get_broker(str(current_user.id))
     pos = await broker.get_positions()
     if not pos:
         return []
@@ -172,7 +172,7 @@ async def positions(current_user: CurrentUser) -> list[dict]:
 
 @router.get("/pnl")
 async def pnl(current_user: CurrentUser) -> dict:
-    broker = _get_broker(str(current_user.id))
+    broker = await _get_broker(str(current_user.id))
     pos_raw = await broker.get_positions()
     total_value = sum(p.get("quantity", 0) * p.get("avg_price", 0) for p in pos_raw)
     return {

@@ -47,6 +47,12 @@ class ZerodhaBroker(AbstractBroker):
         return "zerodha"
 
     @property
+    def credentials(self) -> tuple[str, str]:
+        """(api_key, access_token) -- lets session_store persist and later
+        reconstruct this session without reaching into a private attribute."""
+        return self._kite.api_key, self._kite.access_token
+
+    @property
     def is_connected(self) -> bool:
         return self._connected
 
@@ -167,6 +173,31 @@ class ZerodhaBroker(AbstractBroker):
         tradingsymbol) is the current front month for a commodity like Natural Gas."""
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, partial(self._instruments_sync, exchange))
+
+    def _historical_sync(
+        self, instrument_token: int, interval: str, from_dt: str, to_dt: str
+    ) -> list[dict]:
+        return list(
+            self._kite.historical_data(
+                instrument_token=instrument_token,
+                from_date=from_dt,
+                to_date=to_dt,
+                interval=interval,
+                oi=True,
+            )
+        )
+
+    async def get_historical_candles(
+        self, instrument_token: int, interval: str, from_dt: str, to_dt: str
+    ) -> list[dict]:
+        """OHLCV(+OI) candles for one instrument. `interval` is Kite's own
+        vocabulary: "minute", "5minute", "15minute", "day", etc. Needed for
+        intraday technical-indicator computation (MCX Natural Gas has no
+        equivalent in the generic yfinance-based market data client)."""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None, partial(self._historical_sync, instrument_token, interval, from_dt, to_dt)
+        )
 
 
 def get_login_url(api_key: str) -> str:

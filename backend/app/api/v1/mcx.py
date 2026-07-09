@@ -1,6 +1,9 @@
-"""MCX Natural Gas — live quote (via connected Zerodha Kite account) and
-paper trading (reuses the same Trade domain model as equity paper trading)."""
+"""MCX Natural Gas / Natural Gas Mini — live quote (via connected Zerodha
+Kite account) and paper trading (reuses the same Trade domain model as
+equity paper trading). Routes stay under /mcx/ng/* for backward compat;
+a `contract` query param ("NG" or "NGMINI") selects which instrument."""
 
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -15,13 +18,15 @@ _trader_or_admin = Depends(require_role(UserRole.ADMIN, UserRole.TRADER))
 
 router = APIRouter(prefix="/mcx", tags=["mcx"])
 
+McxContract = Literal["NG", "NGMINI"]
+
 
 @router.get("/ng/quote")
-async def ng_quote(current_user: CurrentUser) -> dict:
-    from app.services.mcx_service import McxNotConnectedError, get_ng_quote
+async def ng_quote(current_user: CurrentUser, contract: McxContract = "NG") -> dict:
+    from app.services.mcx_service import McxNotConnectedError, get_quote
 
     try:
-        return await get_ng_quote(str(current_user.id))
+        return await get_quote(str(current_user.id), contract)
     except McxNotConnectedError as exc:
         raise HTTPException(status_code=http_status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except Exception as exc:
@@ -31,12 +36,77 @@ async def ng_quote(current_user: CurrentUser) -> dict:
         ) from exc
 
 
+@router.get("/ng/history")
+async def ng_history(
+    current_user: CurrentUser, period: str = "1D", contract: McxContract = "NG"
+) -> list[dict]:
+    from app.services.mcx_service import McxNotConnectedError, get_history
+
+    try:
+        return await get_history(str(current_user.id), period, contract)
+    except McxNotConnectedError as exc:
+        raise HTTPException(status_code=http_status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"MCX history unavailable: {exc}",
+        ) from exc
+
+
+@router.get("/ng/ai-score")
+async def ng_ai_score(
+    current_user: CurrentUser,
+    direction: TradeSignal = TradeSignal.BUY,
+    capital: float = 100_000.0,
+    contract: McxContract = "NG",
+) -> dict:
+    """NG-AI Pro v1 rule-based confidence score -- see
+    app/services/mcx_ai_score_service.py for the full category breakdown
+    and what's excluded (Volume Profile/Delta, bid/ask imbalance, news
+    filter -- all need data this app doesn't have yet)."""
+    from app.services.mcx_ai_score_service import compute_ng_ai_score
+    from app.services.mcx_service import McxNotConnectedError
+
+    try:
+        return await compute_ng_ai_score(str(current_user.id), direction.value, capital, contract)
+    except McxNotConnectedError as exc:
+        raise HTTPException(status_code=http_status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"AI score unavailable: {exc}",
+        ) from exc
+
+
+@router.get("/ng/trend")
+async def ng_trend(current_user: CurrentUser, contract: McxContract = "NG") -> dict:
+    """Multi-timeframe trend ladder (1m/5m/15m/1h/1D/1W) with regime-change
+    detection -- see app/services/mcx_trend_service.py."""
+    from app.services.mcx_service import McxNotConnectedError
+    from app.services.mcx_trend_service import compute_trend_ladder
+
+    try:
+        return await compute_trend_ladder(str(current_user.id), contract)
+    except McxNotConnectedError as exc:
+        raise HTTPException(status_code=http_status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Trend ladder unavailable: {exc}",
+        ) from exc
+
+
 class PlaceNgTradeRequest(BaseModel):
     signal: TradeSignal
     lots: int = Field(ge=1)
     stop_loss: float = Field(gt=0)
     target: float = Field(gt=0)
     limit_price: float | None = Field(default=None, gt=0)
+    contract: McxContract = "NG"
 
 
 @router.post(
@@ -56,6 +126,7 @@ async def place_ng_trade(
             body.stop_loss,
             body.target,
             body.limit_price,
+            body.contract,
         )
     except McxNotConnectedError as exc:
         raise HTTPException(status_code=http_status.HTTP_409_CONFLICT, detail=str(exc)) from exc

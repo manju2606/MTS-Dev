@@ -13,7 +13,7 @@ router = APIRouter(prefix="/broker", tags=["broker"])
 
 @router.get("/status")
 async def broker_status(current_user: CurrentUser) -> dict:
-    broker = session_store.get(str(current_user.id))
+    broker = await session_store.get(str(current_user.id))
     if broker is None:
         return {"broker": "simulated", "connected": True, "note": "Using simulated broker"}
     return {"broker": broker.name, "connected": broker.is_connected}
@@ -52,7 +52,7 @@ async def zerodha_connect(body: ZerodhaConnectRequest, current_user: CurrentUser
         from app.infra.brokers.zerodha import connect
 
         broker = connect(settings.KITE_API_KEY, settings.KITE_API_SECRET, body.request_token)
-        session_store.set_broker(str(current_user.id), broker)
+        await session_store.set_broker(str(current_user.id), broker)
         return {"broker": "zerodha", "connected": True}
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -97,7 +97,7 @@ async def upstox_connect(body: UpstoxConnectRequest, current_user: CurrentUser) 
             settings.UPSTOX_REDIRECT_URI,
         )
         broker = UpstoxBroker(settings.UPSTOX_API_KEY, access_token)
-        session_store.set_broker(str(current_user.id), broker)
+        await session_store.set_broker(str(current_user.id), broker)
         return {"broker": "upstox", "connected": True}
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Upstox auth failed: {exc}") from exc
@@ -108,13 +108,13 @@ async def upstox_connect(body: UpstoxConnectRequest, current_user: CurrentUser) 
 
 @router.post("/disconnect")
 async def disconnect(current_user: CurrentUser) -> dict:
-    session_store.remove(str(current_user.id))
+    await session_store.remove(str(current_user.id))
     return {"broker": "simulated", "connected": True}
 
 
 @router.post("/use-simulated")
 async def use_simulated(current_user: CurrentUser) -> dict:
-    session_store.set_broker(str(current_user.id), SimulatedBroker())
+    await session_store.set_broker(str(current_user.id), SimulatedBroker())
     return {"broker": "simulated", "connected": True}
 
 
@@ -124,7 +124,7 @@ async def use_simulated(current_user: CurrentUser) -> dict:
 @router.get("/positions")
 async def get_broker_positions(current_user: CurrentUser) -> list[dict]:
     """Return open positions from the connected broker, formatted for Portfolio Assistant import."""
-    broker = session_store.get(str(current_user.id))
+    broker = await session_store.get(str(current_user.id))
     if broker is None:
         broker = SimulatedBroker()
     positions = await broker.get_positions()

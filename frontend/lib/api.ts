@@ -1254,6 +1254,7 @@ export type NgQuote = {
 }
 
 export type McxTrade = Trade & { lots: number }
+export type McxContract = 'NG' | 'NGMINI'
 
 export type PlaceNgTradeBody = {
   signal: 'BUY' | 'SELL'
@@ -1261,10 +1262,11 @@ export type PlaceNgTradeBody = {
   stop_loss: number
   target: number
   limit_price?: number
+  contract?: McxContract
 }
 
-export async function getNgQuote(token: string): Promise<NgQuote> {
-  const res = await fetch(`${BASE}/api/v1/mcx/ng/quote`, { headers: authHeaders(token) })
+export async function getNgQuote(token: string, contract: McxContract = 'NG'): Promise<NgQuote> {
+  const res = await fetch(`${BASE}/api/v1/mcx/ng/quote?contract=${contract}`, { headers: authHeaders(token) })
   if (!res.ok) {
     const b = await res.json().catch(() => ({}))
     throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch MCX quote')
@@ -1302,6 +1304,115 @@ export async function closeNgTrade(token: string, tradeId: string, exitPrice?: n
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
     throw new Error((data as { detail?: string }).detail ?? 'Failed to close MCX trade')
+  }
+  return res.json()
+}
+
+export async function getNgHistory(
+  token: string,
+  period: ChartPeriod = '1D',
+  contract: McxContract = 'NG',
+): Promise<HistoryBar[]> {
+  const res = await fetch(
+    `${BASE}/api/v1/mcx/ng/history?period=${period}&contract=${contract}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch MCX history')
+  }
+  return res.json()
+}
+
+export type TrendState = 'STABLE' | 'WEAKENING' | 'JUST_CHANGED'
+export type TrendTimeframe = {
+  direction: 'BULLISH' | 'BEARISH' | 'NEUTRAL' | 'UNKNOWN'
+  strength: number
+  reason?: string
+  change_state?: TrendState
+  adx?: number | null
+}
+export type NgTrendLadder = {
+  contract: string
+  tradingsymbol: string
+  computed_at: string
+  ladder: Record<string, TrendTimeframe>
+}
+
+export async function getNgTrend(token: string, contract: McxContract = 'NG'): Promise<NgTrendLadder> {
+  const res = await fetch(`${BASE}/api/v1/mcx/ng/trend?contract=${contract}`, { headers: authHeaders(token) })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch MCX trend')
+  }
+  return res.json()
+}
+
+// ── MCX NG-AI Pro v1 score ───────────────────────────────────────────────────
+
+export type NgScoreCheck = { label: string; passed: boolean; points: number; max: number; note: string }
+export type NgScoreCategory = {
+  name: string
+  weight: number
+  earned: number
+  available: number
+  checks: NgScoreCheck[]
+  excluded: string[]
+}
+export type NgAiScore = {
+  contract: string
+  tradingsymbol: string
+  direction: 'BUY' | 'SELL'
+  price: number
+  score_pct: number
+  verdict: 'TRADE' | 'WATCHLIST' | 'NO_TRADE'
+  points_earned: number
+  points_available: number
+  points_nominal_total: number
+  categories: NgScoreCategory[]
+  entry: {
+    entry_price: number
+    stop_loss: number
+    stop_loss_distance: number
+    target_1: number
+    target_1_pct_of_position: number
+    target_2: number
+    target_2_pct_of_position: number
+    trail_remainder_note: string
+  }
+  position_sizing: {
+    capital: number
+    risk_pct: number
+    risk_amount: number
+    lot_size: number
+    one_lot_risk: number | null
+    suggested_lots: number
+    note: string | null
+  }
+  risk_rules: {
+    max_trades_per_day: number
+    stop_after_consecutive_losses: number
+    daily_loss_limit_pct: number
+    daily_profit_target_pct: string
+    never_average_down: boolean
+  }
+  candles_used: number
+  correlation_inputs: Record<string, number | null>
+}
+
+export async function getNgAiScore(
+  token: string,
+  direction: 'BUY' | 'SELL' = 'BUY',
+  capital = 100000,
+  contract: McxContract = 'NG',
+): Promise<NgAiScore> {
+  const res = await fetch(
+    `${BASE}/api/v1/mcx/ng/ai-score?direction=${direction}&capital=${capital}&contract=${contract}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch AI score')
   }
   return res.json()
 }

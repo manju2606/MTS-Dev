@@ -19,11 +19,12 @@ type PriceChartProps = {
   loading: boolean
   aiLevels?: AILevels
   currentPrice?: number | null
+  exchangeLabel?: string
 }
 
 const PERIODS: ChartPeriod[] = ['1m', '5m', '15m', '30m', '45m', '1h', '1D', '5D', '1W', '1M', '3M', '6M', '1Y']
 
-export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLevels, currentPrice }: PriceChartProps) {
+export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLevels, currentPrice, exchangeLabel }: PriceChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
@@ -241,7 +242,7 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
         <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
           {symbol.replace(/\.(NS|BO)$/, '')}
           <span className="ml-2 text-xs font-normal text-zinc-400">
-            {symbol.endsWith('.BO') ? 'BSE' : 'NSE'}
+            {exchangeLabel ?? (symbol.endsWith('.BO') ? 'BSE' : 'NSE')}
           </span>
         </span>
         <div className="flex items-center gap-1">

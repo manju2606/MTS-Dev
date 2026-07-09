@@ -289,6 +289,39 @@ async def _run_portfolio_ohlc_snapshot() -> None:
         log.error("scheduler.portfolio_ohlc.error", error=str(exc))
 
 
+async def _run_mcx_trend_check() -> None:
+    """Every 15 min, 09:00-23:30 IST weekdays (MCX trades well past NSE
+    hours): recompute the NG/NGMini trend ladder for every connected user,
+    persist it, and email + in-app notify on any regime change or
+    weakening trend (see mcx_trend_service.py)."""
+    try:
+        from app.infra.brokers import session_store
+        from app.services.mcx_trend_service import compute_and_store_snapshot
+
+        user_ids = await session_store.list_connected_user_ids()
+        checked, alerted = 0, 0
+        for user_id in user_ids:
+            for contract in ("NG", "NGMINI"):
+                try:
+                    result = await compute_and_store_snapshot(user_id, contract)
+                    checked += 1
+                    if result.get("changes"):
+                        alerted += 1
+                except Exception as exc:
+                    log.warning(
+                        "scheduler.mcx_trend.contract_error",
+                        user_id=user_id,
+                        contract=contract,
+                        error=str(exc),
+                    )
+                await asyncio.sleep(0)
+        log.info(
+            "scheduler.mcx_trend.done", users=len(user_ids), checked=checked, alerted=alerted
+        )
+    except Exception as exc:
+        log.error("scheduler.mcx_trend.error", error=str(exc))
+
+
 async def _run_position_check() -> None:
     """Delegate to the position monitor (import kept lazy to avoid circular imports)."""
     from app.infra.monitoring.position_monitor import run_position_check
@@ -654,6 +687,20 @@ def start_scheduler() -> None:
         name="Portfolio Assistant — Daily OHLC Snapshot",
         max_instances=1,
         misfire_grace_time=3600,
+    )
+
+    # MCX NG/NGMini trend-change check every 15 min, 09:00-23:45 IST weekdays
+    # (MCX's commodity session runs well past NSE hours)
+    _scheduler.add_job(
+        _run_mcx_trend_check,
+        CronTrigger(
+            day_of_week="mon-fri", hour="9-23", minute="0,15,30,45", second=5,
+            timezone="Asia/Kolkata",
+        ),
+        id="mcx_trend_check",
+        name="MCX — Trend Change Check + Alerts",
+        max_instances=1,
+        misfire_grace_time=300,
     )
 
     _scheduler.start()

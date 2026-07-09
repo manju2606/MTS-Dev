@@ -20,11 +20,13 @@ type PriceChartProps = {
   aiLevels?: AILevels
   currentPrice?: number | null
   exchangeLabel?: string
+  dayHigh?: number | null
+  dayLow?: number | null
 }
 
 const PERIODS: ChartPeriod[] = ['1m', '5m', '15m', '30m', '45m', '1h', '1D', '5D', '1W', '1M', '3M', '6M', '1Y']
 
-export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLevels, currentPrice, exchangeLabel }: PriceChartProps) {
+export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLevels, currentPrice, exchangeLabel, dayHigh, dayLow }: PriceChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
@@ -137,11 +139,11 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
 
           candleSeries.createPriceLine({
             price: aiLevels.entry,
-            color: '#4f46e5',
+            color: '#2563eb',
             lineWidth: 2,
             lineStyle: LineStyle.Dashed,
             axisLabelVisible: true,
-            title: 'Entry',
+            title: `Entry (${aiLevels.signal})`,
           })
           candleSeries.createPriceLine({
             price: aiLevels.stopLoss,
@@ -165,11 +167,36 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
             createSeriesMarkers(candleSeries, [{
               time: lastBar.time as UTCTimestamp,
               position: aiLevels.signal === 'BUY' ? 'belowBar' : 'aboveBar',
-              color: aiLevels.signal === 'BUY' ? '#10b981' : '#ef4444',
+              color: aiLevels.signal === 'BUY' ? '#2563eb' : '#ef4444',
               shape: aiLevels.signal === 'BUY' ? 'arrowUp' : 'arrowDown',
               text: aiLevels.signal,
             }])
           }
+        }
+
+        // Day high/low — flat black reference lines, independent of the AI
+        // signal (still shown even when there's no active BUY/SELL overlay).
+        const isDarkTheme = document.documentElement.classList.contains('dark')
+        const dayLineColor = isDarkTheme ? '#e4e4e7' : '#18181b'
+        if (dayHigh != null) {
+          candleSeries.createPriceLine({
+            price: dayHigh,
+            color: dayLineColor,
+            lineWidth: 1,
+            lineStyle: LineStyle.Dotted,
+            axisLabelVisible: true,
+            title: `Day High ₹${dayHigh.toFixed(2)}`,
+          })
+        }
+        if (dayLow != null) {
+          candleSeries.createPriceLine({
+            price: dayLow,
+            color: dayLineColor,
+            lineWidth: 1,
+            lineStyle: LineStyle.Dotted,
+            axisLabelVisible: true,
+            title: `Day Low ₹${dayLow.toFixed(2)}`,
+          })
         }
 
         // LTP line — current/live price, kept separate from the AI levels so it can be
@@ -209,7 +236,7 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
       candleSeriesRef.current = null
       ltpLineRef.current = null
     }
-  }, [data, aiLevels])
+  }, [data, aiLevels, dayHigh, dayLow])
 
   // Nudge the LTP line on each live-price update without rebuilding the whole chart.
   useEffect(() => {

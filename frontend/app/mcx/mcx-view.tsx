@@ -58,6 +58,8 @@ function NgChart({ quote, score, contract }: { quote: NgQuote | null; score: NgA
       aiLevels={aiLevels}
       currentPrice={quote?.last_price ?? null}
       exchangeLabel="MCX"
+      dayHigh={quote?.high ?? null}
+      dayLow={quote?.low ?? null}
     />
   )
 }
@@ -122,8 +124,8 @@ function NgDashboard({ quote, score, contract, loading, error }: { quote: NgQuot
       <NgChart quote={quote} score={score} contract={contract} />
       {score && (
         <p className="text-[11px] text-zinc-400">
-          Chart overlay is from the last computed AI Signal ({score.direction}, {score.score_pct.toFixed(1)}
-          score) — go to the AI Signal tab to recompute.
+          Chart overlay is from the auto-computed AI Signal ({score.direction}, {score.score_pct.toFixed(1)}
+          score) — refreshes automatically every 3 min, or visit the AI Signal tab to pick a direction/capital.
         </p>
       )}
 
@@ -203,8 +205,9 @@ function AiSignalPanel({ onUseTrade, score, onScoreChange, contract }: {
   const [capital, setCapital] = useState('100000')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [autoRefresh, setAutoRefresh] = useState(true)
 
-  async function run() {
+  const run = useCallback(async () => {
     const t = localStorage.getItem('mts_token') ?? ''
     if (!t) return
     setLoading(true); setError(null)
@@ -216,7 +219,18 @@ function AiSignalPanel({ onUseTrade, score, onScoreChange, contract }: {
     } finally {
       setLoading(false)
     }
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [direction, contract])
+
+  // Auto-compute whenever direction/contract changes, and again every 3 min
+  // (the score is built from 15m candles, so refreshing much faster than
+  // that adds load without adding signal) — no manual click needed anymore.
+  useEffect(() => {
+    run()
+    if (!autoRefresh) return
+    const id = setInterval(run, 180_000)
+    return () => clearInterval(id)
+  }, [run, autoRefresh])
 
   return (
     <div className="space-y-4">
@@ -244,14 +258,23 @@ function AiSignalPanel({ onUseTrade, score, onScoreChange, contract }: {
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-zinc-500">Capital (₹)</label>
-          <input type="number" value={capital} onChange={e => setCapital(e.target.value)}
+          <input type="number" value={capital} onChange={e => setCapital(e.target.value)} onBlur={run}
             className="w-36 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100" />
         </div>
         <button onClick={run} disabled={loading}
           className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">
-          {loading ? 'Computing…' : 'Compute AI Score'}
+          {loading ? 'Computing…' : 'Refresh Now'}
         </button>
+        <label className="flex items-center gap-1.5 text-xs text-zinc-500">
+          <input type="checkbox" checked={autoRefresh} onChange={e => setAutoRefresh(e.target.checked)} />
+          Auto-refresh every 3 min
+        </label>
       </div>
+
+      <p className="text-[11px] text-zinc-400">
+        Computed automatically — recalculates whenever you switch BUY/SELL or the contract, and every 3 minutes
+        while this tab is open.
+      </p>
 
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-400">{error}</p>}
 
@@ -724,6 +747,20 @@ export default function McxView() {
     const id = setInterval(loadQuote, 15_000)
     return () => clearInterval(id)
   }, [router, loadQuote, loadTrades])
+
+  // Auto-compute a default (BUY) AI score as soon as the page loads, so the
+  // Dashboard chart's signal overlay is populated without ever needing to
+  // visit the AI Signal tab. Visiting that tab takes over with whatever
+  // direction/capital is selected there.
+  useEffect(() => {
+    const t = localStorage.getItem('mts_token')
+    if (!t) return
+    getNgAiScore(t, 'BUY', 100000, contract).then(setScore).catch(() => {})
+    const id = setInterval(() => {
+      getNgAiScore(t, 'BUY', 100000, contract).then(setScore).catch(() => {})
+    }, 180_000)
+    return () => clearInterval(id)
+  }, [contract])
 
   async function handleClose(id: string) {
     setClosingId(id)

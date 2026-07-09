@@ -143,9 +143,10 @@ async def _run_sotd_expire() -> None:
 
 
 async def _run_dsws_generate() -> None:
-    """09:30:45 IST weekdays: bucket today's Discovery Engine picks by signal
-    strength (Strong Buy/Buy/Sell/Strong Sell). Runs 15s after full_scan's
-    09:30:30 slot so today's discovery scores are already saved."""
+    """Every 30 min, 09:00-16:00 IST weekdays: bucket today's Discovery Engine
+    picks by signal strength (Strong Buy/Buy/Sell/Strong Sell) and email the
+    watchlist to active recipients. Runs 15s after full_scan's own slot so
+    today's discovery scores are already saved."""
     try:
         from app.services.dsws_service import generate_daily_watchlist
 
@@ -411,13 +412,24 @@ def start_scheduler() -> None:
         misfire_grace_time=None,
     )
 
-    # DSWS: bucket today's Discovery Engine picks by signal strength at 09:30:45 IST
-    # (15s after full_scan's 09:30:30 slot, so today's discovery scores exist first)
+    # DSWS: bucket today's Discovery Engine picks by signal strength every 30
+    # min, 09:00-16:00 IST (Mon-Fri) — 15s after full_scan's own :00/:30 slot
+    # so today's discovery scores exist first. Append-only + emails each run.
     _scheduler.add_job(
         _run_dsws_generate,
-        CronTrigger(day_of_week="mon-fri", hour=9, minute=30, second=45, timezone="Asia/Kolkata"),
+        CronTrigger(
+            day_of_week="mon-fri", hour="9-15", minute="0,30", second=45, timezone="Asia/Kolkata"
+        ),
         id="dsws_generate",
-        name="DSWS — Generate Daily Watchlist",
+        name="DSWS — Generate Daily Watchlist (09:00-15:30)",
+        max_instances=1,
+        misfire_grace_time=300,
+    )
+    _scheduler.add_job(
+        _run_dsws_generate,
+        CronTrigger(day_of_week="mon-fri", hour=16, minute=0, second=45, timezone="Asia/Kolkata"),
+        id="dsws_generate_close",
+        name="DSWS — Generate Daily Watchlist (16:00)",
         max_instances=1,
         misfire_grace_time=300,
     )

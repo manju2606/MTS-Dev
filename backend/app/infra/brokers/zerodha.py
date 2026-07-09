@@ -147,6 +147,27 @@ class ZerodhaBroker(AbstractBroker):
         except Exception:
             return []
 
+    def _quote_sync(self, exchange_symbol: str) -> dict:
+        return dict(self._kite.quote(exchange_symbol)[exchange_symbol])
+
+    async def get_raw_quote(self, exchange: str, tradingsymbol: str) -> dict:
+        """Full quote (LTP, OHLC, volume, OI) for one exchange:tradingsymbol key,
+        e.g. "MCX:NATURALGAS26JULFUT". Used for instruments the generic
+        CompositeMarketDataClient doesn't cover, like MCX commodity futures."""
+        loop = asyncio.get_event_loop()
+        key = f"{exchange}:{tradingsymbol}"
+        return await loop.run_in_executor(None, partial(self._quote_sync, key))
+
+    def _instruments_sync(self, exchange: str) -> list[dict]:
+        return list(self._kite.instruments(exchange))
+
+    async def get_instruments(self, exchange: str) -> list[dict]:
+        """Full tradable-instrument dump for an exchange segment (e.g. "MCX") --
+        needed to resolve which specific futures contract (with its expiry-coded
+        tradingsymbol) is the current front month for a commodity like Natural Gas."""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, partial(self._instruments_sync, exchange))
+
 
 def get_login_url(api_key: str) -> str:
     return ZerodhaBroker.login_url(api_key)

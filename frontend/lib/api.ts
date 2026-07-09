@@ -788,6 +788,9 @@ export type OhlcRow = {
   weekly_change_pct: number | null
   monthly_change: number | null
   monthly_change_pct: number | null
+  ltp: number | null
+  ai_signal: string | null
+  confidence_pct: number | null
 }
 
 export type PortfolioOhlc = { has_data: boolean; rows: OhlcRow[] }
@@ -1225,6 +1228,80 @@ export async function placeTrade(token: string, body: PlaceTradeBody): Promise<T
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
     throw new Error((data as { detail?: string }).detail ?? 'Failed to place trade')
+  }
+  return res.json()
+}
+
+// ── MCX Natural Gas ──────────────────────────────────────────────────────────
+
+export type NgQuote = {
+  tradingsymbol: string
+  name: string
+  expiry: string
+  lot_size: number
+  tick_size: number
+  last_price: number
+  open: number
+  high: number
+  low: number
+  prev_close: number
+  change: number
+  change_pct: number
+  volume: number
+  oi: number
+  oi_day_high: number
+  oi_day_low: number
+}
+
+export type McxTrade = Trade & { lots: number }
+
+export type PlaceNgTradeBody = {
+  signal: 'BUY' | 'SELL'
+  lots: number
+  stop_loss: number
+  target: number
+  limit_price?: number
+}
+
+export async function getNgQuote(token: string): Promise<NgQuote> {
+  const res = await fetch(`${BASE}/api/v1/mcx/ng/quote`, { headers: authHeaders(token) })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch MCX quote')
+  }
+  return res.json()
+}
+
+export async function listNgTrades(token: string, status?: string): Promise<McxTrade[]> {
+  const url = status
+    ? `${BASE}/api/v1/mcx/ng/trades?trade_status=${encodeURIComponent(status)}`
+    : `${BASE}/api/v1/mcx/ng/trades`
+  const res = await fetch(url, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error('Failed to fetch MCX trades')
+  return res.json()
+}
+
+export async function placeNgTrade(token: string, body: PlaceNgTradeBody): Promise<McxTrade> {
+  const res = await fetch(`${BASE}/api/v1/mcx/ng/trades`, {
+    method: 'POST',
+    headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error((data as { detail?: string }).detail ?? 'Failed to place MCX trade')
+  }
+  return res.json()
+}
+
+export async function closeNgTrade(token: string, tradeId: string, exitPrice?: number): Promise<McxTrade> {
+  const url = exitPrice != null
+    ? `${BASE}/api/v1/mcx/ng/trades/${tradeId}/close?exit_price=${exitPrice}`
+    : `${BASE}/api/v1/mcx/ng/trades/${tradeId}/close`
+  const res = await fetch(url, { method: 'POST', headers: authHeaders(token) })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error((data as { detail?: string }).detail ?? 'Failed to close MCX trade')
   }
   return res.json()
 }

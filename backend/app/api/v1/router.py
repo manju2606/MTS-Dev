@@ -21,6 +21,7 @@ from app.api.v1 import (
     live,
     market_pulse,
     market_sources,
+    mcx,
     ml_api,
     notifications,
     options,
@@ -85,3 +86,4 @@ router.include_router(sentiment_forecast.router)
 router.include_router(trading_agent.router)
 router.include_router(alerting.router)
 router.include_router(dsws.router)
+router.include_router(mcx.router)

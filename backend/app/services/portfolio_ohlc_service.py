@@ -12,10 +12,14 @@ _TRADING_DAYS_52W = 252
 
 
 async def compute_portfolio_ohlc(user_id: str, portfolio_id: str) -> dict:
+    import asyncio
+
     import pandas as pd
     import yfinance as yf
 
+    from app.infra.db.repositories.discovery_repo import DiscoveryRepository
     from app.infra.db.repositories.holdings_repo import HoldingsRepository
+    from app.infra.market_data.composite_client import CompositeMarketDataClient
 
     repo = HoldingsRepository()
     holdings = await repo.list_holdings(user_id, portfolio_id)
@@ -25,6 +29,16 @@ async def compute_portfolio_ohlc(user_id: str, portfolio_id: str) -> dict:
     symbols = [h["symbol"] for h in holdings]
     name_map = {h["symbol"]: h.get("name") or h["symbol"] for h in holdings}
     sector_map = {h["symbol"]: h.get("sector") or "Other" for h in holdings}
+
+    # LTP (live quote) and AI signal/confidence (latest Discovery Engine scan)
+    # for each holding, fetched concurrently -- independent of the OHLC
+    # history download below.
+    quotes, scores = await asyncio.gather(
+        CompositeMarketDataClient().get_quotes(symbols),
+        DiscoveryRepository().get_top_picks(limit=3000),
+    )
+    quote_map = {q.symbol: q for q in quotes}
+    score_map = {s.symbol: s for s in scores}
 
     try:
         # 14mo, not 1y: leaves headroom so the 52w high/low window and the
@@ -85,6 +99,9 @@ async def compute_portfolio_ohlc(user_id: str, portfolio_id: str) -> dict:
         high_52w = float(high.iloc[-window:].max()) if high is not None and len(high) else None
         low_52w = float(low.iloc[-window:].min()) if low is not None and len(low) else None
 
+        quote = quote_map.get(sym)
+        score = score_map.get(sym)
+
         rows.append(
             {
                 "symbol": sym,
@@ -103,6 +120,9 @@ async def compute_portfolio_ohlc(user_id: str, portfolio_id: str) -> dict:
                 "weekly_change_pct": weekly_change_pct,
                 "monthly_change": monthly_change,
                 "monthly_change_pct": monthly_change_pct,
+                "ltp": round(quote.price, 2) if quote else None,
+                "ai_signal": score.signal if score else None,
+                "confidence_pct": round(score.confidence * 100, 1) if score else None,
             }
         )
 

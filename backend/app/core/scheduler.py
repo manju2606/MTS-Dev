@@ -254,6 +254,41 @@ async def _run_portfolio_summary_snapshot() -> None:
         log.error("scheduler.portfolio_summary.error", error=str(exc))
 
 
+async def _run_portfolio_ohlc_snapshot() -> None:
+    """15:37 IST weekdays: store today's per-user, per-portfolio OHLC
+    snapshot (Open/High/Low/Close, 52w high/low, weekly/monthly change) as a
+    historical record of that trading day for every holding."""
+    try:
+        from app.infra.db.repositories.holdings_repo import HoldingsRepository
+        from app.infra.db.repositories.portfolio_ohlc_repo import PortfolioOhlcRepository
+        from app.services.portfolio_ohlc_service import compute_portfolio_ohlc
+
+        today = datetime.now(UTC).astimezone(_IST).strftime("%Y-%m-%d")
+        keys = await HoldingsRepository().list_all_portfolio_keys()
+        repo = PortfolioOhlcRepository()
+        stored = 0
+        for user_id, portfolio_id in keys:
+            try:
+                ohlc = await compute_portfolio_ohlc(user_id, portfolio_id)
+                if ohlc.get("has_data"):
+                    await repo.save_snapshot(user_id, portfolio_id, today, ohlc)
+                    stored += 1
+            except Exception as exc:
+                log.warning(
+                    "scheduler.portfolio_ohlc.portfolio_error",
+                    user_id=user_id,
+                    portfolio_id=portfolio_id,
+                    error=str(exc),
+                )
+            # yf.download() inside compute_portfolio_ohlc is a synchronous,
+            # blocking call -- yield the loop between portfolios so a long list
+            # doesn't starve the event loop for the whole job's duration.
+            await asyncio.sleep(0)
+        log.info("scheduler.portfolio_ohlc.done", date=today, portfolios=len(keys), stored=stored)
+    except Exception as exc:
+        log.error("scheduler.portfolio_ohlc.error", error=str(exc))
+
+
 async def _run_position_check() -> None:
     """Delegate to the position monitor (import kept lazy to avoid circular imports)."""
     from app.infra.monitoring.position_monitor import run_position_check
@@ -606,6 +641,17 @@ def start_scheduler() -> None:
         CronTrigger(day_of_week="mon-fri", hour=15, minute=36, second=0, timezone="Asia/Kolkata"),
         id="portfolio_summary_snapshot",
         name="Portfolio Assistant — Daily Summary Snapshot",
+        max_instances=1,
+        misfire_grace_time=3600,
+    )
+
+    # Store every portfolio's daily OHLC snapshot at 15:37 IST (a minute
+    # after the summary snapshot above, to avoid resource contention)
+    _scheduler.add_job(
+        _run_portfolio_ohlc_snapshot,
+        CronTrigger(day_of_week="mon-fri", hour=15, minute=37, second=0, timezone="Asia/Kolkata"),
+        id="portfolio_ohlc_snapshot",
+        name="Portfolio Assistant — Daily OHLC Snapshot",
         max_instances=1,
         misfire_grace_time=3600,
     )

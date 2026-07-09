@@ -118,6 +118,12 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    label: 'MCX',
+    icon:  'activity',
+    href:  '/mcx',
+    roles: ['trader', 'admin'],
+  },
+  {
     label: 'Portfolio',
     icon:  'briefcase',
     roles: ['viewer', 'trader', 'admin'],

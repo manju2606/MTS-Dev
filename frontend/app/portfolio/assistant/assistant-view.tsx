@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { NavBar } from '@/components/nav-bar'
 import {
@@ -1127,10 +1127,40 @@ function ohlcCell(value: number | null, pct: number | null, prefix = '₹') {
   )
 }
 
+function signalBadge(signal: string | null) {
+  if (!signal) return <span className="text-zinc-400">—</span>
+  return (
+    <span className={cls('rounded-full px-2 py-0.5 text-[10px] font-semibold', SIGNAL_STYLE[signal] ?? SIGNAL_STYLE.NEUTRAL)}>
+      {signal.replace('_', ' ')}
+    </span>
+  )
+}
+
+type OhlcSortKey = 'symbol' | 'change' | 'change_pct'
+
+function OhlcSortHeader({
+  label, sortKey, active, dir, onClick,
+}: { label: string; sortKey: OhlcSortKey; active: boolean; dir: 'asc' | 'desc'; onClick: (k: OhlcSortKey) => void }) {
+  return (
+    <button
+      onClick={() => onClick(sortKey)}
+      className={cls(
+        'inline-flex items-center gap-0.5 font-medium hover:text-zinc-700 dark:hover:text-zinc-200',
+        active ? 'text-indigo-600 dark:text-indigo-400' : 'text-zinc-500',
+      )}
+    >
+      {label}
+      <span className="w-2.5 text-[9px]">{active ? (dir === 'asc' ? '▲' : '▼') : ''}</span>
+    </button>
+  )
+}
+
 function OhlcTab({ portfolioId }: { portfolioId: string }) {
   const [rows, setRows] = useState<OhlcRow[]>([])
   const [loading, setLoading] = useState(true)
   const [hasData, setHasData] = useState(true)
+  const [sortKey, setSortKey] = useState<OhlcSortKey>('symbol')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
   useEffect(() => {
     const t = typeof window !== 'undefined' ? localStorage.getItem('mts_token') ?? '' : ''
@@ -1140,6 +1170,24 @@ function OhlcTab({ portfolioId }: { portfolioId: string }) {
       .then(d => { setRows(d.rows); setHasData(d.has_data); setLoading(false) })
       .catch(() => setLoading(false))
   }, [portfolioId])
+
+  function toggleSort(key: OhlcSortKey) {
+    if (key === sortKey) {
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(key)
+      setSortDir(key === 'symbol' ? 'asc' : 'desc')
+    }
+  }
+
+  const sortedRows = useMemo(() => {
+    const copy = [...rows]
+    copy.sort((a, b) => {
+      const cmp = sortKey === 'symbol' ? a.symbol.localeCompare(b.symbol) : a[sortKey] - b[sortKey]
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+    return copy
+  }, [rows, sortKey, sortDir])
 
   if (loading) {
     return (
@@ -1163,20 +1211,30 @@ function OhlcTab({ portfolioId }: { portfolioId: string }) {
       <p className="text-xs text-zinc-400">
         Refreshed live from the latest trading day for each holding &mdash; {rows[0]?.date}.
         52-week high/low and weekly/monthly change are trailing windows ending on that date.
+        Also recorded every trading day at market close for a historical record.
       </p>
       <div className="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/60">
-              {['Symbol', 'Open', 'High', 'Low', 'Close', 'Change', '52W High', '52W Low', 'Weekly', 'Monthly'].map((h, i) => (
-                <th key={h} className={cls('px-3 py-2 font-medium text-zinc-500', i === 0 ? 'text-left' : 'text-right')}>
-                  {h}
-                </th>
+              <th className="px-3 py-2 text-left">
+                <OhlcSortHeader label="Symbol" sortKey="symbol" active={sortKey === 'symbol'} dir={sortDir} onClick={toggleSort} />
+              </th>
+              {['Open', 'High', 'Low', 'Close', 'LTP'].map(h => (
+                <th key={h} className="px-3 py-2 text-right font-medium text-zinc-500">{h}</th>
+              ))}
+              <th className="px-3 py-2 text-right">
+                <OhlcSortHeader label="Change" sortKey="change" active={sortKey === 'change'} dir={sortDir} onClick={toggleSort} />
+                {' / '}
+                <OhlcSortHeader label="%" sortKey="change_pct" active={sortKey === 'change_pct'} dir={sortDir} onClick={toggleSort} />
+              </th>
+              {['52W High', '52W Low', 'Weekly', 'Monthly', 'AI Signal', 'Confidence'].map(h => (
+                <th key={h} className="px-3 py-2 text-right font-medium text-zinc-500">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-50 bg-white dark:divide-zinc-800 dark:bg-zinc-900">
-            {rows.map(r => (
+            {sortedRows.map(r => (
               <tr key={r.symbol} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
                 <td className="px-3 py-2.5">
                   <span className="font-semibold text-zinc-900 dark:text-zinc-50">{r.symbol.replace(/\.(NS|BO)$/, '')}</span>
@@ -1186,11 +1244,14 @@ function OhlcTab({ portfolioId }: { portfolioId: string }) {
                 <td className="px-3 py-2.5 text-right font-mono text-zinc-600 dark:text-zinc-300">{r.high != null ? r.high.toFixed(2) : '—'}</td>
                 <td className="px-3 py-2.5 text-right font-mono text-zinc-600 dark:text-zinc-300">{r.low != null ? r.low.toFixed(2) : '—'}</td>
                 <td className="px-3 py-2.5">{ohlcCell(r.close, null)}</td>
+                <td className="px-3 py-2.5 text-right font-mono text-zinc-600 dark:text-zinc-300">{r.ltp != null ? r.ltp.toFixed(2) : '—'}</td>
                 <td className="px-3 py-2.5">{ohlcCell(r.change, r.change_pct)}</td>
                 <td className="px-3 py-2.5 text-right font-mono text-zinc-600 dark:text-zinc-300">{r.week_52_high != null ? r.week_52_high.toFixed(2) : '—'}</td>
                 <td className="px-3 py-2.5 text-right font-mono text-zinc-600 dark:text-zinc-300">{r.week_52_low != null ? r.week_52_low.toFixed(2) : '—'}</td>
                 <td className="px-3 py-2.5">{ohlcCell(r.weekly_change, r.weekly_change_pct)}</td>
                 <td className="px-3 py-2.5">{ohlcCell(r.monthly_change, r.monthly_change_pct)}</td>
+                <td className="px-3 py-2.5 text-right">{signalBadge(r.ai_signal)}</td>
+                <td className="px-3 py-2.5 text-right font-mono text-zinc-600 dark:text-zinc-300">{r.confidence_pct != null ? `${r.confidence_pct.toFixed(0)}%` : '—'}</td>
               </tr>
             ))}
           </tbody>

@@ -15,7 +15,7 @@ import type {
 function cls(...args: (string | false | null | undefined)[]) { return args.filter(Boolean).join(' ') }
 function pnlColor(v: number) { return v > 0 ? 'text-emerald-600 dark:text-emerald-400' : v < 0 ? 'text-red-500 dark:text-red-400' : 'text-zinc-500' }
 
-type Tab = 'dashboard' | 'trend' | 'ai' | 'trade' | 'portfolio'
+type Tab = 'dashboard' | 'chart' | 'trend' | 'ai' | 'trade' | 'portfolio'
 
 const CONTRACTS: { id: McxContract; label: string }[] = [
   { id: 'NG', label: 'Natural Gas' },
@@ -42,10 +42,22 @@ function NgChart({ quote, score, contract, period, onPeriodChange }: {
     const t = localStorage.getItem('mts_token') ?? ''
     if (!t) return
     setLoading(true)
-    getNgHistory(t, period, contract)
-      .then(setBars)
-      .catch(() => setBars([]))
-      .finally(() => setLoading(false))
+    let first = true
+    function load() {
+      getNgHistory(t, period, contract)
+        .then(setBars)
+        .catch(() => { if (first) setBars([]) })
+        .finally(() => { setLoading(false); first = false })
+    }
+    load()
+    // Re-fetch periodically (not just on period/contract change) so the
+    // chart's real data stays in sync with the locally live-extended last
+    // candle -- otherwise the visible-range centering (anchored to this
+    // fetch) and the LTP ball (which follows the live-rolled-forward bar)
+    // drift apart the longer a tab stays open, and the ball ends up
+    // positioned outside what's actually shown.
+    const id = setInterval(load, 30_000)
+    return () => clearInterval(id)
   }, [period, contract])
 
   useEffect(() => {
@@ -313,8 +325,6 @@ function NgDashboard({ quote, score, buyScore, sellScore, contract, loading, err
   loading: boolean
   error: string | null
 }) {
-  const [period, setPeriod] = useState<ChartPeriod>('15m')
-
   if (loading && !quote) {
     return (
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -380,7 +390,15 @@ function NgDashboard({ quote, score, buyScore, sellScore, contract, loading, err
         {stat('OI Day High', quote.oi_day_high.toLocaleString('en-IN'))}
         {stat('OI Day Low', quote.oi_day_low.toLocaleString('en-IN'))}
       </div>
+    </div>
+  )
+}
 
+function NgChartTab({ quote, score, contract }: { quote: NgQuote | null; score: NgAiScore | null; contract: McxContract }) {
+  const [period, setPeriod] = useState<ChartPeriod>('15m')
+
+  return (
+    <div className="space-y-4">
       <NgChart quote={quote} score={score} contract={contract} period={period} onPeriodChange={setPeriod} />
       {score && (
         <p className="text-[11px] text-zinc-400">
@@ -964,6 +982,7 @@ function NgPortfolio({ trades, loading, onClose, closingId }: {
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'dashboard', label: 'NG Dashboard' },
+  { id: 'chart', label: 'Chart' },
   { id: 'trend', label: 'Trend' },
   { id: 'ai', label: 'AI Signal' },
   { id: 'trade', label: 'Trade' },
@@ -1091,6 +1110,7 @@ export default function McxView() {
         {tab === 'dashboard' && (
           <NgDashboard quote={quote} score={score} buyScore={buyScore} sellScore={sellScore} contract={contract} loading={quoteLoading} error={quoteError} />
         )}
+        {tab === 'chart' && <NgChartTab quote={quote} score={score} contract={contract} />}
         {tab === 'trend' && <TrendPanel contract={contract} />}
         {tab === 'ai' && (
           <AiSignalPanel

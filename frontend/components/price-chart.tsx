@@ -290,12 +290,20 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
         // Centre the last real candle in the viewport -- equal history on
         // the left, equal reserved space (mostly the AI prediction) on the
         // right, rather than history dominating and prediction squeezed
-        // into a sliver at the edge.
+        // into a sliver at the edge. Uses actual timestamps, not logical
+        // bar indices: the prediction series adds its own time points (many
+        // of which don't line up with real candle times across session
+        // gaps), which inflates the chart's shared logical-index axis past
+        // data.length and threw off index-based range math -- including
+        // where the LTP ball ended up, since it's positioned by looking up
+        // its bar's time on that same (miscounted) axis.
         const visibleBars = DEFAULT_VISIBLE_BARS[period]
-        if (visibleBars && data.length > visibleBars) {
-          chart.timeScale().setVisibleLogicalRange({
-            from: data.length - visibleBars,
-            to: data.length - 1 + visibleBars,
+        if (visibleBars && lastRaw) {
+          const bucket = PERIOD_BUCKET_SECONDS[period] ?? 86400
+          const span = visibleBars * bucket
+          chart.timeScale().setVisibleRange({
+            from: (lastRaw.time - span) as UTCTimestamp,
+            to: (lastRaw.time + span) as UTCTimestamp,
           })
         } else {
           chart.timeScale().fitContent()

@@ -82,6 +82,23 @@ async def ng_ai_score(
         ) from exc
 
 
+@router.get("/ng/range-stats")
+async def ng_range_stats(current_user: CurrentUser, contract: McxContract = "NG") -> dict:
+    """Day/week/month high-low for the front-month contract -- powers the
+    DH1-3/DL1-3 chart reference lines (see mcx_service.get_range_stats)."""
+    from app.services.mcx_service import McxNotConnectedError, get_range_stats
+
+    try:
+        return await get_range_stats(str(current_user.id), contract)
+    except McxNotConnectedError as exc:
+        raise HTTPException(status_code=http_status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"MCX range stats unavailable: {exc}",
+        ) from exc
+
+
 @router.get("/ng/trend")
 async def ng_trend(current_user: CurrentUser, contract: McxContract = "NG") -> dict:
     """Multi-timeframe trend ladder (1m/5m/15m/1h/1D/1W) with regime-change

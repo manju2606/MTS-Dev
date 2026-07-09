@@ -1324,6 +1324,25 @@ export async function getNgHistory(
   return res.json()
 }
 
+export type NgRangeStats = {
+  contract: string
+  day_high: number
+  day_low: number
+  week_high: number
+  week_low: number
+  month_high: number
+  month_low: number
+}
+
+export async function getNgRangeStats(token: string, contract: McxContract = 'NG'): Promise<NgRangeStats> {
+  const res = await fetch(`${BASE}/api/v1/mcx/ng/range-stats?contract=${contract}`, { headers: authHeaders(token) })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch MCX range stats')
+  }
+  return res.json()
+}
+
 export type TrendState = 'STABLE' | 'WEAKENING' | 'JUST_CHANGED'
 export type TrendTimeframe = {
   direction: 'BULLISH' | 'BEARISH' | 'NEUTRAL' | 'UNKNOWN'

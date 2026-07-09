@@ -4,11 +4,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { NavBar } from '@/components/nav-bar'
 import { PriceChart } from '@/components/price-chart'
-import type { AILevels } from '@/components/price-chart'
+import type { AILevels, RefLine } from '@/components/price-chart'
 import {
-  getNgQuote, listNgTrades, placeNgTrade, closeNgTrade, getBrokerStatus, getNgAiScore, getNgHistory, getNgTrend,
+  getNgQuote, listNgTrades, placeNgTrade, closeNgTrade, getBrokerStatus, getNgAiScore, getNgHistory, getNgTrend, getNgRangeStats,
 } from '@/lib/api'
-import type { NgQuote, McxTrade, BrokerStatus, NgAiScore, HistoryBar, ChartPeriod, McxContract, NgTrendLadder, TrendTimeframe } from '@/lib/api'
+import type { NgQuote, McxTrade, BrokerStatus, NgAiScore, HistoryBar, ChartPeriod, McxContract, NgTrendLadder, TrendTimeframe, NgRangeStats } from '@/lib/api'
 
 function cls(...args: (string | false | null | undefined)[]) { return args.filter(Boolean).join(' ') }
 function pnlColor(v: number) { return v > 0 ? 'text-emerald-600 dark:text-emerald-400' : v < 0 ? 'text-red-500 dark:text-red-400' : 'text-zinc-500' }
@@ -28,6 +28,7 @@ function NgChart({ quote, score, contract }: { quote: NgQuote | null; score: NgA
   const [period, setPeriod] = useState<ChartPeriod>('15m')
   const [bars, setBars] = useState<HistoryBar[]>([])
   const [loading, setLoading] = useState(true)
+  const [rangeStats, setRangeStats] = useState<NgRangeStats | null>(null)
 
   useEffect(() => {
     const t = localStorage.getItem('mts_token') ?? ''
@@ -39,6 +40,17 @@ function NgChart({ quote, score, contract }: { quote: NgQuote | null; score: NgA
       .finally(() => setLoading(false))
   }, [period, contract])
 
+  useEffect(() => {
+    const t = localStorage.getItem('mts_token') ?? ''
+    if (!t) return
+    function load() {
+      getNgRangeStats(t, contract).then(setRangeStats).catch(() => {})
+    }
+    load()
+    const id = setInterval(load, 120_000)
+    return () => clearInterval(id)
+  }, [contract])
+
   const aiLevels: AILevels = score
     ? {
         signal: score.verdict === 'NO_TRADE' ? 'HOLD' : score.direction,
@@ -47,6 +59,17 @@ function NgChart({ quote, score, contract }: { quote: NgQuote | null; score: NgA
         target: score.entry.target_1,
       }
     : null
+
+  const refLines: RefLine[] = rangeStats
+    ? [
+        { price: rangeStats.day_high, label: 'DH1' },
+        { price: rangeStats.week_high, label: 'DH2' },
+        { price: rangeStats.month_high, label: 'DH3' },
+        { price: rangeStats.day_low, label: 'DL1' },
+        { price: rangeStats.week_low, label: 'DL2' },
+        { price: rangeStats.month_low, label: 'DL3' },
+      ]
+    : []
 
   return (
     <PriceChart
@@ -58,13 +81,110 @@ function NgChart({ quote, score, contract }: { quote: NgQuote | null; score: NgA
       aiLevels={aiLevels}
       currentPrice={quote?.last_price ?? null}
       exchangeLabel="MCX"
-      dayHigh={quote?.high ?? null}
-      dayLow={quote?.low ?? null}
+      refLines={refLines}
     />
   )
 }
 
-function NgDashboard({ quote, score, contract, loading, error }: { quote: NgQuote | null; score: NgAiScore | null; contract: McxContract; loading: boolean; error: string | null }) {
+function BuySellScale({ buy, sell }: { buy: NgAiScore | null; sell: NgAiScore | null }) {
+  if (!buy || !sell) {
+    return <div className="h-28 animate-pulse rounded-2xl bg-zinc-100 dark:bg-zinc-800" />
+  }
+  const buyPct = Math.min(100, buy.score_pct)
+  const sellPct = Math.min(100, sell.score_pct)
+  const diff = buyPct - sellPct
+  const lean = diff > 8 ? 'BUY' : diff < -8 ? 'SELL' : 'BALANCED'
+  const leanStyle = lean === 'BUY' ? 'bg-emerald-600 text-white' : lean === 'SELL' ? 'bg-red-500 text-white' : 'bg-zinc-400 text-white'
+  return (
+    <div className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="mb-3 flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Live Buy / Sell Weight Scale</p>
+        <span className={cls('rounded-full px-2.5 py-0.5 text-[10px] font-bold', leanStyle)}>
+          {lean === 'BALANCED' ? 'BALANCED' : `LEANING ${lean}`} ({diff >= 0 ? '+' : ''}{diff.toFixed(1)})
+        </span>
+      </div>
+      <div className="flex items-center gap-3">
+        <span className="w-14 text-right font-mono text-lg font-bold text-red-500">{sellPct.toFixed(1)}</span>
+        <div className="relative flex h-4 flex-1 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+          <div className="absolute left-1/2 top-0 z-10 h-full w-px -translate-x-1/2 bg-zinc-300 dark:bg-zinc-600" />
+          <div className="flex h-full w-1/2 justify-end">
+            <div className="h-full rounded-l-full bg-gradient-to-l from-red-500 to-red-400 transition-all duration-700" style={{ width: `${sellPct}%` }} />
+          </div>
+          <div className="flex h-full w-1/2 justify-start">
+            <div className="h-full rounded-r-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-700" style={{ width: `${buyPct}%` }} />
+          </div>
+        </div>
+        <span className="w-14 font-mono text-lg font-bold text-emerald-600">{buyPct.toFixed(1)}</span>
+      </div>
+      <div className="mt-2 flex justify-between text-[10px] text-zinc-400">
+        <span>SELL &middot; {sell.verdict}</span>
+        <span>BUY &middot; {buy.verdict}</span>
+      </div>
+    </div>
+  )
+}
+
+function NgWatchlist({ contract }: { contract: McxContract }) {
+  const [quotes, setQuotes] = useState<Partial<Record<McxContract, NgQuote>>>({})
+
+  useEffect(() => {
+    const t = localStorage.getItem('mts_token') ?? ''
+    if (!t) return
+    function load() {
+      for (const c of CONTRACTS) {
+        getNgQuote(t, c.id).then(q => setQuotes(prev => ({ ...prev, [c.id]: q }))).catch(() => {})
+      }
+    }
+    load()
+    const id = setInterval(load, 5_000)
+    return () => clearInterval(id)
+  }, [])
+
+  return (
+    <div className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+      <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-400">Watchlist &middot; Live</p>
+      <div className="space-y-2">
+        {CONTRACTS.map(c => {
+          const q = quotes[c.id]
+          return (
+            <div
+              key={c.id}
+              className={cls(
+                'flex items-center justify-between rounded-lg px-3 py-2',
+                contract === c.id ? 'bg-indigo-50 dark:bg-indigo-950/30' : 'bg-zinc-50 dark:bg-zinc-800/40',
+              )}
+            >
+              <div>
+                <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">{c.label}</p>
+                <p className="text-[11px] text-zinc-400">{q?.tradingsymbol ?? '—'}</p>
+              </div>
+              {q ? (
+                <div className="text-right">
+                  <p className="font-mono text-sm font-bold text-zinc-900 dark:text-zinc-50">₹{q.last_price.toFixed(2)}</p>
+                  <p className={cls('font-mono text-xs font-semibold', pnlColor(q.change))}>
+                    {q.change >= 0 ? '+' : ''}{q.change.toFixed(2)} ({q.change >= 0 ? '+' : ''}{q.change_pct.toFixed(2)}%)
+                  </p>
+                </div>
+              ) : (
+                <span className="text-xs text-zinc-400">Loading…</span>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function NgDashboard({ quote, score, buyScore, sellScore, contract, loading, error }: {
+  quote: NgQuote | null
+  score: NgAiScore | null
+  buyScore: NgAiScore | null
+  sellScore: NgAiScore | null
+  contract: McxContract
+  loading: boolean
+  error: string | null
+}) {
   if (loading && !quote) {
     return (
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -101,6 +221,11 @@ function NgDashboard({ quote, score, contract, loading, error }: { quote: NgQuot
             <p className={cls('mt-1 text-sm font-mono font-semibold', pnlColor(quote.change))}>
               {quote.change >= 0 ? '+' : ''}{quote.change.toFixed(2)} ({quote.change >= 0 ? '+' : ''}{quote.change_pct.toFixed(2)}%)
             </p>
+            {score && (
+              <span className={cls('mt-2 inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold', VERDICT_STYLE[score.verdict])}>
+                AI SIGNAL: {score.verdict === 'NO_TRADE' ? 'HOLD' : score.direction} &middot; {score.score_pct.toFixed(1)}
+              </span>
+            )}
           </div>
           <div className="text-right text-xs text-zinc-400">
             <p>Expiry {quote.expiry}</p>
@@ -108,6 +233,11 @@ function NgDashboard({ quote, score, contract, loading, error }: { quote: NgQuot
             <p>Tick {quote.tick_size}</p>
           </div>
         </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <BuySellScale buy={buyScore} sell={sellScore} />
+        <NgWatchlist contract={contract} />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -131,7 +261,8 @@ function NgDashboard({ quote, score, contract, loading, error }: { quote: NgQuot
 
       <p className="text-xs text-zinc-400">
         Live price via your connected Zerodha Kite account for the current front-month MCX Natural Gas futures
-        contract. Refreshes every 15s.
+        contract. Refreshes every 5s; the chart's last candle updates in real time between fetches. Dotted lines
+        mark DH1/DL1 (day), DH2/DL2 (week), and DH3/DL3 (month) high-low.
       </p>
     </div>
   )
@@ -721,6 +852,8 @@ export default function McxView() {
   const [closingId, setClosingId] = useState<string | null>(null)
   const [tradePrefill, setTradePrefill] = useState<TradePrefill | null>(null)
   const [score, setScore] = useState<NgAiScore | null>(null)
+  const [buyScore, setBuyScore] = useState<NgAiScore | null>(null)
+  const [sellScore, setSellScore] = useState<NgAiScore | null>(null)
 
   const loadQuote = useCallback(() => {
     const t = tokenRef.current
@@ -744,21 +877,23 @@ export default function McxView() {
     getBrokerStatus(t).then(setBroker).catch(() => null)
     loadQuote()
     loadTrades()
-    const id = setInterval(loadQuote, 15_000)
+    const id = setInterval(loadQuote, 5_000)
     return () => clearInterval(id)
   }, [router, loadQuote, loadTrades])
 
-  // Auto-compute a default (BUY) AI score as soon as the page loads, so the
-  // Dashboard chart's signal overlay is populated without ever needing to
-  // visit the AI Signal tab. Visiting that tab takes over with whatever
-  // direction/capital is selected there.
+  // Auto-compute BUY + SELL AI scores as soon as the page loads, so the
+  // Dashboard chart's signal overlay and the buy/sell weight scale are
+  // populated without ever needing to visit the AI Signal tab. Visiting that
+  // tab takes over `score` with whatever direction/capital is selected there.
   useEffect(() => {
     const t = localStorage.getItem('mts_token')
     if (!t) return
-    getNgAiScore(t, 'BUY', 100000, contract).then(setScore).catch(() => {})
-    const id = setInterval(() => {
-      getNgAiScore(t, 'BUY', 100000, contract).then(setScore).catch(() => {})
-    }, 180_000)
+    function load() {
+      getNgAiScore(t as string, 'BUY', 100000, contract).then(s => { setScore(s); setBuyScore(s) }).catch(() => {})
+      getNgAiScore(t as string, 'SELL', 100000, contract).then(setSellScore).catch(() => {})
+    }
+    load()
+    const id = setInterval(load, 180_000)
     return () => clearInterval(id)
   }, [contract])
 
@@ -789,7 +924,7 @@ export default function McxView() {
           </div>
           <div className="flex gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800">
             {CONTRACTS.map(c => (
-              <button key={c.id} onClick={() => { setContract(c.id); setScore(null) }}
+              <button key={c.id} onClick={() => { setContract(c.id); setScore(null); setBuyScore(null); setSellScore(null) }}
                 className={cls(
                   'rounded-md px-3 py-1.5 text-xs font-semibold transition-colors',
                   contract === c.id ? 'bg-white text-zinc-900 shadow dark:bg-zinc-900 dark:text-zinc-50' : 'text-zinc-500 dark:text-zinc-400',
@@ -822,7 +957,7 @@ export default function McxView() {
         </div>
 
         {tab === 'dashboard' && (
-          <NgDashboard quote={quote} score={score} contract={contract} loading={quoteLoading} error={quoteError} />
+          <NgDashboard quote={quote} score={score} buyScore={buyScore} sellScore={sellScore} contract={contract} loading={quoteLoading} error={quoteError} />
         )}
         {tab === 'trend' && <TrendPanel contract={contract} />}
         {tab === 'ai' && (

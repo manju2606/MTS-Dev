@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { IChartApi, ISeriesApi, IPriceLine, UTCTimestamp } from 'lightweight-charts'
 import type { HistoryBar, ChartPeriod } from '@/lib/api'
 
@@ -11,6 +11,10 @@ export type AILevels = {
   target: number
 } | null
 
+export type RefLine = { price: number; label: string }
+
+type LiveBar = { time: UTCTimestamp; open: number; high: number; low: number; close: number }
+
 type PriceChartProps = {
   symbol: string
   data: HistoryBar[]
@@ -20,19 +24,41 @@ type PriceChartProps = {
   aiLevels?: AILevels
   currentPrice?: number | null
   exchangeLabel?: string
-  dayHigh?: number | null
-  dayLow?: number | null
+  refLines?: RefLine[]
 }
 
 const PERIODS: ChartPeriod[] = ['1m', '5m', '15m', '30m', '45m', '1h', '1D', '5D', '1W', '1M', '3M', '6M', '1Y']
 
-export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLevels, currentPrice, exchangeLabel, dayHigh, dayLow }: PriceChartProps) {
+export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLevels, currentPrice, exchangeLabel, refLines }: PriceChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
   const ltpLineRef = useRef<IPriceLine | null>(null)
   const cardRef = useRef<HTMLDivElement>(null)
+  const ballRef = useRef<HTMLDivElement>(null)
+  const lastBarRef = useRef<LiveBar | null>(null)
   const [fullscreen, setFullscreen] = useState(false)
+  const refLinesKey = JSON.stringify(refLines ?? [])
+
+  const positionBall = useCallback((price: number | null | undefined) => {
+    const series = candleSeriesRef.current
+    const chart = chartRef.current
+    const ball = ballRef.current
+    const bar = lastBarRef.current
+    if (!series || !chart || !ball || !bar || price == null) {
+      if (ball) ball.style.opacity = '0'
+      return
+    }
+    const y = series.priceToCoordinate(price)
+    const x = chart.timeScale().timeToCoordinate(bar.time)
+    if (y == null || x == null) {
+      ball.style.opacity = '0'
+      return
+    }
+    ball.style.left = `${x}px`
+    ball.style.top = `${y}px`
+    ball.style.opacity = '1'
+  }, [])
 
   useEffect(() => {
     function onFullscreenChange() {
@@ -174,28 +200,18 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
           }
         }
 
-        // Day high/low — flat black reference lines, independent of the AI
-        // signal (still shown even when there's no active BUY/SELL overlay).
+        // Reference lines (day/week/month high-low, etc.) — flat black dotted
+        // lines, independent of the AI signal overlay.
         const isDarkTheme = document.documentElement.classList.contains('dark')
-        const dayLineColor = isDarkTheme ? '#e4e4e7' : '#18181b'
-        if (dayHigh != null) {
+        const refLineColor = isDarkTheme ? '#e4e4e7' : '#18181b'
+        for (const rl of refLines ?? []) {
           candleSeries.createPriceLine({
-            price: dayHigh,
-            color: dayLineColor,
+            price: rl.price,
+            color: refLineColor,
             lineWidth: 1,
             lineStyle: LineStyle.Dotted,
             axisLabelVisible: true,
-            title: `Day High ₹${dayHigh.toFixed(2)}`,
-          })
-        }
-        if (dayLow != null) {
-          candleSeries.createPriceLine({
-            price: dayLow,
-            color: dayLineColor,
-            lineWidth: 1,
-            lineStyle: LineStyle.Dotted,
-            axisLabelVisible: true,
-            title: `Day Low ₹${dayLow.toFixed(2)}`,
+            title: `${rl.label} ₹${rl.price.toFixed(2)}`,
           })
         }
 
@@ -212,7 +228,13 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
           })
         }
 
+        const lastRaw = data[data.length - 1]
+        lastBarRef.current = lastRaw
+          ? { time: lastRaw.time as UTCTimestamp, open: lastRaw.open, high: lastRaw.high, low: lastRaw.low, close: lastRaw.close }
+          : null
+
         chart.timeScale().fitContent()
+        positionBall(currentPrice)
 
         const ro = new ResizeObserver(() => {
           if (containerRef.current && chartRef.current) {
@@ -220,6 +242,7 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
               width: containerRef.current.clientWidth,
               height: containerRef.current.clientHeight,
             })
+            positionBall(currentPrice)
           }
         })
         ro.observe(containerRef.current)
@@ -235,28 +258,49 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
       }
       candleSeriesRef.current = null
       ltpLineRef.current = null
+      lastBarRef.current = null
     }
-  }, [data, aiLevels, dayHigh, dayLow])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, aiLevels, refLinesKey, positionBall])
 
-  // Nudge the LTP line on each live-price update without rebuilding the whole chart.
+  // Live tick handling — nudges the LTP line, extends the in-progress last
+  // candle (high/low/close) in place via .update() so the chart feels
+  // real-time without a full re-fetch/rebuild, and moves the pulsing ball
+  // marker to track the current price at the latest bar's position.
   useEffect(() => {
     if (currentPrice == null || !candleSeriesRef.current) return
+
+    if (lastBarRef.current) {
+      const bar = lastBarRef.current
+      const updated: LiveBar = {
+        time: bar.time,
+        open: bar.open,
+        high: Math.max(bar.high, currentPrice),
+        low: Math.min(bar.low, currentPrice),
+        close: currentPrice,
+      }
+      lastBarRef.current = updated
+      candleSeriesRef.current.update(updated)
+    }
+
     if (ltpLineRef.current) {
       ltpLineRef.current.applyOptions({ price: currentPrice, title: `LTP ₹${currentPrice.toFixed(2)}` })
-      return
-    }
-    import('lightweight-charts').then(({ LineStyle }) => {
-      if (!candleSeriesRef.current || ltpLineRef.current) return
-      ltpLineRef.current = candleSeriesRef.current.createPriceLine({
-        price: currentPrice,
-        color: '#f59e0b',
-        lineWidth: 2,
-        lineStyle: LineStyle.Solid,
-        axisLabelVisible: true,
-        title: `LTP ₹${currentPrice.toFixed(2)}`,
+    } else {
+      import('lightweight-charts').then(({ LineStyle }) => {
+        if (!candleSeriesRef.current || ltpLineRef.current) return
+        ltpLineRef.current = candleSeriesRef.current.createPriceLine({
+          price: currentPrice,
+          color: '#f59e0b',
+          lineWidth: 2,
+          lineStyle: LineStyle.Solid,
+          axisLabelVisible: true,
+          title: `LTP ₹${currentPrice.toFixed(2)}`,
+        })
       })
-    })
-  }, [currentPrice])
+    }
+
+    positionBall(currentPrice)
+  }, [currentPrice, positionBall])
 
   return (
     <div
@@ -316,6 +360,14 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
           </div>
         )}
         <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+        <div
+          ref={ballRef}
+          className="pointer-events-none absolute z-20 opacity-0 transition-all duration-300 ease-out"
+          style={{ transform: 'translate(-50%, -50%)', left: 0, top: 0 }}
+        >
+          <span className="absolute -inset-1.5 animate-ping rounded-full bg-amber-400 opacity-75" />
+          <span className="relative block h-3 w-3 rounded-full bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.8)] ring-2 ring-white dark:ring-zinc-900" />
+        </div>
       </div>
     </div>
   )

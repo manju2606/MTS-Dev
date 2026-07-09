@@ -15,7 +15,7 @@ real Kite-sourced price instead of a real order going to the exchange.
 from __future__ import annotations
 
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from uuid import UUID
 
 import structlog
@@ -202,6 +202,58 @@ async def get_history(user_id: str, period: str, contract: str = "NG") -> list[d
 async def get_ng_history(user_id: str, period: str) -> list[dict]:
     """Back-compat alias for get_history(user_id, period, "NG")."""
     return await get_history(user_id, period, "NG")
+
+
+async def get_range_stats(user_id: str, contract: str = "NG") -> dict:
+    """Day/week/month high-low for the front-month contract. Today's day
+    high/low comes straight from the live quote (its own daily candle isn't
+    closed yet); week/month roll up closed daily candles plus today's quote
+    so the current session is reflected immediately, not just after close."""
+    broker = await get_zerodha_broker(user_id)
+    c_info = await resolve_contract(broker, contract)
+    quote = await get_quote(user_id, contract)
+
+    to_dt = datetime.now()
+    from_dt = to_dt - timedelta(days=40)
+    candles = await broker.get_historical_candles(
+        c_info["instrument_token"],
+        "day",
+        from_dt.strftime("%Y-%m-%d %H:%M:%S"),
+        to_dt.strftime("%Y-%m-%d %H:%M:%S"),
+    )
+
+    today = to_dt.date()
+    week_start = today - timedelta(days=today.weekday())
+    month_start = today.replace(day=1)
+
+    week_candles = [c for c in candles if c["date"].date() >= week_start]
+    month_candles = [c for c in candles if c["date"].date() >= month_start]
+
+    day_high = float(quote["high"])
+    day_low = float(quote["low"])
+
+    def _high(cs: list[dict]) -> float:
+        highs = [float(c["high"]) for c in cs] + ([day_high] if day_high else [])
+        return max(highs, default=day_high)
+
+    def _low(cs: list[dict]) -> float:
+        lows = [float(c["low"]) for c in cs if float(c["low"]) > 0] + ([day_low] if day_low else [])
+        return min(lows, default=day_low)
+
+    week_high = _high(week_candles)
+    week_low = _low(week_candles)
+    month_high = _high(month_candles)
+    month_low = _low(month_candles)
+
+    return {
+        "contract": contract.upper(),
+        "day_high": round(day_high, 2),
+        "day_low": round(day_low, 2),
+        "week_high": round(week_high, 2),
+        "week_low": round(week_low, 2),
+        "month_high": round(month_high, 2),
+        "month_low": round(month_low, 2),
+    }
 
 
 def _trade_dict(trade: Trade, lot_size: int) -> dict:

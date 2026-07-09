@@ -12,6 +12,7 @@ export type AILevels = {
 } | null
 
 export type RefLine = { price: number; label: string }
+export type PredictionPoint = { time: number; predictedClose: number; upper: number; lower: number }
 
 type LiveBar = { time: UTCTimestamp; open: number; high: number; low: number; close: number }
 
@@ -25,6 +26,7 @@ type PriceChartProps = {
   currentPrice?: number | null
   exchangeLabel?: string
   refLines?: RefLine[]
+  prediction?: PredictionPoint[]
 }
 
 const PERIODS: ChartPeriod[] = ['1m', '5m', '15m', '30m', '45m', '1h', '1D', '5D', '1W', '1M', '3M', '6M', '1Y']
@@ -39,7 +41,18 @@ const PERIOD_BUCKET_SECONDS: Record<ChartPeriod, number> = {
   '1D': 86400, '5D': 86400, '1W': 86400, '1M': 86400, '3M': 86400, '6M': 86400, '1Y': 86400,
 }
 
-export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLevels, currentPrice, exchangeLabel, refLines }: PriceChartProps) {
+// Default zoomed-in window (number of most-recent bars) shown on load, per
+// period -- the backend fetches a much longer lookback than this so trend
+// indicators/predictions have enough history, but fitting *all* of that into
+// view (e.g. ~600+ hourly candles for "1h", 90 days back) makes the chart
+// unreadably zoomed out. Periods not listed here (1D and longer) fit all
+// fetched bars, since those are meant to be zoomed-out overview views.
+// Users can still scroll/zoom out manually afterwards.
+const DEFAULT_VISIBLE_BARS: Partial<Record<ChartPeriod, number>> = {
+  '1m': 120, '5m': 100, '15m': 80, '30m': 60, '45m': 60, '1h': 48,
+}
+
+export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLevels, currentPrice, exchangeLabel, refLines, prediction }: PriceChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
@@ -49,6 +62,7 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
   const lastBarRef = useRef<LiveBar | null>(null)
   const [fullscreen, setFullscreen] = useState(false)
   const refLinesKey = JSON.stringify(refLines ?? [])
+  const predictionKey = JSON.stringify(prediction ?? [])
 
   const positionBall = useCallback((price: number | null | undefined) => {
     const series = candleSeriesRef.current
@@ -91,7 +105,7 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
 
     // Lazy-import to avoid SSR issues
     import('lightweight-charts').then(
-      ({ createChart, CandlestickSeries, HistogramSeries, ColorType, CrosshairMode, LineStyle, createSeriesMarkers }) => {
+      ({ createChart, CandlestickSeries, HistogramSeries, LineSeries, ColorType, CrosshairMode, LineStyle, createSeriesMarkers }) => {
         if (!containerRef.current) return
 
         // Remove previous chart instance
@@ -118,7 +132,11 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
           crosshair: { mode: CrosshairMode.Normal },
           leftPriceScale: { visible: true, borderVisible: false },
           rightPriceScale: { visible: false },
-          timeScale: { borderVisible: false, timeVisible: true },
+          // rightOffset leaves empty space past the last plotted point (real
+          // candle, or the last predicted point when a prediction is shown)
+          // so the AI prediction line has visible room to breathe on the
+          // right instead of hugging the edge of the chart.
+          timeScale: { borderVisible: false, timeVisible: true, rightOffset: 8 },
           width: containerRef.current.clientWidth,
           height: 300,
         })
@@ -227,6 +245,31 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
           })
         }
 
+        // AI price prediction — a distinct-colour line continuing from the
+        // last real candle, with a dotted upper/lower uncertainty band. Same
+        // 'left' price scale as the candles so it lines up visually with the
+        // actual price axis rather than auto-scaling against its own range.
+        if (prediction && prediction.length > 0) {
+          const lastBar = data[data.length - 1]
+          if (lastBar) {
+            const anchor = { time: lastBar.time as UTCTimestamp, value: lastBar.close }
+            const predictedSeries = chart.addSeries(LineSeries, {
+              color: '#a855f7',
+              lineWidth: 2,
+              lineStyle: LineStyle.Solid,
+              priceScaleId: 'left',
+              title: 'AI Prediction',
+            })
+            predictedSeries.setData([anchor, ...prediction.map(p => ({ time: p.time as UTCTimestamp, value: p.predictedClose }))])
+
+            const bandOpts = { color: '#a855f766', lineWidth: 1 as const, lineStyle: LineStyle.Dotted, priceScaleId: 'left' as const }
+            const upperSeries = chart.addSeries(LineSeries, { ...bandOpts, title: 'Prediction upper' })
+            upperSeries.setData([anchor, ...prediction.map(p => ({ time: p.time as UTCTimestamp, value: p.upper }))])
+            const lowerSeries = chart.addSeries(LineSeries, { ...bandOpts, title: 'Prediction lower' })
+            lowerSeries.setData([anchor, ...prediction.map(p => ({ time: p.time as UTCTimestamp, value: p.lower }))])
+          }
+        }
+
         // LTP line — current/live price, kept separate from the AI levels so it can be
         // nudged on each price poll (see the effect below) without rebuilding the chart.
         if (currentPrice != null) {
@@ -245,7 +288,19 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
           ? { time: lastRaw.time as UTCTimestamp, open: lastRaw.open, high: lastRaw.high, low: lastRaw.low, close: lastRaw.close }
           : null
 
-        chart.timeScale().fitContent()
+        // Centre the last real candle in the viewport -- equal history on
+        // the left, equal reserved space (mostly the AI prediction) on the
+        // right, rather than history dominating and prediction squeezed
+        // into a sliver at the edge.
+        const visibleBars = DEFAULT_VISIBLE_BARS[period]
+        if (visibleBars && data.length > visibleBars) {
+          chart.timeScale().setVisibleLogicalRange({
+            from: data.length - visibleBars,
+            to: data.length - 1 + visibleBars,
+          })
+        } else {
+          chart.timeScale().fitContent()
+        }
         positionBall(currentPrice)
 
         const ro = new ResizeObserver(() => {
@@ -273,7 +328,7 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
       lastBarRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, aiLevels, refLinesKey, positionBall])
+  }, [data, aiLevels, refLinesKey, predictionKey, period, positionBall])
 
   // Live tick handling — nudges the LTP line, extends the in-progress last
   // candle (high/low/close) in place via .update() so the chart feels

@@ -18,10 +18,10 @@ candle collection only just started, so there's nothing to train on yet.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from app.infra.mcx import ng_indicators as ind
-from app.services.mcx_service import get_zerodha_broker
+from app.services.mcx_service import get_zerodha_broker, ist_now
 
 _INTERVAL_MAP = {"1m": "minute", "5m": "5minute", "15m": "15minute"}
 _LOOKBACK_DAYS = {"1m": 2, "5m": 5, "15m": 10}
@@ -37,7 +37,7 @@ _CORRELATION_TICKERS = {
 
 async def _fetch_candles(broker, instrument_token: int, interval: str) -> list[dict]:
     days = _LOOKBACK_DAYS[interval]
-    to_dt = datetime.now()
+    to_dt = ist_now()
     from_dt = to_dt - timedelta(days=days)
     return await broker.get_historical_candles(
         instrument_token,

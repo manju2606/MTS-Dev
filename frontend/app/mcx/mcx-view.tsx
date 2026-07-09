@@ -1,15 +1,16 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { NavBar } from '@/components/nav-bar'
 import { PriceChart } from '@/components/price-chart'
 import type { AILevels, RefLine, PredictionPoint } from '@/components/price-chart'
 import {
-  getNgQuote, listNgTrades, placeNgTrade, closeNgTrade, getBrokerStatus, getNgAiScore, getNgHistory, getNgTrend, getNgRangeStats, getNgPrediction,
+  getNgQuote, listNgTrades, placeNgTrade, closeNgTrade, getBrokerStatus, getNgAiScore, getNgHistory, getNgTrend, getNgRangeStats, getNgPrediction, getNgPredictionArchive,
 } from '@/lib/api'
 import type {
-  NgQuote, McxTrade, BrokerStatus, NgAiScore, HistoryBar, ChartPeriod, McxContract, NgTrendLadder, TrendTimeframe, NgRangeStats, NgPrediction,
+  NgQuote, McxTrade, BrokerStatus, NgAiScore, HistoryBar, ChartPeriod, McxContract, NgTrendLadder, TrendTimeframe, NgRangeStats, NgPrediction, NgPredictionHistoryPoint, PredictionPeriod,
 } from '@/lib/api'
 
 function cls(...args: (string | false | null | undefined)[]) { return args.filter(Boolean).join(' ') }
@@ -149,79 +150,309 @@ function NgChart({ quote, score, contract, period, onPeriodChange }: {
   )
 }
 
-const ACCURACY_ROWS: { label: string; period: ChartPeriod }[] = [
-  { label: 'Minutes', period: '15m' },
+const ACCURACY_GROUPS: { label: string; period: PredictionPeriod }[] = [
+  { label: 'Minutes', period: '1m' },
+  { label: '15 Mins', period: '15m' },
+  { label: '30 Mins', period: '30m' },
   { label: 'Hours', period: '1h' },
-  { label: 'Days', period: '1D' },
-  { label: 'Weeks', period: '1W' },
 ]
+const WEEK_GROUP: { label: string; period: PredictionPeriod }[] = [{ label: 'Weekly', period: '1Wk' }]
+const MONTH_GROUP: { label: string; period: PredictionPeriod }[] = [{ label: 'Monthly', period: '1Mo' }]
 
-function fmtPredictionTime(t: number): string {
-  return new Date(t * 1000).toLocaleString('en-IN', {
-    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-  })
+// Bounds how far back resolved (actual-known) rows are shown -- the forward
+// side (predicted-but-not-yet-happened) is intentionally NOT capped here,
+// since the whole point is to prefill Time/Predicted for the rest of the
+// day and let Actual/Accuracy fill in as real time passes each bucket (the
+// backend's own MAX_HORIZON in mcx_prediction_service.py bounds how far
+// forward predictions get generated in the first place).
+const ACCURACY_MAX_PAST_ROWS = 25
+
+type AccuracyRow = { time: number; actual: number | null; predicted: number; accuracyPct: number | null }
+type AccuracyData = { history: NgPredictionHistoryPoint[]; predicted: { time: number; predicted_close: number }[] }
+
+function buildAccuracyRows(p: AccuracyData | undefined): AccuracyRow[] {
+  if (!p) return []
+  const byTime = new Map<number, { time: number; predicted_close: number; actual_close: number | null }>()
+  for (const h of p.history) byTime.set(h.time, { time: h.time, predicted_close: h.predicted_close, actual_close: h.actual_close })
+  for (const pt of p.predicted) {
+    if (!byTime.has(pt.time)) byTime.set(pt.time, { time: pt.time, predicted_close: pt.predicted_close, actual_close: null })
+  }
+  const all = Array.from(byTime.values()).sort((a, b) => a.time - b.time)
+  const resolved = all.filter(r => r.actual_close != null).slice(-ACCURACY_MAX_PAST_ROWS)
+  const pending = all.filter(r => r.actual_close == null)
+  return [...resolved, ...pending]
+    .sort((a, b) => a.time - b.time)
+    .map(r => ({
+      time: r.time,
+      actual: r.actual_close,
+      predicted: r.predicted_close,
+      accuracyPct: r.actual_close != null ? Math.max(0, 100 - (Math.abs(r.actual_close - r.predicted_close) / r.actual_close) * 100) : null,
+    }))
 }
 
-function PredictionAccuracyTable({ contract }: { contract: McxContract }) {
-  const [byPeriod, setByPeriod] = useState<Partial<Record<ChartPeriod, NgPrediction>>>({})
+function fmtPredictionTime(t: number): string {
+  // Force IST regardless of the browser/OS's ambient timezone -- this is an
+  // India-only market, and without an explicit timeZone here the value
+  // silently renders in whatever zone the browser happens to be set to
+  // (e.g. showing an afternoon time when it's actually 20:23 IST).
+  return new Date(t * 1000).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
+}
+
+function fmtPredictionDate(t: number): string {
+  return new Date(t * 1000).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })
+}
+
+function accuracyColor(pct: number): string {
+  return pct >= 95 ? 'text-emerald-600 dark:text-emerald-400' : pct >= 80 ? 'text-amber-600 dark:text-amber-400' : 'text-red-500 dark:text-red-400'
+}
+
+// IST calendar date as "YYYY-MM-DD", `daysAgo` days before today.
+function istDateStr(daysAgo: number): string {
+  const now = new Date()
+  const istNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }))
+  istNow.setDate(istNow.getDate() - daysAgo)
+  const y = istNow.getFullYear()
+  const m = String(istNow.getMonth() + 1).padStart(2, '0')
+  const d = String(istNow.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+function fmtDateStrDisplay(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' })
+}
+
+function CollapsibleCard({ title, subtitle, defaultOpen, children }: {
+  title: string
+  subtitle?: ReactNode
+  defaultOpen: boolean
+  children: ReactNode
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+      >
+        <span className="flex items-center gap-2">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round"
+            className={cls('text-zinc-400 transition-transform', open ? 'rotate-90' : '')}
+          >
+            <path d="M9 18l6-6-6-6" />
+          </svg>
+          <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400">{title}</span>
+        </span>
+        {subtitle}
+      </button>
+      {open && <div className="border-t border-zinc-100 dark:border-zinc-800">{children}</div>}
+    </div>
+  )
+}
+
+function LiveDot({ label }: { label: string }) {
+  return (
+    <span className="flex items-center gap-1.5 text-[10px] text-zinc-400">
+      <span className="relative flex h-1.5 w-1.5">
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+        <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+      </span>
+      {label}
+    </span>
+  )
+}
+
+function AccuracyTrailGrid({ groups, rowsByGroup, showDate }: {
+  groups: { label: string; period: PredictionPeriod }[]
+  rowsByGroup: AccuracyRow[][]
+  showDate?: boolean
+}) {
+  const maxRows = Math.max(0, ...rowsByGroup.map(r => r.length))
+  const fmtTime = showDate ? (t: number) => `${fmtPredictionDate(t)} ${fmtPredictionTime(t)}` : fmtPredictionTime
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead>
+          {groups.length > 1 && (
+            <tr className="border-b border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/60">
+              {groups.map((g, gi) => (
+                <th
+                  key={g.period}
+                  colSpan={4}
+                  className={cls('px-3 py-1.5 text-center font-semibold text-zinc-600 dark:text-zinc-300', gi > 0 && 'border-l border-zinc-200 dark:border-zinc-700')}
+                >
+                  {g.label}
+                </th>
+              ))}
+            </tr>
+          )}
+          <tr className="border-b border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/60">
+            {groups.map((g, gi) => (
+              ['Time', 'Actual', 'Predicted', 'Accuracy'].map((h, hi) => (
+                <th
+                  key={`${g.period}-${h}`}
+                  className={cls('px-3 py-2 text-left font-medium text-zinc-500', gi > 0 && hi === 0 && 'border-l border-zinc-200 dark:border-zinc-700')}
+                >
+                  {h}
+                </th>
+              ))
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800">
+          {maxRows === 0 ? (
+            <tr>
+              <td colSpan={groups.length * 4} className="px-3 py-8 text-center text-zinc-400">
+                No predictions yet — builds up once there's enough candle history.
+              </td>
+            </tr>
+          ) : (
+            Array.from({ length: maxRows }).map((_, i) => (
+              <tr key={i} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
+                {rowsByGroup.map((rows, gi) => {
+                  const r = rows[i]
+                  const pending = r && r.actual == null
+                  return (
+                    <Fragment key={gi}>
+                      <td className={cls('px-3 py-2 font-mono text-zinc-500', gi > 0 && 'border-l border-zinc-100 dark:border-zinc-800')}>
+                        {r ? fmtTime(r.time) : ''}
+                      </td>
+                      <td className="px-3 py-2 font-mono">
+                        {r ? (pending ? <span className="italic text-zinc-400">pending</span> : `₹${r.actual?.toFixed(2)}`) : ''}
+                      </td>
+                      <td className="px-3 py-2 font-mono">{r ? `₹${r.predicted.toFixed(2)}` : ''}</td>
+                      <td className="px-3 py-2 font-mono font-semibold">
+                        {r ? (
+                          pending
+                            ? <span className="italic text-zinc-400">—</span>
+                            : <span className={accuracyColor(r.accuracyPct as number)}>{(r.accuracyPct as number).toFixed(2)}%</span>
+                        ) : ''}
+                      </td>
+                    </Fragment>
+                  )
+                })}
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// Live (polling) trail table -- "today", or the week/month tables.
+function LiveAccuracyTable({ title, groups, contract, defaultOpen, footnote }: {
+  title: string
+  groups: { label: string; period: PredictionPeriod }[]
+  contract: McxContract
+  defaultOpen: boolean
+  footnote: string
+}) {
+  const [byPeriod, setByPeriod] = useState<Partial<Record<PredictionPeriod, NgPrediction>>>({})
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
 
   useEffect(() => {
     const t = localStorage.getItem('mts_token') ?? ''
     if (!t) return
     function load() {
-      for (const row of ACCURACY_ROWS) {
-        getNgPrediction(t, contract, row.period)
-          .then(p => setByPeriod(prev => ({ ...prev, [row.period]: p })))
-          .catch(() => {})
-      }
+      Promise.allSettled(
+        groups.map(g =>
+          getNgPrediction(t, contract, g.period).then(p => setByPeriod(prev => ({ ...prev, [g.period]: p }))),
+        ),
+      ).then(() => setLastUpdated(new Date()))
     }
     load()
-    const id = setInterval(load, 120_000)
+    const id = setInterval(load, 60_000)
     return () => clearInterval(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contract])
 
+  const rowsByGroup = groups.map(g => buildAccuracyRows(byPeriod[g.period]))
+  const notes = groups.map(g => byPeriod[g.period]?.note).filter(Boolean)
+
   return (
-    <div className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-      <p className="border-b border-zinc-100 px-4 py-3 text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:border-zinc-800">
-        AI Prediction Accuracy &middot; Minutes / Hours / Days / Weeks
-      </p>
-      <div className="overflow-x-auto">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="border-b border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/60">
-              {['Timeframe', 'Time', 'Actual Price', 'Predicted Price', 'Accuracy'].map(h => (
-                <th key={h} className="px-3 py-2 text-left font-medium text-zinc-500">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800">
-            {ACCURACY_ROWS.map(row => {
-              const p = byPeriod[row.period]
-              const resolved = p?.history.filter(h => h.actual_close != null)
-              const latest = resolved && resolved.length > 0 ? resolved[resolved.length - 1] : null
-              return (
-                <tr key={row.period} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
-                  <td className="px-3 py-2.5 font-semibold text-zinc-900 dark:text-zinc-50">{row.label}</td>
-                  <td className="px-3 py-2.5 font-mono text-zinc-500">{latest ? fmtPredictionTime(latest.time) : '—'}</td>
-                  <td className="px-3 py-2.5 font-mono">{latest?.actual_close != null ? `₹${latest.actual_close.toFixed(2)}` : '—'}</td>
-                  <td className="px-3 py-2.5 font-mono">{latest ? `₹${latest.predicted_close.toFixed(2)}` : '—'}</td>
-                  <td className="px-3 py-2.5 font-mono font-semibold">
-                    {p && p.accuracy.sample_size > 0 ? (
-                      <span className={p.accuracy.hit_rate_pct != null && p.accuracy.hit_rate_pct >= 50 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}>
-                        {p.accuracy.hit_rate_pct?.toFixed(1)}%
-                      </span>
-                    ) : '—'}
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
+    <CollapsibleCard
+      title={title}
+      defaultOpen={defaultOpen}
+      subtitle={<LiveDot label={lastUpdated ? `Live · updated ${lastUpdated.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })}` : 'Loading…'} />}
+    >
+      {notes.length > 0 && (
+        <p className="px-4 py-3 text-xs text-amber-700 dark:text-amber-400">{notes[0]}</p>
+      )}
+      <AccuracyTrailGrid groups={groups} rowsByGroup={rowsByGroup} />
+      <p className="border-t border-zinc-100 px-4 py-2.5 text-[11px] text-zinc-400 dark:border-zinc-800">{footnote}</p>
+    </CollapsibleCard>
+  )
+}
+
+// Frozen (fetch-once) trail table for a past IST calendar date -- lazily
+// loaded only once the archive entry is expanded, since there's no point
+// fetching every past day's data up front for a row that stays collapsed.
+function ArchivedAccuracyTable({ dateStr, contract }: { dateStr: string; contract: McxContract }) {
+  const [byPeriod, setByPeriod] = useState<Partial<Record<PredictionPeriod, AccuracyData>>>({})
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    const t = localStorage.getItem('mts_token') ?? ''
+    if (!t) return
+    Promise.allSettled(
+      ACCURACY_GROUPS.map(g =>
+        getNgPredictionArchive(t, contract, g.period, dateStr).then(a =>
+          setByPeriod(prev => ({ ...prev, [g.period]: { history: a.history, predicted: [] } })),
+        ),
+      ),
+    ).then(() => setLoaded(true))
+  }, [dateStr, contract])
+
+  const rowsByGroup = ACCURACY_GROUPS.map(g => buildAccuracyRows(byPeriod[g.period]))
+
+  if (!loaded) return <div className="h-24 animate-pulse bg-zinc-50 dark:bg-zinc-800/40" />
+  return <AccuracyTrailGrid groups={ACCURACY_GROUPS} rowsByGroup={rowsByGroup} />
+}
+
+function PredictionArchiveBrowser({ contract }: { contract: McxContract }) {
+  const pastDays = Array.from({ length: 6 }, (_, i) => istDateStr(i + 1))
+  return (
+    <div className="space-y-2">
+      {pastDays.map(dateStr => (
+        <CollapsibleCard key={dateStr} title={`AI Prediction Accuracy Trail — ${fmtDateStrDisplay(dateStr)}`} defaultOpen={false}>
+          <ArchivedAccuracyTable dateStr={dateStr} contract={contract} />
+        </CollapsibleCard>
+      ))}
+    </div>
+  )
+}
+
+function PredictionAccuracyTable({ contract }: { contract: McxContract }) {
+  const todayStr = istDateStr(0)
+  return (
+    <div className="space-y-3">
+      <LiveAccuracyTable
+        title={`AI Prediction Accuracy Trail — ${fmtDateStrDisplay(todayStr)}`}
+        groups={ACCURACY_GROUPS}
+        contract={contract}
+        defaultOpen
+        footnote={`Time and Predicted Price are prefilled through the rest of the day as soon as they're generated; Actual Price and Accuracy show "pending" until real time reaches that row, then fill in automatically. Each column shows its own trail at that granularity (most recent ${ACCURACY_MAX_PAST_ROWS} resolved rows, plus every pending one) — rows aren't time-aligned across columns since each period ticks at its own cadence.`}
+      />
+      <LiveAccuracyTable
+        title="AI Prediction Accuracy Trail — Weekly"
+        groups={WEEK_GROUP}
+        contract={contract}
+        defaultOpen={false}
+        footnote="One row per ISO week (Monday start), prefilled up to 8 weeks ahead. MCX Natural Gas is a monthly-expiring futures contract, so the current front-month instrument only has a few months of its own price history to learn from."
+      />
+      <LiveAccuracyTable
+        title="AI Prediction Accuracy Trail — Monthly"
+        groups={MONTH_GROUP}
+        contract={contract}
+        defaultOpen={false}
+        footnote="One row per calendar month, prefilled up to 8 months ahead. Same front-month-contract history limitation as the weekly table — treat this as a rough directional read, not a firm forecast."
+      />
+      <div>
+        <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Previous Days (Archive)</p>
+        <PredictionArchiveBrowser contract={contract} />
       </div>
-      <p className="border-t border-zinc-100 px-4 py-2.5 text-[11px] text-zinc-400 dark:border-zinc-800">
-        One representative period per bucket (15m/1h/1D/1W). Accuracy is the rolling % of past predictions whose
-        actual close landed inside the predicted band; builds up as time passes each predicted candle.
-      </p>
     </div>
   )
 }
@@ -424,6 +655,44 @@ const VERDICT_STYLE: Record<NgAiScore['verdict'], string> = {
   TRADE: 'bg-emerald-600 text-white',
   WATCHLIST: 'bg-amber-500 text-white',
   NO_TRADE: 'bg-zinc-400 text-white',
+}
+
+// Prominent summary shown at the top of the page (above the tabs) so
+// overall AI strength/confidence is visible no matter which tab is open --
+// condenses the same score already driving the AI Signal tab / Buy-Sell
+// Scale into a single always-visible banner.
+function AiStrengthBanner({ score, buyScore, sellScore }: {
+  score: NgAiScore | null
+  buyScore: NgAiScore | null
+  sellScore: NgAiScore | null
+}) {
+  if (!score) {
+    return <div className="mb-6 h-16 animate-pulse rounded-xl bg-zinc-100 dark:bg-zinc-800" />
+  }
+  const buyPct = buyScore?.score_pct ?? 0
+  const sellPct = sellScore?.score_pct ?? 0
+  const diff = buyPct - sellPct
+  const lean = diff > 8 ? 'BUY' : diff < -8 ? 'SELL' : 'BALANCED'
+  const leanStyle = lean === 'BUY' ? 'bg-emerald-600 text-white' : lean === 'SELL' ? 'bg-red-500 text-white' : 'bg-zinc-400 text-white'
+
+  return (
+    <div className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-indigo-100 bg-gradient-to-r from-indigo-50 to-white px-5 py-3.5 dark:border-indigo-900 dark:from-indigo-950/30 dark:to-zinc-900">
+      <div className="flex items-center gap-3">
+        <span className="text-xs font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">AI Strength</span>
+        <span className="text-2xl font-bold font-mono text-zinc-900 dark:text-zinc-50">{score.score_pct.toFixed(1)}</span>
+        <span className={cls('rounded-full px-2.5 py-0.5 text-[10px] font-bold', VERDICT_STYLE[score.verdict])}>{score.verdict}</span>
+      </div>
+      <div className="flex items-center gap-2 text-xs">
+        <span className="font-semibold uppercase tracking-wider text-zinc-400">Confidence</span>
+        <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">BUY {buyPct.toFixed(1)}</span>
+        <span className="text-zinc-300 dark:text-zinc-600">/</span>
+        <span className="font-mono font-bold text-red-500 dark:text-red-400">SELL {sellPct.toFixed(1)}</span>
+        <span className={cls('ml-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold', leanStyle)}>
+          {lean === 'BALANCED' ? 'BALANCED' : `LEANING ${lean}`}
+        </span>
+      </div>
+    </div>
+  )
 }
 
 function ScoreGauge({ score, verdict }: { score: number; verdict: NgAiScore['verdict'] }) {
@@ -1093,6 +1362,8 @@ export default function McxView() {
             <a href="/broker" className="font-semibold underline">Go to Broker settings →</a>
           </div>
         )}
+
+        {zerodhaConnected && <AiStrengthBanner score={score} buyScore={buyScore} sellScore={sellScore} />}
 
         <div className="mb-6 flex items-center gap-1">
           {TABS.map(t => (

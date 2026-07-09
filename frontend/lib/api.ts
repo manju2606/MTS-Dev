@@ -1359,10 +1359,15 @@ export type NgPrediction = {
   note?: string
 }
 
+// "1Wk"/"1Mo" are calendar-bucketed periods only valid for prediction calls
+// (ISO week / calendar month) -- not part of ChartPeriod since the candle
+// chart itself has no such display period, so this widens beyond it.
+export type PredictionPeriod = ChartPeriod | '1Wk' | '1Mo'
+
 export async function getNgPrediction(
   token: string,
   contract: McxContract = 'NG',
-  period: ChartPeriod = '15m',
+  period: PredictionPeriod = '15m',
 ): Promise<NgPrediction> {
   const res = await fetch(
     `${BASE}/api/v1/mcx/ng/predict?period=${period}&contract=${contract}`,
@@ -1371,6 +1376,30 @@ export async function getNgPrediction(
   if (!res.ok) {
     const b = await res.json().catch(() => ({}))
     throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch MCX prediction')
+  }
+  return res.json()
+}
+
+export type NgPredictionArchive = {
+  contract: string
+  period: string
+  date: string
+  history: NgPredictionHistoryPoint[]
+}
+
+export async function getNgPredictionArchive(
+  token: string,
+  contract: McxContract,
+  period: PredictionPeriod,
+  date: string,
+): Promise<NgPredictionArchive> {
+  const res = await fetch(
+    `${BASE}/api/v1/mcx/ng/predict-archive?period=${period}&contract=${contract}&date=${date}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch MCX prediction archive')
   }
   return res.json()
 }

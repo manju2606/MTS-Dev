@@ -17,6 +17,7 @@ from __future__ import annotations
 import time
 from datetime import date, datetime, timedelta
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 import structlog
 
@@ -25,6 +26,19 @@ from app.infra.brokers import session_store
 from app.infra.brokers.zerodha import ZerodhaBroker
 
 log = structlog.get_logger()
+
+_IST = ZoneInfo("Asia/Kolkata")
+
+
+def ist_now() -> datetime:
+    """Current time in IST. Kite's historical_data() date-range params are
+    plain "YYYY-MM-DD HH:MM:SS" strings interpreted as exchange-local (IST)
+    time -- building them from naive datetime.now() silently uses whatever
+    timezone the host/container's system clock happens to be in (typically
+    UTC in Docker), truncating the query window by exactly the IST offset
+    and making "recent" candle fetches miss the last ~5.5 hours."""
+    return datetime.now(_IST)
+
 
 # Public contract code (used in URLs/UI) -> Kite instrument "name" field.
 # NGMINI's exact Kite name is best-effort (MCX's own convention is
@@ -174,7 +188,7 @@ async def get_history(user_id: str, period: str, contract: str = "NG") -> list[d
     c_info = await resolve_contract(broker, contract)
     interval, days = _HISTORY_PERIOD_MAP.get(period, ("day", 365))
 
-    to_dt = datetime.now()
+    to_dt = ist_now()
     from_dt = to_dt - timedelta(days=days)
     candles = await broker.get_historical_candles(
         c_info["instrument_token"],
@@ -213,7 +227,7 @@ async def get_range_stats(user_id: str, contract: str = "NG") -> dict:
     c_info = await resolve_contract(broker, contract)
     quote = await get_quote(user_id, contract)
 
-    to_dt = datetime.now()
+    to_dt = ist_now()
     from_dt = to_dt - timedelta(days=40)
     candles = await broker.get_historical_candles(
         c_info["instrument_token"],

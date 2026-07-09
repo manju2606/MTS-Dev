@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from app.infra.mcx import ng_indicators as ind
-from app.services.mcx_service import get_zerodha_broker
+from app.services.mcx_service import get_zerodha_broker, ist_now
 
 _INTERVAL_MAP = {
     "1m": "minute",
@@ -30,7 +30,7 @@ TIMEFRAMES = ("1m", "5m", "15m", "1h", "1D", "1W")
 
 async def _fetch_candles(broker, instrument_token: int, timeframe: str) -> list[dict]:
     days = _LOOKBACK_DAYS[timeframe]
-    to_dt = datetime.now()
+    to_dt = ist_now()
     from_dt = to_dt - timedelta(days=days)
     candles = await broker.get_historical_candles(
         instrument_token,

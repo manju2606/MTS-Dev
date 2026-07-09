@@ -52,6 +52,19 @@ const DEFAULT_VISIBLE_BARS: Partial<Record<ChartPeriod, number>> = {
   '1m': 120, '5m': 100, '15m': 80, '30m': 60, '45m': 60, '1h': 48,
 }
 
+// lightweight-charts assumes UTC for UTCTimestamp values -- these force IST
+// for the crosshair tooltip and the bottom axis tick marks (India-only app).
+function formatIstTooltipTime(time: number): string {
+  return new Date(time * 1000).toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  })
+}
+function formatIstTickTime(time: number): string {
+  return new Date(time * 1000).toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit',
+  })
+}
+
 export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLevels, currentPrice, exchangeLabel, refLines, prediction }: PriceChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
@@ -65,23 +78,31 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
   const predictionKey = JSON.stringify(prediction ?? [])
 
   const positionBall = useCallback((price: number | null | undefined) => {
-    const series = candleSeriesRef.current
-    const chart = chartRef.current
-    const ball = ballRef.current
-    const bar = lastBarRef.current
-    if (!series || !chart || !ball || !bar || price == null) {
-      if (ball) ball.style.opacity = '0'
-      return
-    }
-    const y = series.priceToCoordinate(price)
-    const x = chart.timeScale().timeToCoordinate(bar.time)
-    if (y == null || x == null) {
-      ball.style.opacity = '0'
-      return
-    }
-    ball.style.left = `${x}px`
-    ball.style.top = `${y}px`
-    ball.style.opacity = '1'
+    // Deferred to the next animation frame: reading priceToCoordinate/
+    // timeToCoordinate synchronously right after a .update()/applyOptions()
+    // call (candle live-tick, LTP price line) can return coordinates from
+    // before the chart's internal autoscale recompute runs, so the ball
+    // would land off the yellow LTP line until some later event nudged it
+    // back. Waiting a frame lets the library settle first.
+    requestAnimationFrame(() => {
+      const series = candleSeriesRef.current
+      const chart = chartRef.current
+      const ball = ballRef.current
+      const bar = lastBarRef.current
+      if (!series || !chart || !ball || !bar || price == null) {
+        if (ball) ball.style.opacity = '0'
+        return
+      }
+      const y = series.priceToCoordinate(price)
+      const x = chart.timeScale().timeToCoordinate(bar.time)
+      if (y == null || x == null) {
+        ball.style.opacity = '0'
+        return
+      }
+      ball.style.left = `${x}px`
+      ball.style.top = `${y}px`
+      ball.style.opacity = '1'
+    })
   }, [])
 
   useEffect(() => {
@@ -132,11 +153,22 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
           crosshair: { mode: CrosshairMode.Normal },
           leftPriceScale: { visible: true, borderVisible: false },
           rightPriceScale: { visible: false },
+          // lightweight-charts renders UTCTimestamp values in UTC by
+          // default -- this is an India-only market, so both the crosshair
+          // label and the axis tick marks are forced to IST here, otherwise
+          // they'd silently show a time ~5.5h off from the real IST candle
+          // time (e.g. an afternoon-looking label at 20:23 IST).
+          localization: { timeFormatter: formatIstTooltipTime },
           // rightOffset leaves empty space past the last plotted point (real
           // candle, or the last predicted point when a prediction is shown)
           // so the AI prediction line has visible room to breathe on the
           // right instead of hugging the edge of the chart.
-          timeScale: { borderVisible: false, timeVisible: true, rightOffset: 8 },
+          timeScale: {
+            borderVisible: false,
+            timeVisible: true,
+            rightOffset: 8,
+            tickMarkFormatter: formatIstTickTime,
+          },
           width: containerRef.current.clientWidth,
           height: 300,
         })
@@ -283,12 +315,32 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
         }
 
         const lastRaw = data[data.length - 1]
-        lastBarRef.current = lastRaw
-          ? { time: lastRaw.time as UTCTimestamp, open: lastRaw.open, high: lastRaw.high, low: lastRaw.low, close: lastRaw.close }
-          : null
+        const bucket = PERIOD_BUCKET_SECONDS[period] ?? 86400
+        let anchorTime: UTCTimestamp | null = null
+        if (lastRaw) {
+          // Kite's historical_data() only returns *closed* candles -- the
+          // still-forming one (e.g. the current hour, before it's closed)
+          // isn't included. Without this, the periodic history refetch (see
+          // NgChart) kept resetting the ball/candle back to the last closed
+          // bar every ~30s, undoing the live-tick rollover in between and
+          // leaving the ball stuck well behind wall-clock time. Synthesize
+          // the current bucket here so it tracks "now", not "last close".
+          const nowSec = Math.floor(Date.now() / 1000)
+          const bucketsElapsed = Math.floor((nowSec - lastRaw.time) / bucket)
+          if (bucketsElapsed > 0) {
+            anchorTime = (lastRaw.time + bucketsElapsed * bucket) as UTCTimestamp
+            lastBarRef.current = { time: anchorTime, open: lastRaw.close, high: lastRaw.close, low: lastRaw.close, close: lastRaw.close }
+            candleSeries.update(lastBarRef.current)
+          } else {
+            anchorTime = lastRaw.time as UTCTimestamp
+            lastBarRef.current = { time: anchorTime, open: lastRaw.open, high: lastRaw.high, low: lastRaw.low, close: lastRaw.close }
+          }
+        } else {
+          lastBarRef.current = null
+        }
 
-        // Centre the last real candle in the viewport -- equal history on
-        // the left, equal reserved space (mostly the AI prediction) on the
+        // Centre the current bucket in the viewport -- equal history on the
+        // left, equal reserved space (mostly the AI prediction) on the
         // right, rather than history dominating and prediction squeezed
         // into a sliver at the edge. Uses actual timestamps, not logical
         // bar indices: the prediction series adds its own time points (many
@@ -298,12 +350,11 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
         // where the LTP ball ended up, since it's positioned by looking up
         // its bar's time on that same (miscounted) axis.
         const visibleBars = DEFAULT_VISIBLE_BARS[period]
-        if (visibleBars && lastRaw) {
-          const bucket = PERIOD_BUCKET_SECONDS[period] ?? 86400
+        if (visibleBars && anchorTime != null) {
           const span = visibleBars * bucket
           chart.timeScale().setVisibleRange({
-            from: (lastRaw.time - span) as UTCTimestamp,
-            to: (lastRaw.time + span) as UTCTimestamp,
+            from: (anchorTime - span) as UTCTimestamp,
+            to: (anchorTime + span) as UTCTimestamp,
           })
         } else {
           chart.timeScale().fitContent()

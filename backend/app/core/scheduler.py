@@ -322,6 +322,85 @@ async def _run_mcx_trend_check() -> None:
         log.error("scheduler.mcx_trend.error", error=str(exc))
 
 
+_MCX_PREDICTION_PERIODS = ("1m", "15m", "30m", "1h")
+_MCX_CALENDAR_PREDICTION_PERIODS = ("1Wk", "1Mo")
+
+
+async def _run_mcx_prediction_check() -> None:
+    """Every 5 min, 09:00-23:30 IST weekdays: generate/resolve NG/NGMini
+    price predictions for every connected user across the Minutes/15 Mins/
+    30 Mins/Hours accuracy-table columns (see mcx_prediction_service.py).
+    5 min (not 15) because the "Minutes" (1m) and "30 Mins" columns need
+    tighter cadence to keep a continuous trail -- each generation only
+    forecasts HORIZON candles ahead (6 minutes for the 1m column), so a
+    longer gap between runs would leave holes in that column's history.
+
+    Runs independently of which frontend tab (if any) is open -- prediction
+    generation used to be purely UI-triggered (a side effect of the GET
+    /predict call), so the accuracy table would silently stop advancing for
+    hours whenever nobody happened to have that tab open."""
+    try:
+        from app.infra.brokers import session_store
+        from app.infra.db.repositories.mcx_prediction_repo import McxPredictionRepository
+        from app.services.mcx_prediction_service import get_prediction
+
+        repo = McxPredictionRepository()
+        user_ids = await session_store.list_connected_user_ids()
+        checked = 0
+        for user_id in user_ids:
+            for contract in ("NG", "NGMINI"):
+                for period in _MCX_PREDICTION_PERIODS:
+                    try:
+                        await get_prediction(user_id, contract, period, repo)
+                        checked += 1
+                    except Exception as exc:
+                        log.warning(
+                            "scheduler.mcx_prediction.contract_error",
+                            user_id=user_id,
+                            contract=contract,
+                            period=period,
+                            error=str(exc),
+                        )
+                    await asyncio.sleep(0)
+        log.info("scheduler.mcx_prediction.done", users=len(user_ids), checked=checked)
+    except Exception as exc:
+        log.error("scheduler.mcx_prediction.error", error=str(exc))
+
+
+async def _run_mcx_calendar_prediction_check() -> None:
+    """Once daily: generate/resolve NG/NGMini week and month predictions
+    (see mcx_prediction_service.py's CALENDAR_PERIODS). Kept separate from
+    the 5-min intraday job above -- resampling 5 years of daily candles into
+    weekly/monthly bars doesn't need minute-level freshness, and re-fetching
+    that much history every 5 min would just waste Kite API calls."""
+    try:
+        from app.infra.brokers import session_store
+        from app.infra.db.repositories.mcx_prediction_repo import McxPredictionRepository
+        from app.services.mcx_prediction_service import get_prediction
+
+        repo = McxPredictionRepository()
+        user_ids = await session_store.list_connected_user_ids()
+        checked = 0
+        for user_id in user_ids:
+            for contract in ("NG", "NGMINI"):
+                for period in _MCX_CALENDAR_PREDICTION_PERIODS:
+                    try:
+                        await get_prediction(user_id, contract, period, repo)
+                        checked += 1
+                    except Exception as exc:
+                        log.warning(
+                            "scheduler.mcx_calendar_prediction.contract_error",
+                            user_id=user_id,
+                            contract=contract,
+                            period=period,
+                            error=str(exc),
+                        )
+                    await asyncio.sleep(0)
+        log.info("scheduler.mcx_calendar_prediction.done", users=len(user_ids), checked=checked)
+    except Exception as exc:
+        log.error("scheduler.mcx_calendar_prediction.error", error=str(exc))
+
+
 async def _run_position_check() -> None:
     """Delegate to the position monitor (import kept lazy to avoid circular imports)."""
     from app.infra.monitoring.position_monitor import run_position_check
@@ -701,6 +780,34 @@ def start_scheduler() -> None:
         name="MCX — Trend Change Check + Alerts",
         max_instances=1,
         misfire_grace_time=300,
+    )
+
+    # MCX prediction generation/resolution every 5 min, 09:00-23:45 IST
+    # weekdays -- keeps the accuracy table fresh regardless of frontend tab
+    # state. Tighter cadence than the trend check (15 min) since the
+    # Minutes/30-Mins accuracy columns need it to avoid gaps in their trail.
+    _scheduler.add_job(
+        _run_mcx_prediction_check,
+        CronTrigger(
+            day_of_week="mon-fri", hour="9-23", minute="*/5", second=10,
+            timezone="Asia/Kolkata",
+        ),
+        id="mcx_prediction_check",
+        name="MCX — Prediction Generation + Accuracy Resolution",
+        max_instances=1,
+        misfire_grace_time=180,
+    )
+
+    # MCX week/month prediction generation once daily at market open --
+    # separate, much less frequent job than the intraday one above (see
+    # _run_mcx_calendar_prediction_check's own docstring for why).
+    _scheduler.add_job(
+        _run_mcx_calendar_prediction_check,
+        CronTrigger(day_of_week="mon-fri", hour=9, minute=5, second=0, timezone="Asia/Kolkata"),
+        id="mcx_calendar_prediction_check",
+        name="MCX — Week/Month Prediction Generation",
+        max_instances=1,
+        misfire_grace_time=3600,
     )
 
     _scheduler.start()

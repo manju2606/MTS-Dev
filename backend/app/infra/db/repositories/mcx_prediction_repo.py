@@ -100,6 +100,22 @@ class McxPredictionRepository:
         docs.reverse()
         return docs
 
+    async def get_by_date_range(
+        self, user_id: str, contract: str, period: str, start_epoch: int, end_epoch: int
+    ) -> list[dict]:
+        """Every prediction (resolved or not) whose predicted_time falls in
+        [start_epoch, end_epoch] -- the archive view for a specific calendar
+        day. No separate snapshot/archival job needed: predictions are never
+        deleted, so this collection already *is* the permanent record."""
+        query = {
+            "user_id": user_id,
+            "contract": contract.upper(),
+            "period": period,
+            "predicted_time": {"$gte": start_epoch, "$lte": end_epoch},
+        }
+        cursor = self._col.find(query, {"_id": 0}).sort("predicted_time", 1)
+        return [d async for d in cursor]
+
     async def get_accuracy_stats(
         self, user_id: str, contract: str, period: str, limit: int = 100
     ) -> dict:

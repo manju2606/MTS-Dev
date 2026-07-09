@@ -106,6 +106,26 @@ async def ng_predict(
         ) from exc
 
 
+@router.get("/ng/predict-archive")
+async def ng_predict_archive(
+    current_user: CurrentUser, period: str, date: str, contract: McxContract = "NG"
+) -> dict:
+    """Every prediction made for a past IST calendar date ("YYYY-MM-DD") --
+    powers each collapsed day in the accuracy table's archive. Predictions
+    are never deleted, so this is just a date-range query, not a separate
+    snapshot (see mcx_prediction_service.get_archived_day)."""
+    from app.infra.db.repositories.mcx_prediction_repo import McxPredictionRepository
+    from app.services.mcx_prediction_service import get_archived_day
+
+    try:
+        repo = McxPredictionRepository()
+        return await get_archived_day(str(current_user.id), contract, period, date, repo)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+
+
 @router.get("/ng/range-stats")
 async def ng_range_stats(current_user: CurrentUser, contract: McxContract = "NG") -> dict:
     """Day/week/month high-low for the front-month contract -- powers the

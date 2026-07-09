@@ -15,11 +15,15 @@ predicted path as a visual aid, not a trading signal on its own.
 
 from __future__ import annotations
 
-from datetime import datetime
+import time as _time
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from app.infra.db.repositories.mcx_prediction_repo import McxPredictionRepository
 from app.infra.mcx import ng_indicators as ind
-from app.services.mcx_service import get_history
+from app.services.mcx_service import get_history, get_quote
+
+_IST = ZoneInfo("Asia/Kolkata")
 
 # Real candle-bucket width in seconds per period -- mirrors
 # mcx_service._HISTORY_PERIOD_MAP's actual Kite interval choice (e.g. "30m"
@@ -40,20 +44,197 @@ PERIOD_BUCKET_SECONDS: dict[str, int] = {
     "1Y": 86400,
 }
 
-HORIZON = 6  # number of future candles to project, at the chart's own bucket size
+# All intraday periods (1m/5m/15m/30m/45m/1h) share ONE trend/volatility
+# read, calibrated from this reference timeframe, instead of each computing
+# its own independent EMA slope from its own candles. Without this, the
+# Minutes/15-Mins/1-Hr columns could -- and did -- predict wildly different
+# prices for the *same* real timestamp (e.g. 11:00 PM), since a 1-minute
+# EMA20 slope reflects different noise than a 1-hour one. Deliberately NOT
+# applied to 1Wk/1Mo -- forcing a 15-minute-derived rate onto a week/month
+# horizon would extrapolate short-term noise absurdly far; those keep their
+# own appropriately-scaled slope.
+REFERENCE_PERIOD = "15m"
+
+# "1Wk"/"1Mo" are calendar-bucketed (ISO week / calendar month), not fixed-
+# second buckets like everything else -- Kite has no native weekly/monthly
+# candle interval, so these are resampled here from daily candles, the same
+# way mcx_trend_service.py resamples for its own "1W" trend timeframe.
+CALENDAR_PERIODS = ("1Wk", "1Mo")
+CALENDAR_HORIZON = 8  # weeks/months ahead to prefill -- "end of day" doesn't
+# apply at this granularity, so this is just a sensible fixed lookahead.
+
+# MCX's commodity session runs well past NSE hours -- there's no dedicated
+# hours module for it in this codebase (NSE/BSE has one, app/infra/market/
+# hours.py, 09:15-15:30 IST), only this same approximation already used by
+# the scheduler's MCX cron jobs (app/core/scheduler.py). No holiday-calendar
+# handling here either, matching that existing approximation.
+MARKET_CLOSE_HOUR = 23
+MARKET_CLOSE_MINUTE = 45
+
 MIN_CANDLES = 25
+# MCX Natural Gas trades as a monthly-expiring futures contract -- the
+# current front-month instrument didn't exist a year ago (it's only listed
+# a few months before its own expiry), so there is no 5-year continuous
+# history to resample, unlike a stock or index. A real multi-year series
+# would need splicing candles across every past contract's roll, which this
+# app doesn't do. MIN_CANDLES's 25-bar bar is unreachable for "1Mo" as a
+# result (~7 months of real front-month history at most) -- this lower
+# threshold accepts a rougher read from whatever's actually available
+# rather than never showing a week/month prediction at all.
+MIN_CANDLES_CALENDAR = 6
+# Cap on how many future buckets to prefill toward end-of-day -- unbounded
+# would mean ~1440 rows/day for the "Minutes" (1m) column alone, which is
+# both a lot of Mongo writes per call and useless to actually display.
+# 300 comfortably covers a full trading day for 15m/30m/1h (<=96 buckets/day
+# each); 1m/5m only get prefilled a few hours ahead, not the literal rest of
+# the day, as a deliberate trade-off against runaway storage/compute.
+MAX_HORIZON = 300
+
+
+def _buckets_until_market_close(last_time: int, bucket: int) -> int:
+    """How many more `bucket`-second candles remain before MCX's own session
+    close (not literal midnight) on the day `last_time` falls on -- i.e.
+    "prefill predictions for the rest of the trading day, not past it",
+    capped at MAX_HORIZON. Buckets past market close would never resolve
+    anyway (no candle will ever exist there), so this both matches the
+    market's actual hours and avoids generating dead, permanently-pending
+    rows for the overnight gap."""
+    last_dt = datetime.fromtimestamp(last_time, tz=_IST)
+    market_close = last_dt.replace(
+        hour=MARKET_CLOSE_HOUR, minute=MARKET_CLOSE_MINUTE, second=0, microsecond=0
+    )
+    remaining_seconds = int((market_close - last_dt).total_seconds())
+    if remaining_seconds <= 0:
+        return 0
+    return min(remaining_seconds // bucket, MAX_HORIZON)
+
+
+def _calendar_key(epoch: int, kind: str) -> tuple[int, int]:
+    """(year, ISO-week) for "1Wk", (year, month) for "1Mo", from an epoch
+    second interpreted in IST."""
+    dt = datetime.fromtimestamp(epoch, tz=_IST)
+    return dt.isocalendar()[:2] if kind == "1Wk" else (dt.year, dt.month)
+
+
+def _calendar_key_start_epoch(key: tuple[int, int], kind: str) -> int:
+    """Canonical bucket-start epoch (00:00 IST on the Monday / 1st) for a
+    (year, week-or-month) key -- used for BOTH resampled real candles and
+    generated future predictions, so resolve_pending's exact-time matching
+    lines up between them."""
+    d = date.fromisocalendar(key[0], key[1], 1) if kind == "1Wk" else date(key[0], key[1], 1)
+    return int(datetime(d.year, d.month, d.day, tzinfo=_IST).timestamp())
+
+
+def _next_calendar_key(key: tuple[int, int], kind: str) -> tuple[int, int]:
+    if kind == "1Wk":
+        d = date.fromisocalendar(key[0], key[1], 1) + timedelta(days=7)
+        return d.isocalendar()[:2]
+    year, month = key
+    return (year, month + 1) if month < 12 else (year + 1, 1)
+
+
+def _resample_calendar(daily_candles: list[dict], kind: str) -> list[dict]:
+    """Roll up daily candles (mcx_service.get_history()'s {time, open, high,
+    low, close, volume} shape) into ISO-week or calendar-month OHLC bars."""
+    buckets: dict[tuple[int, int], list[dict]] = {}
+    for c in daily_candles:
+        buckets.setdefault(_calendar_key(c["time"], kind), []).append(c)
+    out = []
+    for key in sorted(buckets):
+        bucket = buckets[key]
+        out.append(
+            {
+                "time": _calendar_key_start_epoch(key, kind),
+                "open": bucket[0]["open"],
+                "high": max(b["high"] for b in bucket),
+                "low": min(b["low"] for b in bucket),
+                "close": bucket[-1]["close"],
+                "volume": sum(b.get("volume", 0) for b in bucket),
+            }
+        )
+    return out
+
+
+def _slope_momentum_atr(candles: list[dict]) -> tuple[float, float, float, float]:
+    """(slope-per-bucket, momentum, atr, conviction) from one candle set --
+    shared by the reference-rate calc and the calendar (week/month) branch."""
+    c = ind.closes(candles)
+    h = ind.highs(candles)
+    low = ind.lows(candles)
+    ema20 = ind.ema_series(c, 20)
+    slope = (ema20[-1] - ema20[-5]) / 5 if len(ema20) >= 5 else 0.0
+    momentum = ind.roc(c, 10) or 0.0
+    atr_val = ind.atr(h, low, c, 14) or (c[-1] * 0.005)
+    momentum_sign = 1 if momentum > 0 else (-1 if momentum < 0 else 0)
+    slope_sign = 1 if slope > 0 else (-1 if slope < 0 else 0)
+    conviction = 1.15 if (slope_sign != 0 and momentum_sign == slope_sign) else 0.65
+    return slope, momentum, atr_val, conviction
+
+
+async def _reference_rate(
+    user_id: str, contract: str, period: str, candles: list[dict]
+) -> tuple[float, float]:
+    """Continuous-time (per-second) drift + volatility, calibrated ONCE from
+    REFERENCE_PERIOD candles regardless of which intraday period was
+    requested -- reuses `candles` directly if the caller already fetched
+    exactly REFERENCE_PERIOD, otherwise fetches it separately. This is what
+    makes the predicted price for a given real timestamp identical across
+    the Minutes/15-Mins/30-Mins/Hours columns instead of each one computing
+    its own independent (and divergent) slope."""
+    if period == REFERENCE_PERIOD:
+        ref_candles = candles
+    else:
+        ref_candles = await get_history(user_id, REFERENCE_PERIOD, contract)
+    if len(ref_candles) < MIN_CANDLES:
+        return 0.0, 0.0
+    slope, _momentum, atr_val, conviction = _slope_momentum_atr(ref_candles)
+    ref_bucket = PERIOD_BUCKET_SECONDS[REFERENCE_PERIOD]
+    slope_per_second = (slope / ref_bucket) * conviction
+    atr_per_sqrt_second = atr_val / (ref_bucket**0.5)
+    return slope_per_second, atr_per_sqrt_second
+
+
+async def _live_anchor(
+    user_id: str, contract: str, fallback_price: float, fallback_time: int
+) -> tuple[float, int]:
+    """The live quote's LTP + current wall-clock time as the (price, time)
+    origin every intraday prediction is projected from -- falls back to the
+    last candle's own close/time if the live quote call fails for any
+    reason, so a broker hiccup degrades gracefully instead of erroring."""
+    try:
+        quote = await get_quote(user_id, contract)
+        return float(quote["last_price"]), int(_time.time())
+    except Exception:
+        return fallback_price, fallback_time
 
 
 async def get_prediction(
     user_id: str, contract: str, period: str, repo: McxPredictionRepository
 ) -> dict:
-    candles = await get_history(user_id, period, contract)
-    bucket = PERIOD_BUCKET_SECONDS.get(period, 86400)
+    is_calendar = period in CALENDAR_PERIODS
+    if is_calendar:
+        # "1Y" requests the longest lookback mcx_service._HISTORY_PERIOD_MAP
+        # offers (nominally 5 years) -- in practice capped by how long the
+        # current front-month contract has existed (see MIN_CANDLES_CALENDAR).
+        # Passing "1Wk"/"1Mo" straight through would silently fall back to
+        # that map's unmatched-key default of just 1 year instead.
+        raw_candles = await get_history(user_id, "1Y", contract)
+        candles = _resample_calendar(raw_candles, period)
+    else:
+        candles = await get_history(user_id, period, contract)
+    bucket = None if is_calendar else PERIOD_BUCKET_SECONDS.get(period, 86400)
+    min_candles = MIN_CANDLES_CALENDAR if is_calendar else MIN_CANDLES
 
     await repo.resolve_pending(user_id, contract, period, candles)
     accuracy = await repo.get_accuracy_stats(user_id, contract, period)
 
-    if len(candles) < MIN_CANDLES:
+    if len(candles) < min_candles:
+        note = f"Need at least {min_candles} candles for a forecast (have {len(candles)})."
+        if is_calendar:
+            note += (
+                " MCX Natural Gas is a monthly-expiring futures contract, so the current"
+                " front-month instrument only has a few months of its own history."
+            )
         return {
             "contract": contract.upper(),
             "period": period,
@@ -61,40 +242,54 @@ async def get_prediction(
             "history": _serialize_history(await repo.get_recent(user_id, contract, period)),
             "accuracy": accuracy,
             "method": "ema20-slope + roc-momentum + atr-cone (local heuristic, not TimesFM)",
-            "note": f"Need at least {MIN_CANDLES} candles for a forecast (have {len(candles)}).",
+            "note": note,
         }
 
-    c = ind.closes(candles)
-    h = ind.highs(candles)
-    low = ind.lows(candles)
-
-    ema20 = ind.ema_series(c, 20)
-    slope = (ema20[-1] - ema20[-5]) / 5 if len(ema20) >= 5 else 0.0
-    momentum = ind.roc(c, 10) or 0.0
-    atr_val = ind.atr(h, low, c, 14) or (c[-1] * 0.005)
-
-    momentum_sign = 1 if momentum > 0 else (-1 if momentum < 0 else 0)
-    slope_sign = 1 if slope > 0 else (-1 if slope < 0 else 0)
-    conviction = 1.15 if (slope_sign != 0 and momentum_sign == slope_sign) else 0.65
-
     last_time = int(candles[-1]["time"])
-    last_close = c[-1]
+    last_close = float(candles[-1]["close"])
 
     predicted = []
-    for i in range(1, HORIZON + 1):
-        proj_close = last_close + slope * i * conviction
-        band = atr_val * (i**0.5)
-        predicted.append(
-            {
-                "time": last_time + i * bucket,
-                "predicted_close": round(proj_close, 2),
-                "upper": round(proj_close + band, 2),
-                "lower": round(proj_close - band, 2),
-            }
+    if is_calendar:
+        slope, _momentum, atr_val, conviction = _slope_momentum_atr(candles)
+        key = _calendar_key(last_time, period)
+        for i in range(1, CALENDAR_HORIZON + 1):
+            key = _next_calendar_key(key, period)
+            proj_close = last_close + slope * i * conviction
+            band = atr_val * (i**0.5)
+            predicted.append(
+                {
+                    "time": _calendar_key_start_epoch(key, period),
+                    "predicted_close": round(proj_close, 2),
+                    "upper": round(proj_close + band, 2),
+                    "lower": round(proj_close - band, 2),
+                }
+            )
+    else:
+        slope_per_second, atr_per_sqrt_second = await _reference_rate(
+            user_id, contract, period, candles
         )
+        anchor_price, anchor_time = await _live_anchor(user_id, contract, last_close, last_time)
+        horizon = _buckets_until_market_close(last_time, bucket)  # type: ignore[arg-type]
+        for i in range(1, horizon + 1):
+            t = last_time + i * bucket  # type: ignore[operator]
+            seconds_ahead = t - anchor_time
+            proj_close = anchor_price + slope_per_second * seconds_ahead
+            band = atr_per_sqrt_second * (max(seconds_ahead, 0) ** 0.5)
+            predicted.append(
+                {
+                    "time": t,
+                    "predicted_close": round(proj_close, 2),
+                    "upper": round(proj_close + band, 2),
+                    "lower": round(proj_close - band, 2),
+                }
+            )
 
     await repo.save_predictions(user_id, contract, period, predicted)
-    history = _serialize_history(await repo.get_recent(user_id, contract, period))
+    # limit covers a day's worth of resolved+pending buckets for the finer
+    # periods plus some back-history -- MAX_HORIZON (forward) + 100 (back).
+    history = _serialize_history(
+        await repo.get_recent(user_id, contract, period, limit=MAX_HORIZON + 100)
+    )
 
     return {
         "contract": contract.upper(),
@@ -124,3 +319,23 @@ def _serialize_history(docs: list[dict]) -> list[dict]:
         }
         for d in docs
     ]
+
+
+async def get_archived_day(
+    user_id: str, contract: str, period: str, date_str: str, repo: McxPredictionRepository
+) -> dict:
+    """Every prediction made for a specific past IST calendar date
+    ("YYYY-MM-DD") -- the archive view behind each collapsed day in the
+    accuracy table. No separate snapshot job: predictions are permanently
+    kept in Mongo, so this just queries that same collection by date range."""
+    day = date.fromisoformat(date_str)
+    start_epoch = int(datetime(day.year, day.month, day.day, tzinfo=_IST).timestamp())
+    end_epoch = start_epoch + 86400 - 1
+
+    docs = await repo.get_by_date_range(user_id, contract, period, start_epoch, end_epoch)
+    return {
+        "contract": contract.upper(),
+        "period": period,
+        "date": date_str,
+        "history": _serialize_history(docs),
+    }

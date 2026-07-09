@@ -7,10 +7,10 @@ import { NavBar } from '@/components/nav-bar'
 import { PriceChart } from '@/components/price-chart'
 import type { AILevels, RefLine, PredictionPoint } from '@/components/price-chart'
 import {
-  getNgQuote, listNgTrades, placeNgTrade, closeNgTrade, getBrokerStatus, getNgAiScore, getNgHistory, getNgTrend, getNgRangeStats, getNgPrediction, getNgPredictionArchive,
+  getNgQuote, listNgTrades, placeNgTrade, closeNgTrade, getBrokerStatus, getNgAiScore, getNgHistory, getNgTrend, getNgRangeStats, getNgPrediction, getNgPredictionArchive, getNgDashboardHistory, getNgSignals, getNgGlobalSymbols,
 } from '@/lib/api'
 import type {
-  NgQuote, McxTrade, BrokerStatus, NgAiScore, HistoryBar, ChartPeriod, McxContract, NgTrendLadder, TrendTimeframe, NgRangeStats, NgPrediction, NgPredictionHistoryPoint, PredictionPeriod,
+  NgQuote, McxTrade, BrokerStatus, NgAiScore, HistoryBar, ChartPeriod, McxContract, NgTrendLadder, TrendTimeframe, NgRangeStats, NgPrediction, NgPredictionHistoryPoint, PredictionPeriod, NgDashboardSnapshot, NgSignalsResponse, NgGlobalSymbolRow,
 } from '@/lib/api'
 
 function cls(...args: (string | false | null | undefined)[]) { return args.filter(Boolean).join(' ') }
@@ -547,6 +547,225 @@ function NgWatchlist({ contract }: { contract: McxContract }) {
   )
 }
 
+type HistoryRow = {
+  key: string
+  last_price: number
+  open: number
+  high: number
+  low: number
+  volume: number
+  oi: number
+  buy_score_pct: number
+  sell_score_pct: number
+}
+
+// ISO-week (Monday) key in IST, from a "YYYY-MM-DD" date string.
+function istWeekKey(dateStr: string): string {
+  const d = new Date(`${dateStr}T00:00:00+05:30`)
+  const dow = (d.getUTCDay() + 6) % 7 // Mon=0 .. Sun=6
+  const monday = new Date(d)
+  monday.setUTCDate(d.getUTCDate() - dow)
+  return monday.toISOString().slice(0, 10)
+}
+
+function aggregateSnapshots(snapshots: NgDashboardSnapshot[], keyFn: (date: string) => string): HistoryRow[] {
+  const groups = new Map<string, NgDashboardSnapshot[]>()
+  for (const s of snapshots) {
+    const k = keyFn(s.date)
+    const arr = groups.get(k) ?? []
+    arr.push(s)
+    groups.set(k, arr)
+  }
+  return Array.from(groups.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, items]) => {
+      const sorted = [...items].sort((a, b) => a.date.localeCompare(b.date))
+      const last = sorted[sorted.length - 1]
+      return {
+        key,
+        last_price: last.last_price,
+        open: sorted[0].open,
+        high: Math.max(...sorted.map(s => s.high)),
+        low: Math.min(...sorted.map(s => s.low)),
+        volume: sorted.reduce((sum, s) => sum + s.volume, 0),
+        oi: last.oi,
+        buy_score_pct: last.buy_score_pct,
+        sell_score_pct: last.sell_score_pct,
+      }
+    })
+}
+
+function NgDashboardHistoryTable({ title, rows, keyLabel, defaultOpen }: {
+  title: string
+  rows: HistoryRow[]
+  keyLabel: string
+  defaultOpen: boolean
+}) {
+  return (
+    <CollapsibleCard title={title} defaultOpen={defaultOpen}>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/60">
+              {[keyLabel, 'LTP', 'Open', 'High', 'Low', 'Volume', 'OI', 'Buy Score', 'Sell Score'].map(h => (
+                <th key={h} className="px-3 py-2 text-left font-medium text-zinc-500">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800">
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={9} className="px-3 py-8 text-center text-zinc-400">
+                  No snapshots yet — builds up once the daily snapshot job runs (near MCX close each trading day).
+                </td>
+              </tr>
+            ) : (
+              [...rows].reverse().map(r => (
+                <tr key={r.key} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
+                  <td className="px-3 py-2.5 font-semibold text-zinc-900 dark:text-zinc-50">{r.key}</td>
+                  <td className="px-3 py-2.5 font-mono">₹{r.last_price.toFixed(2)}</td>
+                  <td className="px-3 py-2.5 font-mono">₹{r.open.toFixed(2)}</td>
+                  <td className="px-3 py-2.5 font-mono text-emerald-600 dark:text-emerald-400">₹{r.high.toFixed(2)}</td>
+                  <td className="px-3 py-2.5 font-mono text-red-500 dark:text-red-400">₹{r.low.toFixed(2)}</td>
+                  <td className="px-3 py-2.5 font-mono">{r.volume.toLocaleString('en-IN')}</td>
+                  <td className="px-3 py-2.5 font-mono">{r.oi.toLocaleString('en-IN')}</td>
+                  <td className="px-3 py-2.5 font-mono text-emerald-600 dark:text-emerald-400">{r.buy_score_pct.toFixed(1)}</td>
+                  <td className="px-3 py-2.5 font-mono text-red-500 dark:text-red-400">{r.sell_score_pct.toFixed(1)}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </CollapsibleCard>
+  )
+}
+
+function NgDashboardHistory({ contract }: { contract: McxContract }) {
+  const [snapshots, setSnapshots] = useState<NgDashboardSnapshot[]>([])
+
+  useEffect(() => {
+    const t = localStorage.getItem('mts_token') ?? ''
+    if (!t) return
+    getNgDashboardHistory(t, contract, 90).then(setSnapshots).catch(() => {})
+  }, [contract])
+
+  const dayRows: HistoryRow[] = snapshots.map(s => ({
+    key: s.date, last_price: s.last_price, open: s.open, high: s.high, low: s.low,
+    volume: s.volume, oi: s.oi, buy_score_pct: s.buy_score_pct, sell_score_pct: s.sell_score_pct,
+  }))
+  const weekRows = aggregateSnapshots(snapshots, istWeekKey)
+  const monthRows = aggregateSnapshots(snapshots, s => s.slice(0, 7))
+
+  return (
+    <div className="space-y-3">
+      <p className="px-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">NG Dashboard History</p>
+      <NgDashboardHistoryTable title="Daily" rows={dayRows} keyLabel="Date" defaultOpen={false} />
+      <NgDashboardHistoryTable title="Weekly (Monday start)" rows={weekRows} keyLabel="Week Of" defaultOpen={false} />
+      <NgDashboardHistoryTable title="Monthly" rows={monthRows} keyLabel="Month" defaultOpen={false} />
+    </div>
+  )
+}
+
+function trendBadgeStyle(trend: string): string {
+  return DIRECTION_STYLE[trend] ?? DIRECTION_STYLE.UNKNOWN
+}
+
+function fmtNextEvent(iso: string | null): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  const opts: Intl.DateTimeFormatOptions = iso.includes('T')
+    ? { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }
+    : { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }
+  return d.toLocaleString('en-IN', opts)
+}
+
+function GlobalGasSymbolsTable() {
+  const [rows, setRows] = useState<NgGlobalSymbolRow[]>([])
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+
+  useEffect(() => {
+    const t = localStorage.getItem('mts_token') ?? ''
+    if (!t) return
+    function load() {
+      getNgGlobalSymbols(t).then(r => { setRows(r); setLastUpdated(new Date()) }).catch(() => {})
+    }
+    load()
+    const id = setInterval(load, 60_000)
+    return () => clearInterval(id)
+  }, [])
+
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
+        <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Global Natural Gas Symbols</p>
+        <LiveDot label={lastUpdated ? `Live · updated ${lastUpdated.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })}` : 'Loading…'} />
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/60">
+              {['Symbol', 'Exchange', 'LTP', 'Change', '% Change', 'Open', 'High', 'Low', 'Prev Close', 'Trend', 'AI Strength', 'Next Event', 'Market'].map(h => (
+                <th key={h} className="px-3 py-2 text-left font-medium text-zinc-500">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800">
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={13} className="px-3 py-8 text-center text-zinc-400">Loading global Natural Gas symbols…</td>
+              </tr>
+            ) : (
+              rows.map(r => (
+                <tr key={r.symbol} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
+                  <td className="px-3 py-2.5 font-semibold text-zinc-900 dark:text-zinc-50">{r.display_symbol}</td>
+                  <td className="px-3 py-2.5 text-zinc-500">{r.exchange}</td>
+                  {r.ltp == null ? (
+                    <td colSpan={10} className="px-3 py-2.5 text-amber-600 dark:text-amber-400">{r.note ?? 'No data available'}</td>
+                  ) : (
+                    <>
+                      <td className="px-3 py-2.5 font-mono">₹{r.ltp.toFixed(2)}</td>
+                      <td className={cls('px-3 py-2.5 font-mono', pnlColor(r.change ?? 0))}>{r.change! >= 0 ? '+' : ''}{r.change!.toFixed(2)}</td>
+                      <td className={cls('px-3 py-2.5 font-mono', pnlColor(r.change_pct ?? 0))}>{r.change_pct! >= 0 ? '+' : ''}{r.change_pct!.toFixed(2)}%</td>
+                      <td className="px-3 py-2.5 font-mono">₹{r.open!.toFixed(2)}</td>
+                      <td className="px-3 py-2.5 font-mono text-emerald-600 dark:text-emerald-400">₹{r.high!.toFixed(2)}</td>
+                      <td className="px-3 py-2.5 font-mono text-red-500 dark:text-red-400">₹{r.low!.toFixed(2)}</td>
+                      <td className="px-3 py-2.5 font-mono">₹{r.prev_close!.toFixed(2)}</td>
+                      <td className="px-3 py-2.5">
+                        <span className={cls('rounded-full px-2.5 py-0.5 text-[10px] font-bold', trendBadgeStyle(r.trend))}>{r.trend}</span>
+                      </td>
+                      <td className="px-3 py-2.5 font-mono font-semibold">
+                        {r.ai_strength != null ? r.ai_strength.toFixed(1) : '—'}
+                        {r.ai_strength_source === 'trend-strength' && <span className="ml-1 text-[10px] font-normal text-zinc-400">(trend)</span>}
+                      </td>
+                      <td className="px-3 py-2.5 text-zinc-500">
+                        {r.next_event ? (
+                          <>
+                            <span className="block">{fmtNextEvent(r.next_event)}</span>
+                            <span className="text-[10px] text-zinc-400">{r.next_event_label}</span>
+                          </>
+                        ) : '—'}
+                      </td>
+                    </>
+                  )}
+                  <td className="px-3 py-2.5 text-zinc-500">{r.market}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+      <p className="border-t border-zinc-100 px-4 py-2.5 text-[11px] text-zinc-400 dark:border-zinc-800">
+        MCX rows use your connected Zerodha account's real quote and the actual NG-AI Pro score. Henry Hub (NYMEX)
+        and Dutch TTF (ICE) come from Yahoo Finance daily data; their "AI Strength" is trend strength (EMA/ADX/MACD),
+        not the full MCX score, since Kite-level order-flow data isn't available for foreign exchanges. UK NBP and
+        JKM LNG are left out — Yahoo Finance has no usable data for either right now.
+      </p>
+    </div>
+  )
+}
+
 function NgDashboard({ quote, score, buyScore, sellScore, contract, loading, error }: {
   quote: NgQuote | null
   score: NgAiScore | null
@@ -606,7 +825,7 @@ function NgDashboard({ quote, score, buyScore, sellScore, contract, loading, err
         </div>
       </div>
 
-      <AiStrengthBanner score={score} buyScore={buyScore} sellScore={sellScore} />
+      <GlobalGasSymbolsTable />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <BuySellScale buy={buyScore} sell={sellScore} />
@@ -623,6 +842,8 @@ function NgDashboard({ quote, score, buyScore, sellScore, contract, loading, err
         {stat('OI Day High', quote.oi_day_high.toLocaleString('en-IN'))}
         {stat('OI Day Low', quote.oi_day_low.toLocaleString('en-IN'))}
       </div>
+
+      <NgDashboardHistory contract={contract} />
     </div>
   )
 }
@@ -659,16 +880,18 @@ const VERDICT_STYLE: Record<NgAiScore['verdict'], string> = {
   NO_TRADE: 'bg-zinc-400 text-white',
 }
 
-// Prominent summary shown at the top of the page (above the tabs) so
-// overall AI strength/confidence is visible no matter which tab is open --
-// condenses the same score already driving the AI Signal tab / Buy-Sell
-// Scale into a single always-visible banner.
-function AiStrengthBanner({ score, buyScore, sellScore }: {
+// Prominent summary shown at the top of the page, above the tab bar, so
+// LTP + AI strength/confidence are visible on every tab (Dashboard, Chart,
+// Trend, AI Signal, Trade, Portfolio) instead of only the Dashboard --
+// condenses the quote header + the score already driving the AI Signal tab
+// / Buy-Sell Scale into one always-visible banner.
+function LtpStrengthBanner({ quote, score, buyScore, sellScore }: {
+  quote: NgQuote | null
   score: NgAiScore | null
   buyScore: NgAiScore | null
   sellScore: NgAiScore | null
 }) {
-  if (!score) {
+  if (!quote || !score) {
     return <div className="h-16 animate-pulse rounded-xl bg-zinc-100 dark:bg-zinc-800" />
   }
   const buyPct = buyScore?.score_pct ?? 0
@@ -679,6 +902,13 @@ function AiStrengthBanner({ score, buyScore, sellScore }: {
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-indigo-100 bg-gradient-to-r from-indigo-50 to-white px-5 py-3.5 dark:border-indigo-900 dark:from-indigo-950/30 dark:to-zinc-900">
+      <div className="flex items-center gap-3">
+        <span className="text-xs font-semibold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">LTP</span>
+        <span className="text-2xl font-bold font-mono text-zinc-900 dark:text-zinc-50">₹{quote.last_price.toFixed(2)}</span>
+        <span className={cls('text-xs font-mono font-semibold', pnlColor(quote.change))}>
+          {quote.change >= 0 ? '+' : ''}{quote.change.toFixed(2)} ({quote.change >= 0 ? '+' : ''}{quote.change_pct.toFixed(2)}%)
+        </span>
+      </div>
       <div className="flex items-center gap-3">
         <span className="text-xs font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">AI Strength</span>
         <span className="text-2xl font-bold font-mono text-zinc-900 dark:text-zinc-50">{score.score_pct.toFixed(1)}</span>
@@ -897,6 +1127,105 @@ function AiSignalPanel({ onUseTrade, score, onScoreChange, contract }: {
         </div>
       )}
     </div>
+  )
+}
+
+// ── Trade Signals ────────────────────────────────────────────────────────────
+
+const SIGNAL_RESULT_STYLE: Record<string, string> = {
+  WIN: 'bg-emerald-600 text-white',
+  LOSS: 'bg-red-500 text-white',
+  EXPIRED: 'bg-zinc-400 text-white',
+}
+
+function fmtSignalDateTime(iso: string): string {
+  return new Date(iso).toLocaleString('en-IN', {
+    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata',
+  })
+}
+
+function TradeSignalsTable({ contract }: { contract: McxContract }) {
+  const [data, setData] = useState<NgSignalsResponse | null>(null)
+
+  useEffect(() => {
+    const t = localStorage.getItem('mts_token') ?? ''
+    if (!t) return
+    function load() {
+      getNgSignals(t, contract, 50).then(setData).catch(() => {})
+    }
+    load()
+    const id = setInterval(load, 60_000)
+    return () => clearInterval(id)
+  }, [contract])
+
+  const acc = data?.accuracy
+
+  return (
+    <CollapsibleCard
+      title="Trade Signals"
+      defaultOpen
+      subtitle={
+        acc && acc.resolved > 0 ? (
+          <span className="text-[11px] text-zinc-400">
+            Accuracy <span className="font-semibold text-zinc-600 dark:text-zinc-300">{acc.accuracy_pct?.toFixed(1)}%</span> ({acc.wins}/{acc.resolved} resolved)
+          </span>
+        ) : (
+          <span className="text-[11px] text-zinc-400">No resolved signals yet</span>
+        )
+      }
+    >
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/60">
+              {['Generated', 'Direction', 'Entry', 'SL', 'Target', 'Result', 'P&L / SL Hit', 'Days to Close'].map(h => (
+                <th key={h} className="px-3 py-2 text-left font-medium text-zinc-500">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800">
+            {!data || data.signals.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="px-3 py-8 text-center text-zinc-400">
+                  No trade signals yet — a new row is logged automatically whenever the AI score hits TRADE (≥85)
+                  for BUY or SELL, one open signal per direction at a time.
+                </td>
+              </tr>
+            ) : (
+              data.signals.map((s, i) => (
+                <tr key={i} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
+                  <td className="px-3 py-2.5 font-mono text-zinc-500">{fmtSignalDateTime(s.generated_at)}</td>
+                  <td className="px-3 py-2.5">
+                    <span className={cls('rounded px-2 py-0.5 text-[10px] font-bold text-white', s.direction === 'BUY' ? 'bg-emerald-600' : 'bg-red-500')}>
+                      {s.direction}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5 font-mono">₹{s.entry_price.toFixed(2)}</td>
+                  <td className="px-3 py-2.5 font-mono text-red-500">₹{s.stop_loss.toFixed(2)}</td>
+                  <td className="px-3 py-2.5 font-mono text-emerald-600">₹{s.target_1.toFixed(2)}</td>
+                  <td className="px-3 py-2.5">
+                    {s.result ? (
+                      <span className={cls('rounded-full px-2.5 py-0.5 text-[10px] font-bold', SIGNAL_RESULT_STYLE[s.result])}>{s.result}</span>
+                    ) : (
+                      <span className="rounded-full bg-indigo-100 px-2.5 py-0.5 text-[10px] font-bold text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">OPEN</span>
+                    )}
+                  </td>
+                  <td className={cls('px-3 py-2.5 font-mono font-semibold', s.pnl == null ? 'text-zinc-400' : pnlColor(s.pnl))}>
+                    {s.result === 'LOSS' ? `SL Hit ₹${s.exit_price?.toFixed(2)}` : s.pnl != null ? `₹${s.pnl.toFixed(2)}` : '—'}
+                  </td>
+                  <td className="px-3 py-2.5 font-mono text-zinc-500">{s.days_to_close != null ? s.days_to_close.toFixed(2) : '—'}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+      <p className="border-t border-zinc-100 px-4 py-2.5 text-[11px] text-zinc-400 dark:border-zinc-800">
+        Logged automatically (not tied to whether you actually placed a trade) whenever the AI score hits verdict
+        TRADE, one open signal per direction at a time. Closes WIN (target hit), LOSS (stop-loss hit), or EXPIRED
+        after 5 trading days with neither. Accuracy = wins ÷ (wins + losses), excluding expired.
+      </p>
+    </CollapsibleCard>
   )
 }
 
@@ -1365,6 +1694,12 @@ export default function McxView() {
           </div>
         )}
 
+        {zerodhaConnected && (
+          <div className="mb-6">
+            <LtpStrengthBanner quote={quote} score={score} buyScore={buyScore} sellScore={sellScore} />
+          </div>
+        )}
+
         <div className="mb-6 flex items-center gap-1">
           {TABS.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
@@ -1384,12 +1719,15 @@ export default function McxView() {
         {tab === 'chart' && <NgChartTab quote={quote} score={score} contract={contract} />}
         {tab === 'trend' && <TrendPanel contract={contract} />}
         {tab === 'ai' && (
-          <AiSignalPanel
-            score={score}
-            onScoreChange={setScore}
-            onUseTrade={p => { setTradePrefill(p); setTab('trade') }}
-            contract={contract}
-          />
+          <div className="space-y-6">
+            <AiSignalPanel
+              score={score}
+              onScoreChange={setScore}
+              onUseTrade={p => { setTradePrefill(p); setTab('trade') }}
+              contract={contract}
+            />
+            <TradeSignalsTable contract={contract} />
+          </div>
         )}
         {tab === 'trade' && <NgTradeForm quote={quote} onPlaced={loadTrades} prefill={tradePrefill} contract={contract} />}
         {tab === 'portfolio' && (

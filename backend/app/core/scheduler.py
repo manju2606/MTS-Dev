@@ -401,6 +401,77 @@ async def _run_mcx_calendar_prediction_check() -> None:
         log.error("scheduler.mcx_calendar_prediction.error", error=str(exc))
 
 
+async def _run_mcx_dashboard_snapshot() -> None:
+    """Once daily near MCX close: snapshot the NG Dashboard's full state
+    (LTP/OHLCV/OI + both directions' AI score) for every connected user, so
+    the Dashboard tab has a persistent Day/Week/Month history instead of
+    only ever showing "right now" (see mcx_dashboard_snapshot_service.py).
+    Weekly/monthly views are aggregated client-side from these daily rows."""
+    try:
+        from app.infra.brokers import session_store
+        from app.infra.db.repositories.mcx_dashboard_snapshot_repo import (
+            McxDashboardSnapshotRepository,
+        )
+        from app.services.mcx_dashboard_snapshot_service import build_and_save_snapshot
+
+        repo = McxDashboardSnapshotRepository()
+        user_ids = await session_store.list_connected_user_ids()
+        checked = 0
+        for user_id in user_ids:
+            for contract in ("NG", "NGMINI"):
+                try:
+                    await build_and_save_snapshot(user_id, contract, repo)
+                    checked += 1
+                except Exception as exc:
+                    log.warning(
+                        "scheduler.mcx_dashboard_snapshot.contract_error",
+                        user_id=user_id,
+                        contract=contract,
+                        error=str(exc),
+                    )
+                await asyncio.sleep(0)
+        log.info("scheduler.mcx_dashboard_snapshot.done", users=len(user_ids), checked=checked)
+    except Exception as exc:
+        log.error("scheduler.mcx_dashboard_snapshot.error", error=str(exc))
+
+
+async def _run_mcx_signal_check() -> None:
+    """Every 5 min, 09:00-23:30 IST weekdays: compute both directions' AI
+    score for every connected user, log a new signal for whichever hits
+    verdict=TRADE (if none is already open for that direction), and check
+    every already-open signal against the live price for a target/stop-loss
+    hit or expiry (see mcx_signal_service.py). Independent of any paper
+    trade a user may or may not have placed off the same signal."""
+    try:
+        from app.infra.brokers import session_store
+        from app.infra.db.repositories.mcx_signal_repo import McxSignalRepository
+        from app.services.mcx_ai_score_service import compute_ng_ai_score
+        from app.services.mcx_signal_service import check_and_log_signal, resolve_open_signals
+
+        repo = McxSignalRepository()
+        user_ids = await session_store.list_connected_user_ids()
+        logged, closed = 0, 0
+        for user_id in user_ids:
+            for contract in ("NG", "NGMINI"):
+                try:
+                    for direction in ("BUY", "SELL"):
+                        score = await compute_ng_ai_score(user_id, direction, 100_000.0, contract)
+                        if await check_and_log_signal(user_id, contract, direction, score, repo):
+                            logged += 1
+                    closed += await resolve_open_signals(user_id, contract, repo)
+                except Exception as exc:
+                    log.warning(
+                        "scheduler.mcx_signal.contract_error",
+                        user_id=user_id,
+                        contract=contract,
+                        error=str(exc),
+                    )
+                await asyncio.sleep(0)
+        log.info("scheduler.mcx_signal.done", users=len(user_ids), logged=logged, closed=closed)
+    except Exception as exc:
+        log.error("scheduler.mcx_signal.error", error=str(exc))
+
+
 async def _run_position_check() -> None:
     """Delegate to the position monitor (import kept lazy to avoid circular imports)."""
     from app.infra.monitoring.position_monitor import run_position_check
@@ -808,6 +879,32 @@ def start_scheduler() -> None:
         name="MCX — Week/Month Prediction Generation",
         max_instances=1,
         misfire_grace_time=3600,
+    )
+
+    # NG Dashboard daily snapshot near MCX close (23:45 IST) -- captures the
+    # day's final LTP/OHLCV/OI + AI scores for the Day/Week/Month history
+    # tables (weekly/monthly are aggregated client-side from these).
+    _scheduler.add_job(
+        _run_mcx_dashboard_snapshot,
+        CronTrigger(day_of_week="mon-fri", hour=23, minute=50, second=0, timezone="Asia/Kolkata"),
+        id="mcx_dashboard_snapshot",
+        name="MCX — NG Dashboard Daily Snapshot",
+        max_instances=1,
+        misfire_grace_time=3600,
+    )
+
+    # MCX AI trade-signal logging + resolution every 5 min, 09:00-23:30 IST
+    # weekdays -- same cadence as the intraday prediction job.
+    _scheduler.add_job(
+        _run_mcx_signal_check,
+        CronTrigger(
+            day_of_week="mon-fri", hour="9-23", minute="*/5", second=20,
+            timezone="Asia/Kolkata",
+        ),
+        id="mcx_signal_check",
+        name="MCX — AI Trade Signal Logging + Resolution",
+        max_instances=1,
+        misfire_grace_time=180,
     )
 
     _scheduler.start()

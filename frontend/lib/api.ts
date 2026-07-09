@@ -1343,6 +1343,106 @@ export async function getNgRangeStats(token: string, contract: McxContract = 'NG
   return res.json()
 }
 
+export type NgDashboardSnapshot = {
+  date: string
+  tradingsymbol: string
+  last_price: number
+  open: number
+  high: number
+  low: number
+  prev_close: number
+  change: number
+  change_pct: number
+  volume: number
+  oi: number
+  oi_day_high: number
+  oi_day_low: number
+  buy_score_pct: number
+  buy_verdict: string
+  sell_score_pct: number
+  sell_verdict: string
+}
+
+export async function getNgDashboardHistory(
+  token: string,
+  contract: McxContract = 'NG',
+  days = 90,
+): Promise<NgDashboardSnapshot[]> {
+  const res = await fetch(
+    `${BASE}/api/v1/mcx/ng/dashboard-history?contract=${contract}&days=${days}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch MCX dashboard history')
+  }
+  return res.json()
+}
+
+export type NgTradeSignal = {
+  direction: 'BUY' | 'SELL'
+  tradingsymbol: string | null
+  score_pct: number | null
+  generated_at: string
+  entry_price: number
+  stop_loss: number
+  target_1: number
+  target_2: number | null
+  status: 'OPEN' | 'CLOSED'
+  result: 'WIN' | 'LOSS' | 'EXPIRED' | null
+  exit_price: number | null
+  pnl: number | null
+  closed_at: string | null
+  days_to_close: number | null
+}
+export type NgSignalAccuracy = { resolved: number; wins: number; accuracy_pct: number | null }
+export type NgSignalsResponse = { contract: string; signals: NgTradeSignal[]; accuracy: NgSignalAccuracy }
+
+export async function getNgSignals(
+  token: string,
+  contract: McxContract = 'NG',
+  limit = 50,
+): Promise<NgSignalsResponse> {
+  const res = await fetch(
+    `${BASE}/api/v1/mcx/ng/signals?contract=${contract}&limit=${limit}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch MCX trade signals')
+  }
+  return res.json()
+}
+
+export type NgGlobalSymbolRow = {
+  symbol: string
+  display_symbol: string
+  exchange: string
+  market: string
+  ltp: number | null
+  change: number | null
+  change_pct: number | null
+  open: number | null
+  high: number | null
+  low: number | null
+  prev_close: number | null
+  trend: 'BULLISH' | 'BEARISH' | 'NEUTRAL' | 'UNKNOWN'
+  ai_strength: number | null
+  ai_strength_source: 'ai-score' | 'trend-strength' | null
+  next_event: string | null
+  next_event_label: string | null
+  note?: string
+}
+
+export async function getNgGlobalSymbols(token: string): Promise<NgGlobalSymbolRow[]> {
+  const res = await fetch(`${BASE}/api/v1/mcx/ng/global-symbols`, { headers: authHeaders(token) })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch global Natural Gas symbols')
+  }
+  return res.json()
+}
+
 export type NgPredictedPoint = { time: number; predicted_close: number; upper: number; lower: number }
 export type NgPredictionHistoryPoint = NgPredictedPoint & { actual_close: number | null; hit: boolean | null }
 export type NgPredictionAccuracy = { sample_size: number; hit_rate_pct: number | null; avg_error_pct: number | null }

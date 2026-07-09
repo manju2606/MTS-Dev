@@ -126,6 +126,46 @@ async def ng_predict_archive(
         ) from exc
 
 
+@router.get("/ng/dashboard-history")
+async def ng_dashboard_history(
+    current_user: CurrentUser, contract: McxContract = "NG", days: int = 90
+) -> list[dict]:
+    """Daily NG Dashboard snapshots (LTP/OHLCV/OI + AI buy/sell scores) for
+    the last `days` days -- the frontend aggregates these into Day/Week/
+    Month views (see mcx_dashboard_snapshot_service.py)."""
+    from app.infra.db.repositories.mcx_dashboard_snapshot_repo import (
+        McxDashboardSnapshotRepository,
+    )
+    from app.services.mcx_dashboard_snapshot_service import get_snapshot_range
+
+    repo = McxDashboardSnapshotRepository()
+    return await get_snapshot_range(str(current_user.id), contract, days, repo)
+
+
+@router.get("/ng/global-symbols")
+async def ng_global_symbols(current_user: CurrentUser) -> list[dict]:
+    """MCX Natural Gas / Natural Gas Mini (real, via Kite) alongside Henry
+    Hub (NYMEX) and Dutch TTF (ICE) via yfinance -- see
+    mcx_global_symbols_service.py for which international benchmarks were
+    left out (no usable Yahoo Finance data) and why."""
+    from app.services.mcx_global_symbols_service import get_global_symbols
+
+    return await get_global_symbols(str(current_user.id))
+
+
+@router.get("/ng/signals")
+async def ng_signals(
+    current_user: CurrentUser, contract: McxContract = "NG", limit: int = 50
+) -> dict:
+    """AI trade signals (logged whenever the score hits verdict=TRADE) plus
+    a rolling accuracy readout -- see app/services/mcx_signal_service.py."""
+    from app.infra.db.repositories.mcx_signal_repo import McxSignalRepository
+    from app.services.mcx_signal_service import list_signals_with_accuracy
+
+    repo = McxSignalRepository()
+    return await list_signals_with_accuracy(str(current_user.id), contract, limit, repo)
+
+
 @router.get("/ng/range-stats")
 async def ng_range_stats(current_user: CurrentUser, contract: McxContract = "NG") -> dict:
     """Day/week/month high-low for the front-month contract -- powers the

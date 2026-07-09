@@ -744,6 +744,11 @@ export type AssistantPeriodSummary = {
   portfolio_value_now?: number
   portfolio_change_pct?: number
   nifty_change_pct?: number | null
+  nifty_value_start?: number | null
+  nifty_value_now?: number | null
+  sensex_change_pct?: number | null
+  sensex_value_start?: number | null
+  sensex_value_now?: number | null
   relative_pct?: number | null
   winners?: SummaryHoldingMove[]
   losers?: SummaryHoldingMove[]
@@ -755,12 +760,47 @@ export async function getAssistantSummary(
   token: string,
   portfolioId = 'default',
   period: SummaryPeriod = 'week',
+  date?: string,
 ): Promise<AssistantPeriodSummary> {
+  const dateParam = period === 'day' && date ? `&date=${encodeURIComponent(date)}` : ''
   const res = await fetch(
-    `${BASE}/api/v1/portfolio/assistant/summary?portfolio_id=${encodeURIComponent(portfolioId)}&period=${period}`,
+    `${BASE}/api/v1/portfolio/assistant/summary?portfolio_id=${encodeURIComponent(portfolioId)}&period=${period}${dateParam}`,
     { headers: authHeaders(token) },
   )
   if (!res.ok) return { period, has_data: false }
+  return res.json()
+}
+
+export type OhlcRow = {
+  symbol: string
+  name: string
+  sector: string
+  date: string
+  open: number | null
+  high: number | null
+  low: number | null
+  close: number
+  change: number
+  change_pct: number
+  week_52_high: number | null
+  week_52_low: number | null
+  weekly_change: number | null
+  weekly_change_pct: number | null
+  monthly_change: number | null
+  monthly_change_pct: number | null
+}
+
+export type PortfolioOhlc = { has_data: boolean; rows: OhlcRow[] }
+
+export async function getAssistantOhlc(
+  token: string,
+  portfolioId = 'default',
+): Promise<PortfolioOhlc> {
+  const res = await fetch(
+    `${BASE}/api/v1/portfolio/assistant/ohlc?portfolio_id=${encodeURIComponent(portfolioId)}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) return { has_data: false, rows: [] }
   return res.json()
 }
 
@@ -2842,6 +2882,11 @@ export type DswsReportEntry = {
   name: string
   scan_date: string
   pct_change: number
+  selected_at: string
+  entry_price: number | null
+  current_price: number | null
+  forecast: 'UP' | 'DOWN' | 'FLAT' | 'N/A'
+  ai_score: number
 }
 
 export type DswsBucketStats = {
@@ -2850,6 +2895,7 @@ export type DswsBucketStats = {
   win_rate_pct: number
   best: DswsReportEntry | null
   worst: DswsReportEntry | null
+  entries: DswsReportEntry[]
 }
 
 export type DswsEngine = 'STOCK_OF_DAY' | 'GOLDEN_STOCK' | 'BTST'

@@ -6,7 +6,7 @@ import { NavBar } from '@/components/nav-bar'
 import {
   getAssistantAnalysis, addHolding, deleteHolding, importHoldings, askAssistant,
   getAssistantFundamentals, getAssistantTimeline, getAssistantTax, getAssistantDividends, getAssistantCorrelation,
-  getAssistantSentiment, getAssistantAISignals, getAssistantSummary,
+  getAssistantSentiment, getAssistantAISignals, getAssistantSummary, getAssistantOhlc,
   getBrokerStatus, getBrokerPositions,
   listPortfolios, createPortfolio, deletePortfolio, listWatchlists,
   searchStocks,
@@ -15,7 +15,7 @@ import type {
   AssistantAnalysis, Holding, AssistantAlert, SizingRow,
   FundamentalRow, TimelineData, TaxData, DividendRow, CorrelationData, Portfolio,
   SentimentRow, AISignalRow, BrokerPosition, BrokerStatus, Watchlist,
-  StockSearchResult, AssistantPeriodSummary, SummaryPeriod,
+  StockSearchResult, AssistantPeriodSummary, SummaryPeriod, OhlcRow,
 } from '@/lib/api'
 import { AddToWatchlistBtn } from '@/components/add-to-watchlist-btn'
 
@@ -869,9 +869,10 @@ function TimelineSection({ portfolioId }: { portfolioId: string }) {
 }
 
 // ── Portfolio Summary Tab (Day / Week / Month) ────────────────────────────────
+// The single-day view is date-pickable (see SummaryTab) rather than a fixed
+// "Today" tab, so these only cover the rolling Week/Month periods.
 
 const SUMMARY_PERIODS: { id: SummaryPeriod; label: string }[] = [
-  { id: 'day', label: 'Today' },
   { id: 'week', label: 'This Week' },
   { id: 'month', label: 'This Month' },
 ]
@@ -884,10 +885,154 @@ const SUGGESTION_STYLE: Record<string, string> = {
 
 const SUGGESTION_ICON: Record<string, string> = { warning: '⚠️', info: '💡', positive: '✅' }
 
+function PeriodSummaryContent({ summary }: { summary: AssistantPeriodSummary }) {
+  return (
+    <>
+      {/* Headline: portfolio change vs Nifty/Sensex */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+          <p className="text-[11px] uppercase tracking-wide text-zinc-400">Portfolio Change</p>
+          <p className={cls('mt-1 text-2xl font-bold font-mono', pnlColor(summary.portfolio_change_pct ?? 0))}>
+            {(summary.portfolio_change_pct ?? 0) >= 0 ? '+' : ''}{(summary.portfolio_change_pct ?? 0).toFixed(2)}%
+          </p>
+          <p className="mt-0.5 text-xs text-zinc-400">
+            {fmtCr(summary.portfolio_value_start ?? 0)} → {fmtCr(summary.portfolio_value_now ?? 0)}
+          </p>
+        </div>
+        <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+          <p className="text-[11px] uppercase tracking-wide text-zinc-400">Nifty50</p>
+          <p className={cls('mt-1 text-2xl font-bold font-mono', pnlColor(summary.nifty_change_pct ?? 0))}>
+            {summary.nifty_change_pct != null ? `${summary.nifty_change_pct >= 0 ? '+' : ''}${summary.nifty_change_pct.toFixed(2)}%` : '—'}
+          </p>
+          <p className="mt-0.5 text-xs text-zinc-400">
+            {summary.nifty_value_start != null && summary.nifty_value_now != null
+              ? `${summary.nifty_value_start.toLocaleString('en-IN')} → ${summary.nifty_value_now.toLocaleString('en-IN')}`
+              : `${summary.start_date} → ${summary.end_date}`}
+          </p>
+        </div>
+        <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+          <p className="text-[11px] uppercase tracking-wide text-zinc-400">Sensex</p>
+          <p className={cls('mt-1 text-2xl font-bold font-mono', pnlColor(summary.sensex_change_pct ?? 0))}>
+            {summary.sensex_change_pct != null ? `${summary.sensex_change_pct >= 0 ? '+' : ''}${summary.sensex_change_pct.toFixed(2)}%` : '—'}
+          </p>
+          <p className="mt-0.5 text-xs text-zinc-400">
+            {summary.sensex_value_start != null && summary.sensex_value_now != null
+              ? `${summary.sensex_value_start.toLocaleString('en-IN')} → ${summary.sensex_value_now.toLocaleString('en-IN')}`
+              : `${summary.start_date} → ${summary.end_date}`}
+          </p>
+        </div>
+        <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+          <p className="text-[11px] uppercase tracking-wide text-zinc-400">vs Nifty50</p>
+          <p className={cls('mt-1 text-2xl font-bold font-mono', pnlColor(summary.relative_pct ?? 0))}>
+            {summary.relative_pct != null ? `${summary.relative_pct >= 0 ? '+' : ''}${summary.relative_pct.toFixed(2)}%` : '—'}
+          </p>
+          <p className="mt-0.5 text-xs text-zinc-400">
+            {summary.relative_pct != null ? (summary.relative_pct >= 0 ? 'Outperforming' : 'Underperforming') : 'No benchmark data'}
+          </p>
+        </div>
+      </div>
+
+      {/* Suggestions */}
+      <div className="space-y-2">
+        {(summary.suggestions ?? []).map((s, i) => (
+          <div key={i} className={cls('rounded-lg border px-3.5 py-2.5 text-sm', SUGGESTION_STYLE[s.severity])}>
+            <span className="mr-2">{SUGGESTION_ICON[s.severity]}</span>{s.text}
+          </div>
+        ))}
+      </div>
+
+      {/* Winners / Losers — every holding, split by sign */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+          <p className="mb-3 text-xs font-medium uppercase tracking-wider text-emerald-500">
+            Up This Period {(summary.winners ?? []).length > 0 && `(${(summary.winners ?? []).length})`}
+          </p>
+          {(summary.winners ?? []).length === 0 ? <p className="text-sm text-zinc-400">Nothing up this period.</p> : (
+            <div className="space-y-2">
+              {(summary.winners ?? []).map(h => (
+                <div key={h.symbol} className="flex items-center justify-between">
+                  <div>
+                    <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">{h.symbol.replace(/\.(NS|BO)$/, '')}</span>
+                    <span className="ml-2 text-xs text-zinc-400">{h.sector}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">+{h.change_pct.toFixed(2)}%</span>
+                    <span className="block text-xs text-zinc-400">₹{h.price_start.toFixed(2)} → ₹{h.price_now.toFixed(2)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+          <p className="mb-3 text-xs font-medium uppercase tracking-wider text-red-400">
+            Down This Period {(summary.losers ?? []).length > 0 && `(${(summary.losers ?? []).length})`}
+          </p>
+          {(summary.losers ?? []).length === 0 ? <p className="text-sm text-zinc-400">Nothing down this period.</p> : (
+            <div className="space-y-2">
+              {(summary.losers ?? []).map(h => (
+                <div key={h.symbol} className="flex items-center justify-between">
+                  <div>
+                    <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">{h.symbol.replace(/\.(NS|BO)$/, '')}</span>
+                    <span className="ml-2 text-xs text-zinc-400">{h.sector}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-sm font-bold text-red-500">{h.change_pct.toFixed(2)}%</span>
+                    <span className="block text-xs text-zinc-400">₹{h.price_start.toFixed(2)} → ₹{h.price_now.toFixed(2)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Sector moves */}
+      {(summary.sector_moves ?? []).length > 0 && (
+        <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+          <p className="mb-3 text-xs font-medium uppercase tracking-wider text-zinc-400">Sector Moves</p>
+          <div className="space-y-2">
+            {(summary.sector_moves ?? []).map(s => (
+              <div key={s.sector} className="flex items-center justify-between text-sm">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-zinc-700 dark:text-zinc-200">{s.sector}</span>
+                  <span className="text-xs text-zinc-400">{s.weight_pct.toFixed(0)}% of portfolio</span>
+                </div>
+                <span className={cls('font-mono font-semibold', pnlColor(s.change_pct))}>
+                  {s.change_pct >= 0 ? '+' : ''}{s.change_pct.toFixed(2)}%
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function formatDayLabel(iso: string): string {
+  if (iso === todayIso()) return 'Today'
+  return new Date(iso + 'T00:00:00').toLocaleDateString('en-IN', {
+    day: 'numeric', month: 'short', year: 'numeric',
+  })
+}
+
 function SummaryTab({ portfolioId }: { portfolioId: string }) {
   const [period, setPeriod] = useState<SummaryPeriod>('week')
   const [summary, setSummary] = useState<AssistantPeriodSummary | null>(null)
   const [loading, setLoading] = useState(true)
+  // The single-day panel is always shown alongside whichever period (Week/
+  // Month) is selected, driven by a date picker instead of a fixed "Today"
+  // tab -- each trading day's numbers get stored server-side at market close
+  // (see portfolio_summary_snapshots), so past dates stay looked-up-able
+  // instead of only ever showing "now".
+  const [dayDate, setDayDate] = useState<string>(todayIso)
+  const [daySummary, setDaySummary] = useState<AssistantPeriodSummary | null>(null)
+  const [dayLoading, setDayLoading] = useState(true)
 
   useEffect(() => {
     const t = typeof window !== 'undefined' ? localStorage.getItem('mts_token') ?? '' : ''
@@ -896,9 +1041,16 @@ function SummaryTab({ portfolioId }: { portfolioId: string }) {
     getAssistantSummary(t, portfolioId, period).then(d => { setSummary(d); setLoading(false) }).catch(() => setLoading(false))
   }, [portfolioId, period])
 
+  useEffect(() => {
+    const t = typeof window !== 'undefined' ? localStorage.getItem('mts_token') ?? '' : ''
+    if (!t) return
+    setDayLoading(true)
+    getAssistantSummary(t, portfolioId, 'day', dayDate).then(d => { setDaySummary(d); setDayLoading(false) }).catch(() => setDayLoading(false))
+  }, [portfolioId, dayDate])
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-1">
+      <div className="flex flex-wrap items-center gap-2">
         {SUMMARY_PERIODS.map(p => (
           <button key={p.id} onClick={() => setPeriod(p.id)}
             className={cls(
@@ -911,7 +1063,35 @@ function SummaryTab({ portfolioId }: { portfolioId: string }) {
             {p.label}
           </button>
         ))}
+        <span className="mx-1 h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
+        <label className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+          Day:
+          <input
+            type="date"
+            value={dayDate}
+            max={todayIso()}
+            onChange={e => setDayDate(e.target.value || todayIso())}
+            className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+          />
+        </label>
       </div>
+
+      <div className="space-y-3 rounded-xl border border-indigo-100 bg-indigo-50/40 p-4 dark:border-indigo-900 dark:bg-indigo-950/10">
+        <p className="text-xs font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+          {formatDayLabel(dayDate)}
+        </p>
+        {dayLoading ? (
+          <div className="h-24 animate-pulse rounded-xl bg-zinc-100 dark:bg-zinc-800" />
+        ) : !daySummary?.has_data ? (
+          <p className="text-sm text-zinc-400">No data stored for this date.</p>
+        ) : (
+          <PeriodSummaryContent summary={daySummary} />
+        )}
+      </div>
+
+      <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+        {SUMMARY_PERIODS.find(p => p.id === period)?.label}
+      </p>
 
       {loading ? (
         <div className="space-y-4">
@@ -923,108 +1103,99 @@ function SummaryTab({ portfolioId }: { portfolioId: string }) {
           <p className="text-sm text-zinc-500 dark:text-zinc-400">Add holdings to see a performance summary.</p>
         </div>
       ) : (
-        <>
-          {/* Headline: portfolio change vs Nifty */}
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-              <p className="text-[11px] uppercase tracking-wide text-zinc-400">Portfolio Change</p>
-              <p className={cls('mt-1 text-2xl font-bold font-mono', pnlColor(summary.portfolio_change_pct ?? 0))}>
-                {(summary.portfolio_change_pct ?? 0) >= 0 ? '+' : ''}{(summary.portfolio_change_pct ?? 0).toFixed(2)}%
-              </p>
-              <p className="mt-0.5 text-xs text-zinc-400">
-                {fmtCr(summary.portfolio_value_start ?? 0)} → {fmtCr(summary.portfolio_value_now ?? 0)}
-              </p>
-            </div>
-            <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-              <p className="text-[11px] uppercase tracking-wide text-zinc-400">Nifty50 Change</p>
-              <p className={cls('mt-1 text-2xl font-bold font-mono', pnlColor(summary.nifty_change_pct ?? 0))}>
-                {summary.nifty_change_pct != null ? `${summary.nifty_change_pct >= 0 ? '+' : ''}${summary.nifty_change_pct.toFixed(2)}%` : '—'}
-              </p>
-              <p className="mt-0.5 text-xs text-zinc-400">{summary.start_date} → {summary.end_date}</p>
-            </div>
-            <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-              <p className="text-[11px] uppercase tracking-wide text-zinc-400">vs Nifty50</p>
-              <p className={cls('mt-1 text-2xl font-bold font-mono', pnlColor(summary.relative_pct ?? 0))}>
-                {summary.relative_pct != null ? `${summary.relative_pct >= 0 ? '+' : ''}${summary.relative_pct.toFixed(2)}%` : '—'}
-              </p>
-              <p className="mt-0.5 text-xs text-zinc-400">
-                {summary.relative_pct != null ? (summary.relative_pct >= 0 ? 'Outperforming' : 'Underperforming') : 'No benchmark data'}
-              </p>
-            </div>
-          </div>
-
-          {/* Suggestions */}
-          <div className="space-y-2">
-            {(summary.suggestions ?? []).map((s, i) => (
-              <div key={i} className={cls('rounded-lg border px-3.5 py-2.5 text-sm', SUGGESTION_STYLE[s.severity])}>
-                <span className="mr-2">{SUGGESTION_ICON[s.severity]}</span>{s.text}
-              </div>
-            ))}
-          </div>
-
-          {/* Winners / Losers */}
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-              <p className="mb-3 text-xs font-medium uppercase tracking-wider text-emerald-500">Up This Period</p>
-              {(summary.winners ?? []).length === 0 ? <p className="text-sm text-zinc-400">Nothing up this period.</p> : (
-                <div className="space-y-2">
-                  {(summary.winners ?? []).map(h => (
-                    <div key={h.symbol} className="flex items-center justify-between">
-                      <div>
-                        <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">{h.symbol.replace(/\.(NS|BO)$/, '')}</span>
-                        <span className="ml-2 text-xs text-zinc-400">{h.sector}</span>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">+{h.change_pct.toFixed(2)}%</span>
-                        <span className="block text-xs text-zinc-400">₹{h.price_start.toFixed(2)} → ₹{h.price_now.toFixed(2)}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-              <p className="mb-3 text-xs font-medium uppercase tracking-wider text-red-400">Down This Period</p>
-              {(summary.losers ?? []).length === 0 ? <p className="text-sm text-zinc-400">Nothing down this period.</p> : (
-                <div className="space-y-2">
-                  {(summary.losers ?? []).map(h => (
-                    <div key={h.symbol} className="flex items-center justify-between">
-                      <div>
-                        <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">{h.symbol.replace(/\.(NS|BO)$/, '')}</span>
-                        <span className="ml-2 text-xs text-zinc-400">{h.sector}</span>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-sm font-bold text-red-500">{h.change_pct.toFixed(2)}%</span>
-                        <span className="block text-xs text-zinc-400">₹{h.price_start.toFixed(2)} → ₹{h.price_now.toFixed(2)}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Sector moves */}
-          {(summary.sector_moves ?? []).length > 0 && (
-            <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-              <p className="mb-3 text-xs font-medium uppercase tracking-wider text-zinc-400">Sector Moves</p>
-              <div className="space-y-2">
-                {(summary.sector_moves ?? []).map(s => (
-                  <div key={s.sector} className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-zinc-700 dark:text-zinc-200">{s.sector}</span>
-                      <span className="text-xs text-zinc-400">{s.weight_pct.toFixed(0)}% of portfolio</span>
-                    </div>
-                    <span className={cls('font-mono font-semibold', pnlColor(s.change_pct))}>
-                      {s.change_pct >= 0 ? '+' : ''}{s.change_pct.toFixed(2)}%
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </>
+        <PeriodSummaryContent summary={summary} />
       )}
+    </div>
+  )
+}
+
+// ── OHLC Tab ──────────────────────────────────────────────────────────────────
+
+function ohlcCell(value: number | null, pct: number | null, prefix = '₹') {
+  if (value == null) return <span className="text-zinc-400">—</span>
+  return (
+    <div className="text-right">
+      <span className={cls('font-mono font-semibold', pct != null ? pnlColor(pct) : '')}>
+        {prefix}{value.toFixed(2)}
+      </span>
+      {pct != null && (
+        <span className={cls('ml-1.5 font-mono text-xs', pnlColor(pct))}>
+          ({pct >= 0 ? '+' : ''}{pct.toFixed(2)}%)
+        </span>
+      )}
+    </div>
+  )
+}
+
+function OhlcTab({ portfolioId }: { portfolioId: string }) {
+  const [rows, setRows] = useState<OhlcRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [hasData, setHasData] = useState(true)
+
+  useEffect(() => {
+    const t = typeof window !== 'undefined' ? localStorage.getItem('mts_token') ?? '' : ''
+    if (!t) return
+    setLoading(true)
+    getAssistantOhlc(t, portfolioId)
+      .then(d => { setRows(d.rows); setHasData(d.has_data); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [portfolioId])
+
+  if (loading) {
+    return (
+      <div className="space-y-2">
+        <div className="h-8 animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" />
+        <div className="h-64 animate-pulse rounded-xl bg-zinc-100 dark:bg-zinc-800" />
+      </div>
+    )
+  }
+
+  if (!hasData || rows.length === 0) {
+    return (
+      <div className="rounded-xl border border-zinc-200 bg-white px-4 py-12 text-center dark:border-zinc-800 dark:bg-zinc-900">
+        <p className="text-sm text-zinc-500 dark:text-zinc-400">Add holdings to see OHLC data.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-zinc-400">
+        Refreshed live from the latest trading day for each holding &mdash; {rows[0]?.date}.
+        52-week high/low and weekly/monthly change are trailing windows ending on that date.
+      </p>
+      <div className="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/60">
+              {['Symbol', 'Open', 'High', 'Low', 'Close', 'Change', '52W High', '52W Low', 'Weekly', 'Monthly'].map((h, i) => (
+                <th key={h} className={cls('px-3 py-2 font-medium text-zinc-500', i === 0 ? 'text-left' : 'text-right')}>
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-zinc-50 bg-white dark:divide-zinc-800 dark:bg-zinc-900">
+            {rows.map(r => (
+              <tr key={r.symbol} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
+                <td className="px-3 py-2.5">
+                  <span className="font-semibold text-zinc-900 dark:text-zinc-50">{r.symbol.replace(/\.(NS|BO)$/, '')}</span>
+                  <span className="ml-2 text-[10px] text-zinc-400">{r.sector}</span>
+                </td>
+                <td className="px-3 py-2.5 text-right font-mono text-zinc-600 dark:text-zinc-300">{r.open != null ? r.open.toFixed(2) : '—'}</td>
+                <td className="px-3 py-2.5 text-right font-mono text-zinc-600 dark:text-zinc-300">{r.high != null ? r.high.toFixed(2) : '—'}</td>
+                <td className="px-3 py-2.5 text-right font-mono text-zinc-600 dark:text-zinc-300">{r.low != null ? r.low.toFixed(2) : '—'}</td>
+                <td className="px-3 py-2.5">{ohlcCell(r.close, null)}</td>
+                <td className="px-3 py-2.5">{ohlcCell(r.change, r.change_pct)}</td>
+                <td className="px-3 py-2.5 text-right font-mono text-zinc-600 dark:text-zinc-300">{r.week_52_high != null ? r.week_52_high.toFixed(2) : '—'}</td>
+                <td className="px-3 py-2.5 text-right font-mono text-zinc-600 dark:text-zinc-300">{r.week_52_low != null ? r.week_52_low.toFixed(2) : '—'}</td>
+                <td className="px-3 py-2.5">{ohlcCell(r.weekly_change, r.weekly_change_pct)}</td>
+                <td className="px-3 py-2.5">{ohlcCell(r.monthly_change, r.monthly_change_pct)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
@@ -1722,7 +1893,7 @@ function AssistantTab({ token, portfolioId }: { token: string; portfolioId: stri
 
 // ── Main View ─────────────────────────────────────────────────────────────────
 
-type Tab = 'overview' | 'holdings' | 'allocation' | 'risk' | 'performance' | 'research' | 'summary' | 'assistant'
+type Tab = 'overview' | 'holdings' | 'allocation' | 'risk' | 'performance' | 'research' | 'summary' | 'ohlc' | 'assistant'
 
 const TABS: { id: Tab; label: string; count?: (d: AssistantAnalysis) => number }[] = [
   { id: 'overview',    label: 'Overview' },
@@ -1732,6 +1903,7 @@ const TABS: { id: Tab; label: string; count?: (d: AssistantAnalysis) => number }
   { id: 'performance',label: 'Performance' },
   { id: 'research',   label: 'Research' },
   { id: 'summary',    label: 'Summary' },
+  { id: 'ohlc',       label: 'OHLC' },
   { id: 'assistant',  label: 'AI Assistant' },
 ]
 
@@ -1904,6 +2076,7 @@ export default function AssistantView() {
             {tab === 'performance'&& <PerformanceTab data={data} portfolioId={activePortfolioId} />}
             {tab === 'research'   && <ResearchTab data={data} portfolioId={activePortfolioId} onHoldingsChanged={refresh} />}
             {tab === 'summary'    && <SummaryTab portfolioId={activePortfolioId} />}
+            {tab === 'ohlc'       && <OhlcTab portfolioId={activePortfolioId} />}
             {tab === 'assistant'  && <AssistantTab token={tokenRef.current} portfolioId={activePortfolioId} />}
           </>
         )}

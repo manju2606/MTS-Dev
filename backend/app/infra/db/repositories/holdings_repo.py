@@ -70,6 +70,27 @@ class HoldingsRepository:
             log.error("portfolios.list_error", error=str(exc))
             return []
 
+    async def list_all_portfolio_keys(self) -> list[tuple[str, str]]:
+        """Distinct (user_id, portfolio_id) pairs across every user -- used by
+        the daily summary snapshot job to know which portfolios to compute."""
+        try:
+            pairs = await self._col.aggregate(
+                [
+                    {
+                        "$group": {
+                            "_id": {
+                                "user_id": "$user_id",
+                                "portfolio_id": {"$ifNull": ["$portfolio_id", "default"]},
+                            }
+                        }
+                    }
+                ]
+            ).to_list(length=None)
+            return [(p["_id"]["user_id"], p["_id"]["portfolio_id"]) for p in pairs]
+        except Exception as exc:
+            log.error("holdings.list_all_keys_error", error=str(exc))
+            return []
+
     async def create_portfolio(self, user_id: str, name: str) -> dict:
         import re
 

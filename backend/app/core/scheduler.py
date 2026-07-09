@@ -9,7 +9,7 @@ The scheduler is disabled automatically when ENVIRONMENT=testing.
 """
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 
 import structlog
 from apscheduler.events import EVENT_JOB_ERROR, JobExecutionEvent
@@ -19,6 +19,8 @@ from apscheduler.triggers.cron import CronTrigger
 from app.core.config import settings
 
 log = structlog.get_logger()
+
+_IST = timezone(timedelta(hours=5, minutes=30))
 
 _scheduler: AsyncIOScheduler | None = None
 _scan_running = False
@@ -212,6 +214,44 @@ async def _run_weekly_sentiment_forecast() -> None:
         log.info("scheduler.weekly_sentiment_forecast.done", week_start=forecast.week_start)
     except Exception as exc:
         log.error("scheduler.weekly_sentiment_forecast.error", error=str(exc))
+
+
+async def _run_portfolio_summary_snapshot() -> None:
+    """15:36 IST weekdays: store today's per-user, per-portfolio Assistant
+    Summary snapshot so a specific past date can be looked up later via the
+    date picker, instead of recomputed from a rolling yfinance window that
+    only knows "now"."""
+    try:
+        from app.infra.db.repositories.holdings_repo import HoldingsRepository
+        from app.infra.db.repositories.portfolio_summary_repo import PortfolioSummaryRepository
+        from app.services.portfolio_summary_service import compute_portfolio_summary
+
+        today = datetime.now(UTC).astimezone(_IST).strftime("%Y-%m-%d")
+        keys = await HoldingsRepository().list_all_portfolio_keys()
+        repo = PortfolioSummaryRepository()
+        stored = 0
+        for user_id, portfolio_id in keys:
+            try:
+                summary = await compute_portfolio_summary(user_id, portfolio_id, "day")
+                if summary.get("has_data"):
+                    await repo.save_snapshot(user_id, portfolio_id, today, summary)
+                    stored += 1
+            except Exception as exc:
+                log.warning(
+                    "scheduler.portfolio_summary.portfolio_error",
+                    user_id=user_id,
+                    portfolio_id=portfolio_id,
+                    error=str(exc),
+                )
+            # yf.download() inside compute_portfolio_summary is a synchronous,
+            # blocking call -- yield the loop between portfolios so a long list
+            # doesn't starve the event loop for the whole job's duration.
+            await asyncio.sleep(0)
+        log.info(
+            "scheduler.portfolio_summary.done", date=today, portfolios=len(keys), stored=stored
+        )
+    except Exception as exc:
+        log.error("scheduler.portfolio_summary.error", error=str(exc))
 
 
 async def _run_position_check() -> None:
@@ -557,6 +597,17 @@ def start_scheduler() -> None:
         name="Market Sentiment — Weekly Forecast",
         max_instances=1,
         misfire_grace_time=None,
+    )
+
+    # Store every portfolio's daily Assistant Summary snapshot at 15:36 IST
+    # (a minute after the 15:35 cluster above, to avoid resource contention)
+    _scheduler.add_job(
+        _run_portfolio_summary_snapshot,
+        CronTrigger(day_of_week="mon-fri", hour=15, minute=36, second=0, timezone="Asia/Kolkata"),
+        id="portfolio_summary_snapshot",
+        name="Portfolio Assistant — Daily Summary Snapshot",
+        max_instances=1,
+        misfire_grace_time=3600,
     )
 
     _scheduler.start()

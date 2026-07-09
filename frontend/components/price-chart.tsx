@@ -45,11 +45,14 @@ const PERIOD_BUCKET_SECONDS: Record<ChartPeriod, number> = {
 // period -- the backend fetches a much longer lookback than this so trend
 // indicators/predictions have enough history, but fitting *all* of that into
 // view (e.g. ~600+ hourly candles for "1h", 90 days back) makes the chart
-// unreadably zoomed out. Periods not listed here (1D and longer) fit all
-// fetched bars, since those are meant to be zoomed-out overview views.
-// Users can still scroll/zoom out manually afterwards.
+// unreadably zoomed out. Also used to centre the last candle in the
+// viewport (see the "Centre the current bucket" block below) -- covers
+// every period, including the day-candle ones (1D and up), not just
+// intraday, so "the end of the chart" is always centred regardless of
+// which period is selected. Users can still scroll/zoom out manually.
 const DEFAULT_VISIBLE_BARS: Partial<Record<ChartPeriod, number>> = {
   '1m': 120, '5m': 100, '15m': 80, '30m': 60, '45m': 60, '1h': 48,
+  '1D': 15, '5D': 20, '1W': 30, '1M': 45, '3M': 90, '6M': 180, '1Y': 250,
 }
 
 // lightweight-charts assumes UTC for UTCTimestamp values -- these force IST

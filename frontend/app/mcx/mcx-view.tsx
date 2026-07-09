@@ -606,6 +606,8 @@ function NgDashboard({ quote, score, buyScore, sellScore, contract, loading, err
         </div>
       </div>
 
+      <AiStrengthBanner score={score} buyScore={buyScore} sellScore={sellScore} />
+
       <div className="grid gap-4 lg:grid-cols-2">
         <BuySellScale buy={buyScore} sell={sellScore} />
         <NgWatchlist contract={contract} />
@@ -667,7 +669,7 @@ function AiStrengthBanner({ score, buyScore, sellScore }: {
   sellScore: NgAiScore | null
 }) {
   if (!score) {
-    return <div className="mb-6 h-16 animate-pulse rounded-xl bg-zinc-100 dark:bg-zinc-800" />
+    return <div className="h-16 animate-pulse rounded-xl bg-zinc-100 dark:bg-zinc-800" />
   }
   const buyPct = buyScore?.score_pct ?? 0
   const sellPct = sellScore?.score_pct ?? 0
@@ -676,7 +678,7 @@ function AiStrengthBanner({ score, buyScore, sellScore }: {
   const leanStyle = lean === 'BUY' ? 'bg-emerald-600 text-white' : lean === 'SELL' ? 'bg-red-500 text-white' : 'bg-zinc-400 text-white'
 
   return (
-    <div className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-indigo-100 bg-gradient-to-r from-indigo-50 to-white px-5 py-3.5 dark:border-indigo-900 dark:from-indigo-950/30 dark:to-zinc-900">
+    <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-indigo-100 bg-gradient-to-r from-indigo-50 to-white px-5 py-3.5 dark:border-indigo-900 dark:from-indigo-950/30 dark:to-zinc-900">
       <div className="flex items-center gap-3">
         <span className="text-xs font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">AI Strength</span>
         <span className="text-2xl font-bold font-mono text-zinc-900 dark:text-zinc-50">{score.score_pct.toFixed(1)}</span>
@@ -1362,8 +1364,6 @@ export default function McxView() {
             <a href="/broker" className="font-semibold underline">Go to Broker settings →</a>
           </div>
         )}
-
-        {zerodhaConnected && <AiStrengthBanner score={score} buyScore={buyScore} sellScore={sellScore} />}
 
         <div className="mb-6 flex items-center gap-1">
           {TABS.map(t => (

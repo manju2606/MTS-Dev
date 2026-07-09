@@ -145,6 +145,15 @@ async def generate_weekly_forecast(today: date | None = None) -> WeeklySentiment
     avg_bull_pct_3d = (
         round(sum(s["bull_pct"] for s in recent) / len(recent), 2) if recent else 50.0
     )
+    # Track bear_pct the same way as bull_pct (a trailing actual average), not as
+    # `100 - bull_pct`. Actual daily bear_pct only counts STRONG_SELL/SELL signals
+    # out of the *whole* universe -- with WATCH/NEUTRAL/BUY-side signals also in the
+    # mix, real bear_pct typically sits well under 20%, nowhere near a 100-bull_pct
+    # complement. Treating it as a complement pushed the proxy past the "Bearish"
+    # classification threshold almost every day regardless of actual conditions.
+    avg_bear_pct_3d = (
+        round(sum(s["bear_pct"] for s in recent) / len(recent), 2) if recent else 20.0
+    )
 
     loop = asyncio.get_running_loop()
     market = await loop.run_in_executor(None, partial(_fetch_vix_and_nifty_sync))
@@ -154,10 +163,13 @@ async def generate_weekly_forecast(today: date | None = None) -> WeeklySentiment
     vix_adjustment = _clamp((15 - vix_value) * 1.5, -8, 8) if vix_value is not None else 0.0
     nifty_adjustment = _clamp(nifty_momentum_pct * 2, -8, 8)
 
-    raw_forecast = avg_bull_pct_3d + vix_adjustment + nifty_adjustment
-    forecast_bull_pct = round(_clamp(raw_forecast, 0, 100), 2)
-    forecast_bear_pct_proxy = round(100 - forecast_bull_pct, 2)
-    forecast_label = _classify(forecast_bull_pct, forecast_bear_pct_proxy)
+    raw_bull_forecast = avg_bull_pct_3d + vix_adjustment + nifty_adjustment
+    forecast_bull_pct = round(_clamp(raw_bull_forecast, 0, 100), 2)
+    # Bullish tailwinds (low VIX, positive momentum) should ease bearishness too,
+    # so the same adjustment is applied in the opposite direction.
+    raw_bear_forecast = avg_bear_pct_3d - vix_adjustment - nifty_adjustment
+    forecast_bear_pct = round(_clamp(raw_bear_forecast, 0, 100), 2)
+    forecast_label = _classify(forecast_bull_pct, forecast_bear_pct)
 
     days = [
         ForecastDay(
@@ -174,21 +186,33 @@ async def generate_weekly_forecast(today: date | None = None) -> WeeklySentiment
         generated_at=datetime.now(UTC),
         inputs={
             "avg_bull_pct_3d": avg_bull_pct_3d,
+            "avg_bear_pct_3d": avg_bear_pct_3d,
             "days_of_history_used": len(recent),
             "vix_value": vix_value,
             "vix_adjustment": round(vix_adjustment, 2),
             "nifty_momentum_pct": nifty_momentum_pct,
             "nifty_adjustment": round(nifty_adjustment, 2),
+            "forecast_bear_pct": forecast_bear_pct,
         },
         days=days,
     )
     await repo.save_forecast(forecast)
 
     # Backfill actuals for any days already in the past (e.g. regenerating mid-week).
+    # Mutate `days` in place too, not just the DB, so the object this function
+    # returns reflects the same backfilled actuals a fresh read would show.
     for day in days:
         snap = await repo.get_snapshot(day.date)
         if snap:
-            await repo.resolve_forecast_day(week_start, day.date, snap["bull_pct"], snap["label"])
+            resolved = await repo.resolve_forecast_day(
+                week_start, day.date, snap["bull_pct"], snap["label"]
+            )
+            if resolved:
+                day.actual_bull_pct = snap["bull_pct"]
+                day.actual_label = snap["label"]
+                day.label_match = day.forecast_label == snap["label"]
+                day.error_pct = round(abs(day.forecast_bull_pct - snap["bull_pct"]), 2)
+                day.resolved_at = datetime.now(UTC).isoformat()
 
     return forecast
 

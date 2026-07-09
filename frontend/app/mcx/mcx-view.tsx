@@ -90,8 +90,19 @@ function NgChart({ quote, score, contract, period, onPeriodChange }: {
       ]
     : []
 
+  // Merge the persisted trail (past predictions, which stay on the chart
+  // even once their time has elapsed) with the current forward forecast,
+  // de-duplicated by time and sorted ascending -- lightweight-charts
+  // requires strictly ordered, unique points per line series.
   const predictionPoints: PredictionPoint[] = prediction
-    ? prediction.predicted.map(p => ({ time: p.time, predictedClose: p.predicted_close, upper: p.upper, lower: p.lower }))
+    ? Array.from(
+        [...prediction.history, ...prediction.predicted]
+          .reduce((map, p) => {
+            map.set(p.time, { time: p.time, predictedClose: p.predicted_close, upper: p.upper, lower: p.lower })
+            return map
+          }, new Map<number, PredictionPoint>())
+          .values(),
+      ).sort((a, b) => a.time - b.time)
     : []
 
   const acc = prediction?.accuracy
@@ -122,6 +133,83 @@ function NgChart({ quote, score, contract, period, onPeriodChange }: {
           )}
         </p>
       )}
+    </div>
+  )
+}
+
+const ACCURACY_ROWS: { label: string; period: ChartPeriod }[] = [
+  { label: 'Minutes', period: '15m' },
+  { label: 'Hours', period: '1h' },
+  { label: 'Days', period: '1D' },
+  { label: 'Weeks', period: '1W' },
+]
+
+function fmtPredictionTime(t: number): string {
+  return new Date(t * 1000).toLocaleString('en-IN', {
+    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+  })
+}
+
+function PredictionAccuracyTable({ contract }: { contract: McxContract }) {
+  const [byPeriod, setByPeriod] = useState<Partial<Record<ChartPeriod, NgPrediction>>>({})
+
+  useEffect(() => {
+    const t = localStorage.getItem('mts_token') ?? ''
+    if (!t) return
+    function load() {
+      for (const row of ACCURACY_ROWS) {
+        getNgPrediction(t, contract, row.period)
+          .then(p => setByPeriod(prev => ({ ...prev, [row.period]: p })))
+          .catch(() => {})
+      }
+    }
+    load()
+    const id = setInterval(load, 120_000)
+    return () => clearInterval(id)
+  }, [contract])
+
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+      <p className="border-b border-zinc-100 px-4 py-3 text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:border-zinc-800">
+        AI Prediction Accuracy &middot; Minutes / Hours / Days / Weeks
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/60">
+              {['Timeframe', 'Time', 'Actual Price', 'Predicted Price', 'Accuracy'].map(h => (
+                <th key={h} className="px-3 py-2 text-left font-medium text-zinc-500">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800">
+            {ACCURACY_ROWS.map(row => {
+              const p = byPeriod[row.period]
+              const resolved = p?.history.filter(h => h.actual_close != null)
+              const latest = resolved && resolved.length > 0 ? resolved[resolved.length - 1] : null
+              return (
+                <tr key={row.period} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
+                  <td className="px-3 py-2.5 font-semibold text-zinc-900 dark:text-zinc-50">{row.label}</td>
+                  <td className="px-3 py-2.5 font-mono text-zinc-500">{latest ? fmtPredictionTime(latest.time) : '—'}</td>
+                  <td className="px-3 py-2.5 font-mono">{latest?.actual_close != null ? `₹${latest.actual_close.toFixed(2)}` : '—'}</td>
+                  <td className="px-3 py-2.5 font-mono">{latest ? `₹${latest.predicted_close.toFixed(2)}` : '—'}</td>
+                  <td className="px-3 py-2.5 font-mono font-semibold">
+                    {p && p.accuracy.sample_size > 0 ? (
+                      <span className={p.accuracy.hit_rate_pct != null && p.accuracy.hit_rate_pct >= 50 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}>
+                        {p.accuracy.hit_rate_pct?.toFixed(1)}%
+                      </span>
+                    ) : '—'}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="border-t border-zinc-100 px-4 py-2.5 text-[11px] text-zinc-400 dark:border-zinc-800">
+        One representative period per bucket (15m/1h/1D/1W). Accuracy is the rolling % of past predictions whose
+        actual close landed inside the predicted band; builds up as time passes each predicted candle.
+      </p>
     </div>
   )
 }
@@ -300,6 +388,8 @@ function NgDashboard({ quote, score, buyScore, sellScore, contract, loading, err
           score) — refreshes automatically every 3 min, or visit the AI Signal tab to pick a direction/capital.
         </p>
       )}
+
+      <PredictionAccuracyTable contract={contract} />
 
       <p className="text-xs text-zinc-400">
         Live price via your connected Zerodha Kite account for the current front-month MCX Natural Gas futures

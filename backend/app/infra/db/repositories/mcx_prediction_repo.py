@@ -88,6 +88,18 @@ class McxPredictionRepository:
                 },
             )
 
+    async def get_recent(
+        self, user_id: str, contract: str, period: str, limit: int = 200
+    ) -> list[dict]:
+        """Full prediction trail (resolved and still-pending), oldest first --
+        so the chart can keep showing predictions made in the past instead of
+        only ever the current rolling forecast window."""
+        query = {"user_id": user_id, "contract": contract.upper(), "period": period}
+        cursor = self._col.find(query, {"_id": 0}).sort("predicted_time", -1).limit(limit)
+        docs = [d async for d in cursor]
+        docs.reverse()
+        return docs
+
     async def get_accuracy_stats(
         self, user_id: str, contract: str, period: str, limit: int = 100
     ) -> dict:

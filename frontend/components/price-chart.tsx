@@ -245,29 +245,28 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
           })
         }
 
-        // AI price prediction — a distinct-colour line continuing from the
-        // last real candle, with a dotted upper/lower uncertainty band. Same
-        // 'left' price scale as the candles so it lines up visually with the
-        // actual price axis rather than auto-scaling against its own range.
+        // AI price prediction — a distinct-colour line spanning the full
+        // prediction trail (past predictions the caller merged in, plus the
+        // current forward forecast), with a dotted upper/lower uncertainty
+        // band. Same 'left' price scale as the candles so it lines up
+        // visually with the actual price axis. The caller is responsible for
+        // sorting ascending and de-duplicating by time -- lightweight-charts
+        // requires strictly ordered, unique points per series.
         if (prediction && prediction.length > 0) {
-          const lastBar = data[data.length - 1]
-          if (lastBar) {
-            const anchor = { time: lastBar.time as UTCTimestamp, value: lastBar.close }
-            const predictedSeries = chart.addSeries(LineSeries, {
-              color: '#a855f7',
-              lineWidth: 2,
-              lineStyle: LineStyle.Solid,
-              priceScaleId: 'left',
-              title: 'AI Prediction',
-            })
-            predictedSeries.setData([anchor, ...prediction.map(p => ({ time: p.time as UTCTimestamp, value: p.predictedClose }))])
+          const predictedSeries = chart.addSeries(LineSeries, {
+            color: '#a855f7',
+            lineWidth: 2,
+            lineStyle: LineStyle.Solid,
+            priceScaleId: 'left',
+            title: 'AI Prediction',
+          })
+          predictedSeries.setData(prediction.map(p => ({ time: p.time as UTCTimestamp, value: p.predictedClose })))
 
-            const bandOpts = { color: '#a855f766', lineWidth: 1 as const, lineStyle: LineStyle.Dotted, priceScaleId: 'left' as const }
-            const upperSeries = chart.addSeries(LineSeries, { ...bandOpts, title: 'Prediction upper' })
-            upperSeries.setData([anchor, ...prediction.map(p => ({ time: p.time as UTCTimestamp, value: p.upper }))])
-            const lowerSeries = chart.addSeries(LineSeries, { ...bandOpts, title: 'Prediction lower' })
-            lowerSeries.setData([anchor, ...prediction.map(p => ({ time: p.time as UTCTimestamp, value: p.lower }))])
-          }
+          const bandOpts = { color: '#a855f766', lineWidth: 1 as const, lineStyle: LineStyle.Dotted, priceScaleId: 'left' as const }
+          const upperSeries = chart.addSeries(LineSeries, { ...bandOpts, title: 'Prediction upper' })
+          upperSeries.setData(prediction.map(p => ({ time: p.time as UTCTimestamp, value: p.upper })))
+          const lowerSeries = chart.addSeries(LineSeries, { ...bandOpts, title: 'Prediction lower' })
+          lowerSeries.setData(prediction.map(p => ({ time: p.time as UTCTimestamp, value: p.lower })))
         }
 
         // LTP line — current/live price, kept separate from the AI levels so it can be

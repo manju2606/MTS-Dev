@@ -1344,6 +1344,7 @@ export async function getNgRangeStats(token: string, contract: McxContract = 'NG
 }
 
 export type NgPredictedPoint = { time: number; predicted_close: number; upper: number; lower: number }
+export type NgPredictionHistoryPoint = NgPredictedPoint & { actual_close: number | null; hit: boolean | null }
 export type NgPredictionAccuracy = { sample_size: number; hit_rate_pct: number | null; avg_error_pct: number | null }
 export type NgPrediction = {
   contract: string
@@ -1352,6 +1353,7 @@ export type NgPrediction = {
   last_actual_time?: number
   last_actual_close?: number
   predicted: NgPredictedPoint[]
+  history: NgPredictionHistoryPoint[]
   accuracy: NgPredictionAccuracy
   method: string
   note?: string

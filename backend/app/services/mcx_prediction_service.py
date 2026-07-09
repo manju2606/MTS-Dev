@@ -58,6 +58,7 @@ async def get_prediction(
             "contract": contract.upper(),
             "period": period,
             "predicted": [],
+            "history": _serialize_history(await repo.get_recent(user_id, contract, period)),
             "accuracy": accuracy,
             "method": "ema20-slope + roc-momentum + atr-cone (local heuristic, not TimesFM)",
             "note": f"Need at least {MIN_CANDLES} candles for a forecast (have {len(candles)}).",
@@ -93,6 +94,7 @@ async def get_prediction(
         )
 
     await repo.save_predictions(user_id, contract, period, predicted)
+    history = _serialize_history(await repo.get_recent(user_id, contract, period))
 
     return {
         "contract": contract.upper(),
@@ -101,6 +103,24 @@ async def get_prediction(
         "last_actual_time": last_time,
         "last_actual_close": round(last_close, 2),
         "predicted": predicted,
+        "history": history,
         "accuracy": accuracy,
         "method": "ema20-slope + roc-momentum + atr-cone (local heuristic, not TimesFM)",
     }
+
+
+def _serialize_history(docs: list[dict]) -> list[dict]:
+    """Trim stored Mongo prediction docs down to what the chart/table need --
+    the full trail (resolved and still-pending) so past predictions keep
+    showing on the chart instead of disappearing once superseded."""
+    return [
+        {
+            "time": d["predicted_time"],
+            "predicted_close": d["predicted_close"],
+            "upper": d["upper"],
+            "lower": d["lower"],
+            "actual_close": d.get("actual_close"),
+            "hit": d.get("hit"),
+        }
+        for d in docs
+    ]

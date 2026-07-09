@@ -82,6 +82,30 @@ async def ng_ai_score(
         ) from exc
 
 
+@router.get("/ng/predict")
+async def ng_predict(
+    current_user: CurrentUser, period: str = "15m", contract: McxContract = "NG"
+) -> dict:
+    """Short-horizon local price forecast (EMA slope + momentum + ATR cone)
+    for the chart's selected timeframe, plus a rolling accuracy tracker --
+    see app/services/mcx_prediction_service.py for what this is (and isn't:
+    not Google TimesFM -- see that module's docstring for why)."""
+    from app.infra.db.repositories.mcx_prediction_repo import McxPredictionRepository
+    from app.services.mcx_prediction_service import get_prediction
+    from app.services.mcx_service import McxNotConnectedError
+
+    try:
+        repo = McxPredictionRepository()
+        return await get_prediction(str(current_user.id), contract, period, repo)
+    except McxNotConnectedError as exc:
+        raise HTTPException(status_code=http_status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"MCX prediction unavailable: {exc}",
+        ) from exc
+
+
 @router.get("/ng/range-stats")
 async def ng_range_stats(current_user: CurrentUser, contract: McxContract = "NG") -> dict:
     """Day/week/month high-low for the front-month contract -- powers the

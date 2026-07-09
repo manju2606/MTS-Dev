@@ -29,6 +29,16 @@ type PriceChartProps = {
 
 const PERIODS: ChartPeriod[] = ['1m', '5m', '15m', '30m', '45m', '1h', '1D', '5D', '1W', '1M', '3M', '6M', '1Y']
 
+// Real candle-bucket width in seconds for each period, matching the actual
+// server-side interval (e.g. "30m" is rendered from 15-minute candles, not
+// 30-minute ones) -- needed so the live-updated "in progress" bar rolls over
+// to a new bucket at the right moment instead of drifting further from the
+// true current time the longer a tab stays open without a period switch.
+const PERIOD_BUCKET_SECONDS: Record<ChartPeriod, number> = {
+  '1m': 60, '5m': 300, '15m': 900, '30m': 900, '45m': 3600, '1h': 3600,
+  '1D': 86400, '5D': 86400, '1W': 86400, '1M': 86400, '3M': 86400, '6M': 86400, '1Y': 86400,
+}
+
 export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLevels, currentPrice, exchangeLabel, refLines }: PriceChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
@@ -106,7 +116,8 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
             horzLines: { color: gridColor },
           },
           crosshair: { mode: CrosshairMode.Normal },
-          rightPriceScale: { borderVisible: false },
+          leftPriceScale: { visible: true, borderVisible: false },
+          rightPriceScale: { visible: false },
           timeScale: { borderVisible: false, timeVisible: true },
           width: containerRef.current.clientWidth,
           height: 300,
@@ -121,6 +132,7 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
           borderDownColor: '#ef4444',
           wickUpColor: '#10b981',
           wickDownColor: '#ef4444',
+          priceScaleId: 'left',
         })
         candleSeriesRef.current = candleSeries
         ltpLineRef.current = null
@@ -272,12 +284,29 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
 
     if (lastBarRef.current) {
       const bar = lastBarRef.current
-      const updated: LiveBar = {
-        time: bar.time,
-        open: bar.open,
-        high: Math.max(bar.high, currentPrice),
-        low: Math.min(bar.low, currentPrice),
-        close: currentPrice,
+      const bucket = PERIOD_BUCKET_SECONDS[period] ?? 86400
+      const nowSec = Math.floor(Date.now() / 1000)
+      const elapsed = nowSec - bar.time
+
+      let updated: LiveBar
+      if (elapsed >= bucket) {
+        // Real time has moved past this bar's bucket -- start a new forming
+        // candle rather than keep stretching a stale one forever. The new
+        // boundary is derived by stepping forward from the last known-good
+        // (server-provided) bucket start, not recomputed from wall-clock
+        // epoch math, so it stays aligned with exchange session offsets
+        // (e.g. NSE/MCX sessions start at 9:15 IST, not on a clean UTC hour).
+        const periodsElapsed = Math.floor(elapsed / bucket)
+        const newTime = (bar.time + periodsElapsed * bucket) as UTCTimestamp
+        updated = { time: newTime, open: currentPrice, high: currentPrice, low: currentPrice, close: currentPrice }
+      } else {
+        updated = {
+          time: bar.time,
+          open: bar.open,
+          high: Math.max(bar.high, currentPrice),
+          low: Math.min(bar.low, currentPrice),
+          close: currentPrice,
+        }
       }
       lastBarRef.current = updated
       candleSeriesRef.current.update(updated)
@@ -300,7 +329,7 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
     }
 
     positionBall(currentPrice)
-  }, [currentPrice, positionBall])
+  }, [currentPrice, period, positionBall])
 
   return (
     <div

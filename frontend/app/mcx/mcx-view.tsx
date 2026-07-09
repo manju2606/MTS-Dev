@@ -2,13 +2,16 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import type { IChartApi, UTCTimestamp } from 'lightweight-charts'
 import { NavBar } from '@/components/nav-bar'
 import { PriceChart } from '@/components/price-chart'
 import type { AILevels, RefLine } from '@/components/price-chart'
 import {
-  getNgQuote, listNgTrades, placeNgTrade, closeNgTrade, getBrokerStatus, getNgAiScore, getNgHistory, getNgTrend, getNgRangeStats,
+  getNgQuote, listNgTrades, placeNgTrade, closeNgTrade, getBrokerStatus, getNgAiScore, getNgHistory, getNgTrend, getNgRangeStats, getNgPrediction,
 } from '@/lib/api'
-import type { NgQuote, McxTrade, BrokerStatus, NgAiScore, HistoryBar, ChartPeriod, McxContract, NgTrendLadder, TrendTimeframe, NgRangeStats } from '@/lib/api'
+import type {
+  NgQuote, McxTrade, BrokerStatus, NgAiScore, HistoryBar, ChartPeriod, McxContract, NgTrendLadder, TrendTimeframe, NgRangeStats, NgPrediction,
+} from '@/lib/api'
 
 function cls(...args: (string | false | null | undefined)[]) { return args.filter(Boolean).join(' ') }
 function pnlColor(v: number) { return v > 0 ? 'text-emerald-600 dark:text-emerald-400' : v < 0 ? 'text-red-500 dark:text-red-400' : 'text-zinc-500' }
@@ -24,8 +27,13 @@ type TradePrefill = { signal: 'BUY' | 'SELL'; lots: number; stopLoss: number; ta
 
 // ── NG Dashboard ─────────────────────────────────────────────────────────────
 
-function NgChart({ quote, score, contract }: { quote: NgQuote | null; score: NgAiScore | null; contract: McxContract }) {
-  const [period, setPeriod] = useState<ChartPeriod>('15m')
+function NgChart({ quote, score, contract, period, onPeriodChange }: {
+  quote: NgQuote | null
+  score: NgAiScore | null
+  contract: McxContract
+  period: ChartPeriod
+  onPeriodChange: (p: ChartPeriod) => void
+}) {
   const [bars, setBars] = useState<HistoryBar[]>([])
   const [loading, setLoading] = useState(true)
   const [rangeStats, setRangeStats] = useState<NgRangeStats | null>(null)
@@ -76,13 +84,125 @@ function NgChart({ quote, score, contract }: { quote: NgQuote | null; score: NgA
       symbol={quote?.tradingsymbol ?? 'MCX Natural Gas'}
       data={bars}
       period={period}
-      onPeriodChange={setPeriod}
+      onPeriodChange={onPeriodChange}
       loading={loading}
       aiLevels={aiLevels}
       currentPrice={quote?.last_price ?? null}
       exchangeLabel="MCX"
       refLines={refLines}
     />
+  )
+}
+
+function PredictionPanel({ contract, period }: { contract: McxContract; period: ChartPeriod }) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const chartRef = useRef<IChartApi | null>(null)
+  const [prediction, setPrediction] = useState<NgPrediction | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const t = localStorage.getItem('mts_token') ?? ''
+    if (!t) return
+    function load() {
+      getNgPrediction(t, contract, period)
+        .then(p => { setPrediction(p); setError(null) })
+        .catch(err => setError(err instanceof Error ? err.message : 'Failed to load prediction'))
+    }
+    load()
+    const id = setInterval(load, 60_000)
+    return () => clearInterval(id)
+  }, [contract, period])
+
+  useEffect(() => {
+    if (!containerRef.current || !prediction || prediction.predicted.length === 0 || prediction.last_actual_time == null) {
+      return
+    }
+    import('lightweight-charts').then(({ createChart, LineSeries, ColorType, LineStyle }) => {
+      if (!containerRef.current) return
+      if (chartRef.current) { chartRef.current.remove(); chartRef.current = null }
+
+      const isDark = document.documentElement.classList.contains('dark')
+      const chart = createChart(containerRef.current, {
+        layout: {
+          background: { type: ColorType.Solid, color: isDark ? '#18181b' : '#ffffff' },
+          textColor: isDark ? '#a1a1aa' : '#71717a',
+          fontSize: 11,
+        },
+        grid: {
+          vertLines: { color: isDark ? '#27272a' : '#f4f4f5' },
+          horzLines: { color: isDark ? '#27272a' : '#f4f4f5' },
+        },
+        rightPriceScale: { visible: false },
+        leftPriceScale: { visible: true, borderVisible: false },
+        timeScale: { borderVisible: false, timeVisible: true },
+        width: containerRef.current.clientWidth,
+        height: 300,
+      })
+      chartRef.current = chart
+
+      const anchorValue = prediction.last_actual_close ?? prediction.predicted[0].predicted_close
+      const anchor = { time: prediction.last_actual_time as UTCTimestamp, value: anchorValue }
+
+      const predictedSeries = chart.addSeries(LineSeries, {
+        color: '#a855f7', lineWidth: 2, lineStyle: LineStyle.Solid, title: 'Predicted',
+      })
+      predictedSeries.setData([anchor, ...prediction.predicted.map(p => ({ time: p.time as UTCTimestamp, value: p.predicted_close }))])
+
+      const bandOpts = { color: '#a855f766', lineWidth: 1 as const, lineStyle: LineStyle.Dotted }
+      const upperSeries = chart.addSeries(LineSeries, { ...bandOpts, title: 'Upper band' })
+      upperSeries.setData([anchor, ...prediction.predicted.map(p => ({ time: p.time as UTCTimestamp, value: p.upper }))])
+      const lowerSeries = chart.addSeries(LineSeries, { ...bandOpts, title: 'Lower band' })
+      lowerSeries.setData([anchor, ...prediction.predicted.map(p => ({ time: p.time as UTCTimestamp, value: p.lower }))])
+
+      chart.timeScale().fitContent()
+
+      const ro = new ResizeObserver(() => {
+        if (containerRef.current && chartRef.current) {
+          chartRef.current.applyOptions({
+            width: containerRef.current.clientWidth,
+            height: containerRef.current.clientHeight,
+          })
+        }
+      })
+      ro.observe(containerRef.current)
+    })
+
+    return () => {
+      if (chartRef.current) { chartRef.current.remove(); chartRef.current = null }
+    }
+  }, [prediction])
+
+  const acc = prediction?.accuracy
+
+  return (
+    <div className="flex min-h-[320px] flex-col rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
+        <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">AI Chart Prediction</span>
+        <span className="text-[10px] text-zinc-400">{period} horizon &middot; local heuristic</span>
+      </div>
+      <div className="relative flex-1">
+        {error && (
+          <div className="absolute inset-0 flex items-center justify-center px-4 text-center text-xs text-amber-600 dark:text-amber-400">{error}</div>
+        )}
+        {!error && prediction?.note && (
+          <div className="absolute inset-0 flex items-center justify-center px-4 text-center text-xs text-zinc-400">{prediction.note}</div>
+        )}
+        {!error && !prediction?.note && <div ref={containerRef} style={{ width: '100%', height: '100%' }} />}
+      </div>
+      {acc && (
+        <div className="border-t border-zinc-100 px-4 py-2.5 text-[11px] text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+          {acc.sample_size > 0 ? (
+            <>
+              Tracked {acc.sample_size} past predictions &middot;{' '}
+              <span className="font-semibold text-zinc-700 dark:text-zinc-200">{acc.hit_rate_pct?.toFixed(1)}%</span>{' '}
+              landed within the predicted band &middot; avg error {acc.avg_error_pct?.toFixed(2)}%
+            </>
+          ) : (
+            'No resolved predictions yet — accuracy tracking builds up as time passes each predicted candle.'
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -185,6 +305,8 @@ function NgDashboard({ quote, score, buyScore, sellScore, contract, loading, err
   loading: boolean
   error: string | null
 }) {
+  const [period, setPeriod] = useState<ChartPeriod>('15m')
+
   if (loading && !quote) {
     return (
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -251,7 +373,10 @@ function NgDashboard({ quote, score, buyScore, sellScore, contract, loading, err
         {stat('OI Day Low', quote.oi_day_low.toLocaleString('en-IN'))}
       </div>
 
-      <NgChart quote={quote} score={score} contract={contract} />
+      <div className="grid gap-4 lg:grid-cols-2">
+        <NgChart quote={quote} score={score} contract={contract} period={period} onPeriodChange={setPeriod} />
+        <PredictionPanel contract={contract} period={period} />
+      </div>
       {score && (
         <p className="text-[11px] text-zinc-400">
           Chart overlay is from the auto-computed AI Signal ({score.direction}, {score.score_pct.toFixed(1)}
@@ -914,7 +1039,7 @@ export default function McxView() {
   return (
     <div className="min-h-full bg-zinc-50 dark:bg-zinc-950">
       <NavBar active="MCX" />
-      <main className="mx-auto max-w-5xl px-4 py-8">
+      <main className="mx-auto max-w-7xl px-4 py-8">
         <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">MCX Natural Gas</h1>

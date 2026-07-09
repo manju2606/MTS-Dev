@@ -1343,6 +1343,36 @@ export async function getNgRangeStats(token: string, contract: McxContract = 'NG
   return res.json()
 }
 
+export type NgPredictedPoint = { time: number; predicted_close: number; upper: number; lower: number }
+export type NgPredictionAccuracy = { sample_size: number; hit_rate_pct: number | null; avg_error_pct: number | null }
+export type NgPrediction = {
+  contract: string
+  period: string
+  generated_at?: string
+  last_actual_time?: number
+  last_actual_close?: number
+  predicted: NgPredictedPoint[]
+  accuracy: NgPredictionAccuracy
+  method: string
+  note?: string
+}
+
+export async function getNgPrediction(
+  token: string,
+  contract: McxContract = 'NG',
+  period: ChartPeriod = '15m',
+): Promise<NgPrediction> {
+  const res = await fetch(
+    `${BASE}/api/v1/mcx/ng/predict?period=${period}&contract=${contract}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch MCX prediction')
+  }
+  return res.json()
+}
+
 export type TrendState = 'STABLE' | 'WEAKENING' | 'JUST_CHANGED'
 export type TrendTimeframe = {
   direction: 'BULLISH' | 'BEARISH' | 'NEUTRAL' | 'UNKNOWN'

@@ -157,8 +157,6 @@ function NgChart({ quote, score, contract, period, onPeriodChange }: {
 const HOURS_GROUP: { label: string; period: PredictionPeriod }[] = [{ label: 'Hours', period: '1h' }]
 const THIRTY_MIN_GROUP: { label: string; period: PredictionPeriod }[] = [{ label: '30 Mins', period: '30m' }]
 const FIFTEEN_MIN_GROUP: { label: string; period: PredictionPeriod }[] = [{ label: '15 Mins', period: '15m' }]
-const WEEK_GROUP: { label: string; period: PredictionPeriod }[] = [{ label: 'Weekly', period: '1Wk' }]
-const MONTH_GROUP: { label: string; period: PredictionPeriod }[] = [{ label: 'Monthly', period: '1Mo' }]
 // Combined 4-group layout for the (collapsed-by-default) archive view --
 // a compact past-day summary doesn't need the same one-table-per-granularity
 // split as the live "today" view.
@@ -184,7 +182,7 @@ type AccuracyData = {
   session_open_reference?: NgSessionOpenReference | null
 }
 
-function buildAccuracyRows(p: AccuracyData | undefined, minTime?: number): AccuracyRow[] {
+function buildAccuracyRows(p: AccuracyData | undefined, minTime?: number, maxPastRows: number = ACCURACY_MAX_PAST_ROWS): AccuracyRow[] {
   if (!p) return []
   const byTime = new Map<number, { time: number; predicted_close: number; actual_close: number | null }>()
   for (const h of p.history) byTime.set(h.time, { time: h.time, predicted_close: h.predicted_close, actual_close: h.actual_close })
@@ -193,11 +191,13 @@ function buildAccuracyRows(p: AccuracyData | undefined, minTime?: number): Accur
   }
   // minTime scopes the "today" live table strictly to today's IST calendar
   // day -- without it, resolved rows could reach back into yesterday to pad
-  // out to ACCURACY_MAX_PAST_ROWS whenever today alone doesn't have enough
-  // yet (e.g. early in the trading session).
+  // out to maxPastRows whenever today alone doesn't have enough yet (e.g.
+  // early in the trading session). maxPastRows itself is only meant to keep
+  // the live "today" table from growing unbounded as the day goes on --
+  // frozen archive/weekly views pass Infinity to show the whole day.
   let all = Array.from(byTime.values()).sort((a, b) => a.time - b.time)
   if (minTime != null) all = all.filter(r => r.time >= minTime)
-  const resolved = all.filter(r => r.actual_close != null).slice(-ACCURACY_MAX_PAST_ROWS)
+  const resolved = all.filter(r => r.actual_close != null).slice(-maxPastRows)
   const pending = all.filter(r => r.actual_close == null)
   const rows: AccuracyRow[] = [...resolved, ...pending]
     .sort((a, b) => a.time - b.time)
@@ -255,6 +255,42 @@ function fmtDateStrDisplay(dateStr: string): string {
 function istDayStartEpoch(dateStr: string): number {
   const [y, m, d] = dateStr.split('-').map(Number)
   return Math.floor((Date.UTC(y, m - 1, d) - 5.5 * 3600 * 1000) / 1000)
+}
+
+// Monday of the ISO week containing "YYYY-MM-DD".
+function mondayOfWeek(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const date = new Date(Date.UTC(y, m - 1, d))
+  const dow = date.getUTCDay() // 0=Sun, 1=Mon, ..., 6=Sat
+  date.setUTCDate(date.getUTCDate() + (dow === 0 ? -6 : 1 - dow))
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`
+}
+
+// Monday through Friday of the week starting at `mondayStr`.
+function weekdayDates(mondayStr: string): string[] {
+  const [y, m, d] = mondayStr.split('-').map(Number)
+  const base = new Date(Date.UTC(y, m - 1, d))
+  return Array.from({ length: 5 }, (_, i) => {
+    const dt = new Date(base)
+    dt.setUTCDate(base.getUTCDate() + i)
+    return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`
+  })
+}
+
+// Weekdays (Mon-Fri) from the 1st of the month through `todayStr`, inclusive.
+function weekdaysInMonthToDate(todayStr: string): string[] {
+  const [y, m, d] = todayStr.split('-').map(Number)
+  const dates: string[] = []
+  const cursor = new Date(Date.UTC(y, m - 1, 1))
+  const end = new Date(Date.UTC(y, m - 1, d))
+  while (cursor <= end) {
+    const dow = cursor.getUTCDay()
+    if (dow !== 0 && dow !== 6) {
+      dates.push(`${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}-${String(cursor.getUTCDate()).padStart(2, '0')}`)
+    }
+    cursor.setUTCDate(cursor.getUTCDate() + 1)
+  }
+  return dates
 }
 
 function CollapsibleCard({ title, subtitle, defaultOpen, children }: {
@@ -444,7 +480,7 @@ function ArchivedAccuracyTable({ dateStr, contract }: { dateStr: string; contrac
     ).then(() => setLoaded(true))
   }, [dateStr, contract])
 
-  const rowsByGroup = ALL_INTRADAY_GROUPS.map(g => buildAccuracyRows(byPeriod[g.period]))
+  const rowsByGroup = ALL_INTRADAY_GROUPS.map(g => buildAccuracyRows(byPeriod[g.period], undefined, Infinity))
 
   if (!loaded) return <div className="h-24 animate-pulse bg-zinc-50 dark:bg-zinc-800/40" />
   return <AccuracyTrailGrid groups={ALL_INTRADAY_GROUPS} rowsByGroup={rowsByGroup} />
@@ -511,6 +547,71 @@ function MinuteAccuracyTables({ contract }: { contract: McxContract }) {
   )
 }
 
+// Shared by the Weekly and Monthly tables: same 15-minute Time/Actual/
+// Predicted/Accuracy format as the daily "15 Mins" table, but spanning a
+// caller-supplied list of weekdays instead of just today. Past days come
+// from the (already-persisted) archive, full day, uncapped; today comes
+// from the live feed; dates beyond today are simply skipped -- there's
+// nothing to show for them without data leakage.
+function DateRangeFifteenMinTable({ title, dates, contract, footnote }: {
+  title: string
+  dates: string[]
+  contract: McxContract
+  footnote: string
+}) {
+  const todayStr = istDateStr(0)
+  const [rows, setRows] = useState<AccuracyRow[]>([])
+  const [loaded, setLoaded] = useState(false)
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+
+  useEffect(() => {
+    const t = localStorage.getItem('mts_token') ?? ''
+    if (!t) return
+    async function load() {
+      const parts: AccuracyRow[] = []
+      for (const dateStr of dates) {
+        if (dateStr > todayStr) continue
+        try {
+          if (dateStr === todayStr) {
+            const live = await getNgPrediction(t as string, contract, '15m')
+            parts.push(...buildAccuracyRows(live, istDayStartEpoch(todayStr), Infinity))
+          } else {
+            const archived = await getNgPredictionArchive(t as string, contract, '15m', dateStr)
+            parts.push(...buildAccuracyRows({ history: archived.history, predicted: [] }, undefined, Infinity))
+          }
+        } catch {
+          // one day failing to load shouldn't blank out the rest of the range
+        }
+      }
+      parts.sort((a, b) => a.time - b.time)
+      setRows(parts)
+      setLoaded(true)
+      setLastUpdated(new Date())
+    }
+    load()
+    const id = setInterval(load, 60_000)
+    return () => clearInterval(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contract, dates.join(','), todayStr])
+
+  const group = [{ label: '15 Mins', period: '15m' as PredictionPeriod }]
+
+  return (
+    <CollapsibleCard
+      title={title}
+      defaultOpen={false}
+      subtitle={<LiveDot label={lastUpdated ? `Live · updated ${lastUpdated.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })}` : 'Loading…'} />}
+    >
+      {!loaded ? (
+        <div className="h-24 animate-pulse bg-zinc-50 dark:bg-zinc-800/40" />
+      ) : (
+        <AccuracyTrailGrid groups={group} rowsByGroup={[rows]} showDate />
+      )}
+      <p className="border-t border-zinc-100 px-4 py-2.5 text-[11px] text-zinc-400 dark:border-zinc-800">{footnote}</p>
+    </CollapsibleCard>
+  )
+}
+
 function PredictionAccuracyTable({ contract }: { contract: McxContract }) {
   return (
     <div className="space-y-3">
@@ -539,19 +640,17 @@ function PredictionAccuracyTable({ contract }: { contract: McxContract }) {
         footnote={'Time and Predicted Price are prefilled through the rest of the day as soon as they’re generated; Actual Price and Accuracy show "pending" until real time reaches that row, then fill in automatically. First row is the real session-open price, not a prediction.'}
       />
       <MinuteAccuracyTables contract={contract} />
-      <LiveAccuracyTable
-        title="AI Prediction Accuracy Trail — Weekly"
-        groups={WEEK_GROUP}
+      <DateRangeFifteenMinTable
+        title="AI Prediction Accuracy Trail — Weekly (15 Mins, Mon–Fri)"
+        dates={weekdayDates(mondayOfWeek(istDateStr(0)))}
         contract={contract}
-        defaultOpen={false}
-        footnote="One row per ISO week (Monday start), prefilled up to 8 weeks ahead. MCX Natural Gas is a monthly-expiring futures contract, so the current front-month instrument only has a few months of its own price history to learn from."
+        footnote="Same 15-minute grid as the daily table, spanning this week (Monday–Friday) instead of just today. Weekdays that haven't happened yet won't have rows; each day starts with its own real session-open reference row."
       />
-      <LiveAccuracyTable
-        title="AI Prediction Accuracy Trail — Monthly"
-        groups={MONTH_GROUP}
+      <DateRangeFifteenMinTable
+        title="AI Prediction Accuracy Trail — Monthly (15 Mins, weekdays)"
+        dates={weekdaysInMonthToDate(istDateStr(0))}
         contract={contract}
-        defaultOpen={false}
-        footnote="One row per calendar month, prefilled up to 8 months ahead. Same front-month-contract history limitation as the weekly table — treat this as a rough directional read, not a firm forecast."
+        footnote="Same 15-minute grid as the daily table, spanning this calendar month's weekdays (1st through today). Days that haven't happened yet won't have rows; each day starts with its own real session-open reference row."
       />
       <div>
         <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Previous Days (Archive)</p>

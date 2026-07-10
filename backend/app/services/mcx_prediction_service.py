@@ -34,7 +34,14 @@ PERIOD_BUCKET_SECONDS: dict[str, int] = {
     "1m": 60,
     "5m": 300,
     "15m": 900,
-    "30m": 900,
+    # "30m" genuinely means a 30-minute prediction bucket (1800s) -- NOT the
+    # 15-minute Kite candle interval mcx_service._HISTORY_PERIOD_MAP uses to
+    # fetch the underlying candles for this period (that choice is about
+    # chart rendering density, unrelated to what "30 Mins" should predict
+    # in). Using the candle interval here instead produced buckets on a
+    # 15-minute-offset grid (9:45, 10:15, 10:45...) rather than a clean
+    # 30-minute one from session open (9:00, 9:30, 10:00...).
+    "30m": 1800,
     "45m": 3600,
     "1h": 3600,
     "1D": 86400,
@@ -91,6 +98,25 @@ MIN_CANDLES_CALENDAR = 6
 # inserts the buckets that don't already exist), so the cost here is mostly
 # how many rows the frontend ends up carrying, not backend load.
 MAX_HORIZON = 900
+
+
+def _snap_to_session_grid(t: int, bucket: int) -> int:
+    """Snap epoch `t` down to the nearest `bucket`-second grid line anchored
+    to that day's MCX session open (09:00 IST). Needed because the anchor
+    (the last real candle) can sit on a finer grid than the prediction
+    bucket itself -- e.g. "30m" predictions are generated from 15-minute
+    Kite candles (see PERIOD_BUCKET_SECONDS's comment), so an anchor at 9:15
+    would otherwise generate 9:45, 10:15, 10:45... instead of the clean
+    9:00, 9:30, 10:00... grid. A no-op for periods whose candle interval
+    already matches the bucket size."""
+    dt = datetime.fromtimestamp(t, tz=_IST)
+    session_open = dt.replace(
+        hour=_SESSION_OPEN_HOUR, minute=_SESSION_OPEN_MINUTE, second=0, microsecond=0
+    )
+    elapsed = int((dt - session_open).total_seconds())
+    if elapsed < 0:
+        return int(session_open.timestamp())
+    return int(session_open.timestamp()) + (elapsed // bucket) * bucket
 
 
 def _buckets_until_market_close(last_time: int, bucket: int) -> int:
@@ -292,9 +318,10 @@ async def get_prediction(
             user_id, contract, period, candles
         )
         anchor_price, anchor_time = await _live_anchor(user_id, contract, last_close, last_time)
-        horizon = _buckets_until_market_close(last_time, bucket)  # type: ignore[arg-type]
+        grid_anchor = _snap_to_session_grid(last_time, bucket)  # type: ignore[arg-type]
+        horizon = _buckets_until_market_close(grid_anchor, bucket)  # type: ignore[arg-type]
         for i in range(1, horizon + 1):
-            t = last_time + i * bucket  # type: ignore[operator]
+            t = grid_anchor + i * bucket  # type: ignore[operator]
             seconds_ahead = t - anchor_time
             proj_close = anchor_price + slope_per_second * seconds_ahead
             band = atr_per_sqrt_second * (max(seconds_ahead, 0) ** 0.5)

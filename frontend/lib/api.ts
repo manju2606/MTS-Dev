@@ -1251,6 +1251,12 @@ export type NgQuote = {
   oi: number
   oi_day_high: number
   oi_day_low: number
+  // True when Zerodha was unreachable (missing session or expired daily
+  // token) and this is the last successfully fetched quote instead of a
+  // live one -- see mcx_service.py's get_quote() fallback. as_of is when
+  // that quote was actually fetched.
+  stale?: boolean
+  as_of?: string
 }
 
 export type McxTrade = Trade & { lots: number }

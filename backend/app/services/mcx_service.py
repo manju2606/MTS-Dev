@@ -61,6 +61,54 @@ class McxNotConnectedError(Exception):
     have no free/public source, unlike NSE/BSE."""
 
 
+# Last-known-good quote per (user, contract), used to keep the dashboard
+# usable across Zerodha's daily token expiry -- Kite invalidates yesterday's
+# token every day with no refresh API (see zerodha_token_service.py's own
+# docstring), so a hard failure here would otherwise mean the whole MCX
+# section goes blank every single morning until the user reconnects. Stored
+# in Redis (not the in-process _INSTRUMENTS_CACHE dict above) so it survives
+# backend restarts and is visible across the app's 2 uvicorn workers.
+_QUOTE_CACHE_PREFIX = "mcx_quote_cache:"
+_QUOTE_CACHE_TTL = 3 * 24 * 3600  # survives a long weekend outage, not just overnight
+
+
+def _quote_cache_key(user_id: str, contract: str) -> str:
+    return f"{_QUOTE_CACHE_PREFIX}{user_id}:{contract.upper()}"
+
+
+async def _cache_quote(user_id: str, contract: str, quote: dict) -> None:
+    try:
+        import json
+
+        import redis.asyncio as aioredis
+
+        from app.core.config import settings
+
+        r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+        payload = json.dumps({**quote, "as_of": datetime.utcnow().isoformat()})
+        await r.set(_quote_cache_key(user_id, contract), payload, ex=_QUOTE_CACHE_TTL)
+        await r.aclose()
+    except Exception as exc:
+        log.warning("mcx.quote_cache.write_failed", error=str(exc))
+
+
+async def _get_cached_quote(user_id: str, contract: str) -> dict | None:
+    try:
+        import json
+
+        import redis.asyncio as aioredis
+
+        from app.core.config import settings
+
+        r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+        raw = await r.get(_quote_cache_key(user_id, contract))
+        await r.aclose()
+        return json.loads(raw) if raw else None
+    except Exception as exc:
+        log.warning("mcx.quote_cache.read_failed", error=str(exc))
+        return None
+
+
 async def get_zerodha_broker(user_id: str) -> ZerodhaBroker:
     broker = await session_store.get(user_id)
     if not isinstance(broker, ZerodhaBroker):
@@ -119,8 +167,7 @@ async def resolve_ng_contract(broker: ZerodhaBroker) -> dict:
     return await resolve_contract(broker, "NG")
 
 
-async def get_quote(user_id: str, contract: str = "NG") -> dict:
-    """Live MCX front-month contract quote: LTP, OHLC, volume, OI."""
+async def _fetch_live_quote(user_id: str, contract: str) -> dict:
     broker = await get_zerodha_broker(user_id)
     c = await resolve_contract(broker, contract)
     tradingsymbol = c["tradingsymbol"]
@@ -151,6 +198,30 @@ async def get_quote(user_id: str, contract: str = "NG") -> dict:
         "oi_day_high": int(raw.get("oi_day_high", 0)),
         "oi_day_low": int(raw.get("oi_day_low", 0)),
     }
+
+
+async def get_quote(user_id: str, contract: str = "NG") -> dict:
+    """Live MCX front-month contract quote: LTP, OHLC, volume, OI. Falls
+    back to the last successfully fetched quote (marked stale=True, with an
+    as_of timestamp) if Zerodha is unreachable right now -- either the
+    session is missing entirely or today's token has expired (see
+    McxNotConnectedError and zerodha_token_service.py). Only re-raises if
+    there's no cached quote to fall back to (e.g. genuinely never connected
+    before), since there's nothing meaningful to show in that case."""
+    try:
+        quote = await _fetch_live_quote(user_id, contract)
+        quote["stale"] = False
+        await _cache_quote(user_id, contract, quote)
+        return quote
+    except Exception as exc:
+        cached = await _get_cached_quote(user_id, contract)
+        if cached is None:
+            raise
+        log.warning(
+            "mcx.quote.fallback_to_cache", user_id=user_id, contract=contract, error=str(exc)
+        )
+        cached["stale"] = True
+        return cached
 
 
 async def get_ng_quote(user_id: str) -> dict:

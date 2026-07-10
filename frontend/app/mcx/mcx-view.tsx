@@ -1073,7 +1073,17 @@ function NgDashboard({ quote, score, buyScore, sellScore, contract, loading, err
             <p className="text-xs font-semibold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
               MCX Natural Gas &middot; {quote.tradingsymbol}
             </p>
-            <p className="mt-1 text-4xl font-bold font-mono text-zinc-900 dark:text-zinc-50">₹{quote.last_price.toFixed(2)}</p>
+            <p className="mt-1 flex items-center gap-2 text-4xl font-bold font-mono text-zinc-900 dark:text-zinc-50">
+              ₹{quote.last_price.toFixed(2)}
+              {quote.stale && (
+                <span
+                  className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-700 dark:bg-amber-950/50 dark:text-amber-400"
+                  title={quote.as_of ? `Zerodha unreachable — showing last known price from ${new Date(quote.as_of).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}` : 'Zerodha unreachable — showing last known price'}
+                >
+                  Stale
+                </span>
+              )}
+            </p>
             <p className={cls('mt-1 text-sm font-mono font-semibold', pnlColor(quote.change))}>
               {quote.change >= 0 ? '+' : ''}{quote.change.toFixed(2)} ({quote.change >= 0 ? '+' : ''}{quote.change_pct.toFixed(2)}%)
             </p>
@@ -1174,6 +1184,14 @@ function LtpStrengthBanner({ quote, score, buyScore, sellScore }: {
         <span className={cls('text-xs font-mono font-semibold', pnlColor(quote.change))}>
           {quote.change >= 0 ? '+' : ''}{quote.change.toFixed(2)} ({quote.change >= 0 ? '+' : ''}{quote.change_pct.toFixed(2)}%)
         </span>
+        {quote.stale && (
+          <span
+            className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-700 dark:bg-amber-950/50 dark:text-amber-400"
+            title={quote.as_of ? `Zerodha unreachable — showing last known price from ${new Date(quote.as_of).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}` : 'Zerodha unreachable — showing last known price'}
+          >
+            Stale
+          </span>
+        )}
       </div>
       <div className="flex items-center gap-3">
         <span className="text-xs font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">AI Strength</span>

@@ -111,8 +111,15 @@ MAX_HORIZON = 900
 # it visibly reflects the improvement, while the full history stays intact
 # in the trail. Intraday periods only -- see REFERENCE_PERIOD's note on why
 # 1Wk/1Mo are deliberately excluded from shared short-horizon machinery.
-ACCURACY_RECALIBRATE_BELOW_PCT = 99.0
-MIN_RECALIBRATION_SAMPLE = 5
+#
+# 99.5%/3 (rather than 99.0%/5) trips sooner and off a smaller sample --
+# pending buckets get refreshed before they've drifted as far, at the cost
+# of reacting to noisier, less-certain accuracy reads. This raises the
+# realistic ceiling on the per-row accuracy number; it cannot force it to
+# literally 100% -- see this module's own docstring for why that's not
+# attempted.
+ACCURACY_RECALIBRATE_BELOW_PCT = 99.5
+MIN_RECALIBRATION_SAMPLE = 3
 
 
 def _snap_to_session_grid(t: int, bucket: int) -> int:

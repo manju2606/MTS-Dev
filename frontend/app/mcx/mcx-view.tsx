@@ -7,10 +7,10 @@ import { NavBar } from '@/components/nav-bar'
 import { PriceChart } from '@/components/price-chart'
 import type { AILevels, RefLine, PredictionPoint } from '@/components/price-chart'
 import {
-  getNgQuote, listNgTrades, placeNgTrade, closeNgTrade, getBrokerStatus, getNgAiScore, getNgHistory, getNgTrend, getNgRangeStats, getNgPrediction, getNgPredictionArchive, getNgDashboardHistory, getNgSignals, getNgGlobalSymbols,
+  getNgQuote, listNgTrades, placeNgTrade, closeNgTrade, getBrokerStatus, getNgAiScore, getNgHistory, getNgTrend, getNgRangeStats, getNgPrediction, getNgPredictionArchive, getNgDashboardHistory, getNgSignals, getNgGlobalSymbols, getNgNews, getMe, ApiError,
 } from '@/lib/api'
 import type {
-  NgQuote, McxTrade, BrokerStatus, NgAiScore, HistoryBar, ChartPeriod, McxContract, NgTrendLadder, TrendTimeframe, NgRangeStats, NgPrediction, NgPredictionHistoryPoint, NgPredictionAccuracy, PredictionPeriod, NgDashboardSnapshot, NgSignalsResponse, NgGlobalSymbolRow, NgSessionOpenReference,
+  NgQuote, McxTrade, BrokerStatus, NgAiScore, HistoryBar, ChartPeriod, McxContract, NgTrendLadder, TrendTimeframe, NgRangeStats, NgPrediction, NgPredictionHistoryPoint, NgPredictionAccuracy, PredictionPeriod, NgDashboardSnapshot, NgSignalsResponse, NgGlobalSymbolRow, NgSessionOpenReference, NgNewsResponse,
 } from '@/lib/api'
 
 function cls(...args: (string | false | null | undefined)[]) { return args.filter(Boolean).join(' ') }
@@ -1513,6 +1513,81 @@ function TradeSignalsTable({ contract }: { contract: McxContract }) {
   )
 }
 
+function newsSentimentLabel(score: number): { label: string; cls: string } {
+  if (score > 0.1) return { label: 'Bullish', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400' }
+  if (score < -0.1) return { label: 'Bearish', cls: 'bg-red-100 text-red-600 dark:bg-red-950/50 dark:text-red-400' }
+  return { label: 'Neutral', cls: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300' }
+}
+
+// International NG/energy news feeding the AI score's News Filter category
+// (see mcx_ai_score_service.py's _score_news) -- shown here so a directional
+// nudge from news sentiment isn't an invisible black box; every headline
+// that contributed to the aggregate is visible with its own sentiment read.
+function NgNewsPanel() {
+  const [data, setData] = useState<NgNewsResponse | null>(null)
+
+  useEffect(() => {
+    const t = localStorage.getItem('mts_token') ?? ''
+    if (!t) return
+    function load() {
+      getNgNews(t, 20).then(setData).catch(() => {})
+    }
+    load()
+    const id = setInterval(load, 300_000)
+    return () => clearInterval(id)
+  }, [])
+
+  const overall = data?.avg_sentiment != null ? newsSentimentLabel(data.avg_sentiment) : null
+
+  return (
+    <CollapsibleCard
+      title="Recent NG News"
+      defaultOpen={false}
+      subtitle={
+        overall ? (
+          <span className="flex items-center gap-1.5 text-[11px] text-zinc-400">
+            Overall
+            <span className={cls('rounded-full px-2 py-0.5 text-[10px] font-bold', overall.cls)}>{overall.label}</span>
+            ({data?.avg_sentiment?.toFixed(2)})
+          </span>
+        ) : (
+          <span className="text-[11px] text-zinc-400">No recent articles</span>
+        )
+      }
+    >
+      {!data || data.articles.length === 0 ? (
+        <p className="px-4 py-8 text-center text-xs text-zinc-400">
+          No NG-relevant articles fetched yet — the news feed job runs every 30 minutes.
+        </p>
+      ) : (
+        <ul className="divide-y divide-zinc-50 dark:divide-zinc-800">
+          {data.articles.map((a, i) => {
+            const s = newsSentimentLabel(a.sentiment_score)
+            return (
+              <li key={i} className="px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <a href={a.url} target="_blank" rel="noreferrer" className="text-xs font-medium text-zinc-800 hover:underline dark:text-zinc-200">
+                    {a.title}
+                  </a>
+                  <span className={cls('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold', s.cls)}>{s.label}</span>
+                </div>
+                <p className="mt-1 text-[11px] text-zinc-400">
+                  {a.source} &middot; {new Date(a.published_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                </p>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      <p className="border-t border-zinc-100 px-4 py-2.5 text-[11px] text-zinc-400 dark:border-zinc-800">
+        OilPrice.com, Investing.com Commodities, and Natural Gas Intel, filtered to NG-relevant articles and
+        keyword-scored for sentiment (not an LLM read of the article) — the same feed behind the AI score's News
+        Filter category. A coarse signal, not analysis; verify anything that looks market-moving before trading on it.
+      </p>
+    </CollapsibleCard>
+  )
+}
+
 // ── Trend Ladder ──────────────────────────────────────────────────────────────
 
 const TIMEFRAME_LABELS: Record<string, string> = {
@@ -1916,6 +1991,24 @@ export default function McxView() {
     return () => clearInterval(id)
   }, [router, loadQuote, loadTrades])
 
+  // Session-expiry check: a token that exists in localStorage but is no
+  // longer valid (past ACCESS_TOKEN_EXPIRE_MINUTES, no refresh endpoint
+  // exists yet) otherwise leaves every widget on this page silently 401ing
+  // forever with no indication to the user that re-login would fix it --
+  // same failure mode already fixed on the main Dashboard tab. getMe() is
+  // the cheapest authenticated call, and only a genuine 401 (not a network
+  // blip or a slow backend) sends the user back to /login.
+  useEffect(() => {
+    const t = localStorage.getItem('mts_token')
+    if (!t) return
+    const checkSession = () => {
+      getMe(t).catch(err => { if (err instanceof ApiError && err.status === 401) router.replace('/login') })
+    }
+    checkSession()
+    const id = setInterval(checkSession, 60_000)
+    return () => clearInterval(id)
+  }, [router])
+
   // Auto-compute BUY + SELL AI scores as soon as the page loads, so the
   // Dashboard chart's signal overlay and the buy/sell weight scale are
   // populated without ever needing to visit the AI Signal tab. Visiting that
@@ -2011,6 +2104,7 @@ export default function McxView() {
               contract={contract}
             />
             <TradeSignalsTable contract={contract} />
+            <NgNewsPanel />
           </div>
         )}
         {tab === 'trade' && <NgTradeForm quote={quote} onPlaced={loadTrades} prefill={tradePrefill} contract={contract} />}

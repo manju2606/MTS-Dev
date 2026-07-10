@@ -472,6 +472,26 @@ async def _run_mcx_signal_check() -> None:
         log.error("scheduler.mcx_signal.error", error=str(exc))
 
 
+async def _run_mcx_ng_news_fetch() -> None:
+    """Every 30 min, 07:00-23:30 IST (covers pre-market and the full MCX
+    session): fetch international Natural Gas / energy news (OilPrice.com,
+    Investing.com Commodities, Natural Gas Intel), keyword-filtered to NG
+    relevance, and persist it -- feeds the NG-AI Pro score's News Filter
+    category (see mcx_ai_score_service.py's _recent_ng_news, which reads
+    this instead of hitting RSS feeds on every score computation) and the
+    AI Signal tab's news panel. Not per-user -- the news itself doesn't
+    depend on which user is asking, unlike everything else in this file."""
+    try:
+        from app.infra.db.repositories.mcx_news_repo import McxNewsRepository
+        from app.infra.mcx.ng_news_fetcher import fetch_ng_news
+
+        items = await fetch_ng_news()
+        saved = await McxNewsRepository().save_news(items)
+        log.info("scheduler.mcx_ng_news.done", fetched=len(items), new=saved)
+    except Exception as exc:
+        log.error("scheduler.mcx_ng_news.error", error=str(exc))
+
+
 async def _run_zerodha_token_check() -> None:
     """08:45 IST weekdays, before market open: validate every connected
     user's Zerodha session against Kite (not just "we have a token cached"
@@ -933,6 +953,19 @@ def start_scheduler() -> None:
         name="Zerodha — Daily Token Validity Check",
         max_instances=1,
         misfire_grace_time=1800,
+    )
+
+    # International NG/energy news fetch every 30 min, 07:00-23:30 IST daily
+    # (not user-scoped, and MCX's session runs weekdays but overnight/weekend
+    # global gas news can still matter for Monday's open) -- feeds the NG-AI
+    # Pro score's News Filter category and the AI Signal tab's news panel.
+    _scheduler.add_job(
+        _run_mcx_ng_news_fetch,
+        CronTrigger(hour="7-23", minute="0,30", second=40, timezone="Asia/Kolkata"),
+        id="mcx_ng_news_fetch",
+        name="MCX — International NG News Fetch",
+        max_instances=1,
+        misfire_grace_time=600,
     )
 
     _scheduler.start()

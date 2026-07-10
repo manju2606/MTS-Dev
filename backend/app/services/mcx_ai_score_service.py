@@ -18,13 +18,21 @@ candle collection only just started, so there's nothing to train on yet.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from app.infra.mcx import ng_indicators as ind
 from app.services.mcx_service import get_zerodha_broker, ist_now
 
 _INTERVAL_MAP = {"1m": "minute", "5m": "5minute", "15m": "15minute"}
 _LOOKBACK_DAYS = {"1m": 2, "5m": 5, "15m": 10}
+
+# How far back "recent" NG news reaches, and how far a keyword-scored
+# average sentiment has to lean before it's treated as opposing a
+# direction -- a razor-thin average from coarse keyword scoring shouldn't
+# flip a trade verdict on its own (see ng_news_fetcher.py's own docstring
+# on the sentiment approach's limits).
+_NEWS_LOOKBACK_HOURS = 48
+_NEWS_SENTIMENT_DEADBAND = 0.1
 
 # yfinance tickers for the Correlation category.
 _CORRELATION_TICKERS = {
@@ -62,6 +70,21 @@ def _fetch_correlation_sync() -> dict:
         except Exception:
             out[key] = None
     return out
+
+
+async def _recent_ng_news() -> list[dict]:
+    """Reads whatever the scheduler's own NG news job (every 30 min, see
+    scheduler.py) already fetched and persisted -- this function runs on
+    every score computation (both directions, both contracts, every 5 min
+    via the signal-check job), so it must not itself hit the RSS feeds live
+    each time."""
+    try:
+        from app.infra.db.repositories.mcx_news_repo import McxNewsRepository
+
+        since = datetime.utcnow() - timedelta(hours=_NEWS_LOOKBACK_HOURS)
+        return await McxNewsRepository().get_recent(limit=50, since=since)
+    except Exception:
+        return []
 
 
 def _check(label: str, passed: bool, points: float, note: str = "") -> dict:
@@ -267,7 +290,9 @@ def _score_correlation(corr: dict, direction: str) -> dict:
     return _category("Correlation", 5, checks, excluded)
 
 
-def _score_news() -> dict:
+def _score_news(news_items: list[dict], direction: str) -> dict:
+    # Still no economic-calendar API -- these four remain genuinely
+    # unmeasured, unlike LNG/NG news sentiment below which is now real.
     excluded = [
         "EIA inventory report",
         "OPEC meetings",
@@ -275,7 +300,27 @@ def _score_news() -> dict:
         "RBI",
         "geopolitical events -- verify manually before trading",
     ]
-    return _category("News Filter", 5, [], excluded)
+    if not news_items:
+        return _category(
+            "News Filter", 5, [], ["Recent NG news sentiment (no articles fetched yet)", *excluded]
+        )
+
+    avg_sentiment = sum(n["sentiment_score"] for n in news_items) / len(news_items)
+    bull = direction == "BUY"
+    opposes = (
+        avg_sentiment < -_NEWS_SENTIMENT_DEADBAND
+        if bull
+        else avg_sentiment > _NEWS_SENTIMENT_DEADBAND
+    )
+    checks = [
+        _check(
+            f"Recent NG news sentiment ({avg_sentiment:+.2f})",
+            not opposes,
+            5.0,
+            f"{len(news_items)} articles in the last {_NEWS_LOOKBACK_HOURS}h",
+        )
+    ]
+    return _category("News Filter", 5, checks, excluded)
 
 
 def _classify(score_pct: float) -> str:
@@ -309,6 +354,7 @@ async def compute_ng_ai_score(
 
     h, low, c = ind.highs(candles), ind.lows(candles), ind.closes(candles)
     corr = _fetch_correlation_sync()
+    news_items = await _recent_ng_news()
 
     categories = [
         _score_trend(c, direction),
@@ -318,7 +364,7 @@ async def compute_ng_ai_score(
         _score_order_flow(candles, direction),
         _score_volatility(candles, direction),
         _score_correlation(corr, direction),
-        _score_news(),
+        _score_news(news_items, direction),
     ]
 
     earned = sum(cat["earned"] for cat in categories)

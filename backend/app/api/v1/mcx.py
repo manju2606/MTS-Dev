@@ -153,6 +153,23 @@ async def ng_global_symbols(current_user: CurrentUser) -> list[dict]:
     return await get_global_symbols(str(current_user.id))
 
 
+@router.get("/ng/news")
+async def ng_news(current_user: CurrentUser, limit: int = 20) -> dict:
+    """Recent international NG/energy news (OilPrice.com, Investing.com
+    Commodities, Natural Gas Intel), keyword-filtered to NG relevance and
+    keyword-scored for sentiment -- the same feed backing the NG-AI Pro
+    score's News Filter category (see mcx_ai_score_service.py). Reads
+    whatever the scheduler's own fetch job already persisted, not a live
+    RSS pull, so this is fast regardless of feed latency."""
+    from app.infra.db.repositories.mcx_news_repo import McxNewsRepository
+
+    items = await McxNewsRepository().get_recent(limit=limit)
+    avg_sentiment = None
+    if items:
+        avg_sentiment = round(sum(n["sentiment_score"] for n in items) / len(items), 3)
+    return {"articles": items, "avg_sentiment": avg_sentiment}
+
+
 @router.get("/ng/signals")
 async def ng_signals(
     current_user: CurrentUser, contract: McxContract = "NG", limit: int = 50

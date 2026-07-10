@@ -1449,6 +1449,25 @@ export async function getNgGlobalSymbols(token: string): Promise<NgGlobalSymbolR
   return res.json()
 }
 
+export type NgNewsArticle = {
+  title: string
+  source: string
+  url: string
+  published_at: string
+  sentiment_score: number
+  summary: string
+}
+export type NgNewsResponse = { articles: NgNewsArticle[]; avg_sentiment: number | null }
+
+export async function getNgNews(token: string, limit = 20): Promise<NgNewsResponse> {
+  const res = await fetch(`${BASE}/api/v1/mcx/ng/news?limit=${limit}`, { headers: authHeaders(token) })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch NG news')
+  }
+  return res.json()
+}
+
 export type NgPredictedPoint = { time: number; predicted_close: number; upper: number; lower: number }
 export type NgPredictionHistoryPoint = NgPredictedPoint & { actual_close: number | null; hit: boolean | null }
 export type NgPredictionAccuracy = {

@@ -472,6 +472,22 @@ async def _run_mcx_signal_check() -> None:
         log.error("scheduler.mcx_signal.error", error=str(exc))
 
 
+async def _run_zerodha_token_check() -> None:
+    """08:45 IST weekdays, before market open: validate every connected
+    user's Zerodha session against Kite (not just "we have a token cached"
+    -- Kite invalidates yesterday's token daily regardless of our own Redis
+    TTL) and email + in-app notify whoever needs to reconnect, with a link
+    to the manual login page (see zerodha_token_service.py for why this
+    doesn't automate the login itself)."""
+    try:
+        from app.services.zerodha_token_service import check_and_notify_all
+
+        checked, reminded = await check_and_notify_all()
+        log.info("scheduler.zerodha_token_check.done", checked=checked, reminded=reminded)
+    except Exception as exc:
+        log.error("scheduler.zerodha_token_check.error", error=str(exc))
+
+
 async def _run_position_check() -> None:
     """Delegate to the position monitor (import kept lazy to avoid circular imports)."""
     from app.infra.monitoring.position_monitor import run_position_check
@@ -905,6 +921,18 @@ def start_scheduler() -> None:
         name="MCX — AI Trade Signal Logging + Resolution",
         max_instances=1,
         misfire_grace_time=180,
+    )
+
+    # Zerodha daily token-validity check at 08:45 IST weekdays, ahead of the
+    # 09:00 MCX session -- email + in-app notify if today's session needs a
+    # manual reconnect (see _run_zerodha_token_check's own docstring).
+    _scheduler.add_job(
+        _run_zerodha_token_check,
+        CronTrigger(day_of_week="mon-fri", hour=8, minute=45, second=0, timezone="Asia/Kolkata"),
+        id="zerodha_token_check",
+        name="Zerodha — Daily Token Validity Check",
+        max_instances=1,
+        misfire_grace_time=1800,
     )
 
     _scheduler.start()

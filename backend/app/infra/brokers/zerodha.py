@@ -153,6 +153,20 @@ class ZerodhaBroker(AbstractBroker):
         except Exception:
             return []
 
+    async def validate_session(self) -> bool:
+        """Cheap real check that today's access_token is still valid on
+        Zerodha's side -- Kite invalidates tokens once daily regardless of
+        how long this app's own Redis cache TTL says the session should
+        live, so "we have a token stored" and "the token still works" are
+        different questions. Uses profile() since it's the lightest
+        authenticated call Kite Connect offers."""
+        loop = asyncio.get_event_loop()
+        try:
+            await loop.run_in_executor(None, self._kite.profile)
+            return True
+        except Exception:
+            return False
+
     def _quote_sync(self, exchange_symbol: str) -> dict:
         return dict(self._kite.quote(exchange_symbol)[exchange_symbol])
 

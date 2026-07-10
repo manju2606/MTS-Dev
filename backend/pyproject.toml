@@ -66,6 +66,7 @@ extend-immutable-calls = [
 "app/infra/email/btst_report.py" = ["E501"]
 "app/infra/email/dsws_report.py" = ["E501"]
 "app/infra/email/mcx_trend_report.py" = ["E501"]
+"app/infra/email/zerodha_token_reminder.py" = ["E501"]
 "app/services/stock_of_day_service.py" = ["E501"]
 "app/infra/monitoring/position_monitor.py" = ["E501"]
 # Trading agent's knowledge base is almost entirely long natural-language

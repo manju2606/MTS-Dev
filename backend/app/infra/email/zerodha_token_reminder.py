@@ -2,7 +2,7 @@
 
 
 def zerodha_token_reminder_html() -> str:
-    reconnect_url = "http://localhost:3000/broker"
+    reconnect_url = "http://localhost/broker"
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>

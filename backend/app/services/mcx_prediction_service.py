@@ -297,6 +297,8 @@ async def get_prediction(
     accuracy = await repo.get_accuracy_stats(user_id, contract, period, since=since)
     if recal_state:
         accuracy["recalibrated_at"] = recal_state["last_recalibrated_at"].isoformat()
+        accuracy["recalibrated_from_pct"] = recal_state.get("from_accuracy_pct")
+        accuracy["recalibrated_deviation_pct"] = recal_state.get("deviation_pct")
 
     session_open_reference = None
     if not is_calendar:
@@ -374,18 +376,22 @@ async def get_prediction(
             await repo.refresh_pending(user_id, contract, period, predicted)
             now = datetime.utcnow()
             prev_acc_pct = round(100 - avg_error, 2)
+            deviation_pct = round(avg_error, 3)
             await repo.set_recalibration_state(
                 user_id,
                 contract,
                 period,
                 now,
                 reason=f"accuracy {prev_acc_pct}% dropped below {ACCURACY_RECALIBRATE_BELOW_PCT}%",
+                from_accuracy_pct=prev_acc_pct,
+                deviation_pct=deviation_pct,
             )
             accuracy = {
                 **accuracy,
                 "recalibrated": True,
                 "recalibrated_at": now.isoformat(),
                 "recalibrated_from_pct": prev_acc_pct,
+                "recalibrated_deviation_pct": deviation_pct,
             }
 
     await repo.save_predictions(user_id, contract, period, predicted)

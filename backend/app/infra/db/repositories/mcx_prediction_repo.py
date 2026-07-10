@@ -132,11 +132,30 @@ class McxPredictionRepository:
         )
 
     async def set_recalibration_state(
-        self, user_id: str, contract: str, period: str, at: datetime, reason: str
+        self,
+        user_id: str,
+        contract: str,
+        period: str,
+        at: datetime,
+        reason: str,
+        from_accuracy_pct: float,
+        deviation_pct: float,
     ) -> None:
+        """Persist the accuracy value that triggered this recalibration
+        (from_accuracy_pct) and how far it had drifted from a perfect
+        prediction (deviation_pct = avg_error_pct at the moment of trigger)
+        -- kept alongside last_recalibrated_at so both stay visible on every
+        later call, not just the one response where recalibration fired."""
         await self._recal_col.update_one(
             {"user_id": user_id, "contract": contract.upper(), "period": period},
-            {"$set": {"last_recalibrated_at": at, "reason": reason}},
+            {
+                "$set": {
+                    "last_recalibrated_at": at,
+                    "reason": reason,
+                    "from_accuracy_pct": from_accuracy_pct,
+                    "deviation_pct": deviation_pct,
+                }
+            },
             upsert=True,
         )
 

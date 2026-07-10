@@ -1457,6 +1457,10 @@ export type NgPredictionAccuracy = {
   recalibrated_at?: string
   recalibrated?: boolean
   recalibrated_from_pct?: number
+  // avg_error_pct at the moment recalibration triggered -- how far below
+  // 100% the prediction had drifted, persisted alongside recalibrated_at so
+  // it stays visible on every later call, not just the one where it fired.
+  recalibrated_deviation_pct?: number
 }
 export type NgSessionOpenReference = { time: number; price: number }
 

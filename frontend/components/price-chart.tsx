@@ -75,12 +75,18 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
   const ltpLineRef = useRef<IPriceLine | null>(null)
   const cardRef = useRef<HTMLDivElement>(null)
   const ballRef = useRef<HTMLDivElement>(null)
+  const predBallRef = useRef<HTMLDivElement>(null)
+  const predLineRef = useRef<IPriceLine | null>(null)
   const lastBarRef = useRef<LiveBar | null>(null)
+  const predictionRef = useRef<PredictionPoint[]>([])
   const [fullscreen, setFullscreen] = useState(false)
   const refLinesKey = JSON.stringify(refLines ?? [])
   const predictionKey = JSON.stringify(prediction ?? [])
 
-  const positionBall = useCallback((price: number | null | undefined) => {
+  // Shared by both the amber "actual price" ball and the blue "predicted
+  // price" ball -- same x (the current bar's time) either way, just a
+  // different y depending on which price is passed in.
+  const positionMarker = useCallback((ballEl: HTMLDivElement | null, price: number | null | undefined) => {
     // Deferred to the next animation frame: reading priceToCoordinate/
     // timeToCoordinate synchronously right after a .update()/applyOptions()
     // call (candle live-tick, LTP price line) can return coordinates from
@@ -90,23 +96,74 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
     requestAnimationFrame(() => {
       const series = candleSeriesRef.current
       const chart = chartRef.current
-      const ball = ballRef.current
       const bar = lastBarRef.current
-      if (!series || !chart || !ball || !bar || price == null) {
-        if (ball) ball.style.opacity = '0'
+      if (!series || !chart || !ballEl || !bar || price == null) {
+        if (ballEl) ballEl.style.opacity = '0'
         return
       }
       const y = series.priceToCoordinate(price)
       const x = chart.timeScale().timeToCoordinate(bar.time)
       if (y == null || x == null) {
-        ball.style.opacity = '0'
+        ballEl.style.opacity = '0'
         return
       }
-      ball.style.left = `${x}px`
-      ball.style.top = `${y}px`
-      ball.style.opacity = '1'
+      ballEl.style.left = `${x}px`
+      ballEl.style.top = `${y}px`
+      ballEl.style.opacity = '1'
     })
   }, [])
+
+  const positionBall = useCallback(
+    (price: number | null | undefined) => positionMarker(ballRef.current, price),
+    [positionMarker],
+  )
+
+  // Predicted price "as of now" -- the latest prediction bucket whose time
+  // has already arrived, from whichever period/timeline is currently
+  // selected (predictionRef is refreshed with that period's own prediction
+  // array below). Predictions don't necessarily share the chart's own
+  // candle grid (e.g. "30m" predictions are on a 30-min grid while the
+  // chart's real candles for that period are 15-min Kite candles), so this
+  // takes the most recent bucket at-or-before the current bar's time rather
+  // than requiring an exact time match.
+  const predictedPriceNow = useCallback((): number | null => {
+    const bar = lastBarRef.current
+    const pts = predictionRef.current
+    if (!bar || !pts.length) return null
+    let best: number | null = null
+    for (const p of pts) {
+      if (p.time <= bar.time) best = p.predictedClose
+      else break
+    }
+    return best
+  }, [])
+
+  const positionPredBall = useCallback(() => {
+    const price = predictedPriceNow()
+    positionMarker(predBallRef.current, price)
+    if (candleSeriesRef.current) {
+      if (price != null) {
+        if (predLineRef.current) {
+          predLineRef.current.applyOptions({ price, title: `AI Predicted ₹${price.toFixed(2)}` })
+        } else {
+          import('lightweight-charts').then(({ LineStyle }) => {
+            if (!candleSeriesRef.current || predLineRef.current) return
+            predLineRef.current = candleSeriesRef.current.createPriceLine({
+              price,
+              color: '#3b82f6',
+              lineWidth: 2,
+              lineStyle: LineStyle.Dashed,
+              axisLabelVisible: true,
+              title: `AI Predicted ₹${price.toFixed(2)}`,
+            })
+          })
+        }
+      } else if (predLineRef.current && candleSeriesRef.current) {
+        candleSeriesRef.current.removePriceLine(predLineRef.current)
+        predLineRef.current = null
+      }
+    }
+  }, [positionMarker, predictedPriceNow])
 
   useEffect(() => {
     function onFullscreenChange() {
@@ -287,6 +344,7 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
         // visually with the actual price axis. The caller is responsible for
         // sorting ascending and de-duplicating by time -- lightweight-charts
         // requires strictly ordered, unique points per series.
+        predictionRef.current = prediction ?? []
         if (prediction && prediction.length > 0) {
           const predictedSeries = chart.addSeries(LineSeries, {
             color: '#a855f7',
@@ -363,6 +421,7 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
           chart.timeScale().fitContent()
         }
         positionBall(currentPrice)
+        positionPredBall()
 
         const ro = new ResizeObserver(() => {
           if (containerRef.current && chartRef.current) {
@@ -371,6 +430,7 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
               height: containerRef.current.clientHeight,
             })
             positionBall(currentPrice)
+            positionPredBall()
           }
         })
         ro.observe(containerRef.current)
@@ -384,12 +444,13 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
         chartRef.current.remove()
         chartRef.current = null
       }
+      predLineRef.current = null
       candleSeriesRef.current = null
       ltpLineRef.current = null
       lastBarRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, aiLevels, refLinesKey, predictionKey, period, positionBall])
+  }, [data, aiLevels, refLinesKey, predictionKey, period, positionBall, positionPredBall])
 
   // Live tick handling — nudges the LTP line, extends the in-progress last
   // candle (high/low/close) in place via .update() so the chart feels
@@ -445,7 +506,8 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
     }
 
     positionBall(currentPrice)
-  }, [currentPrice, period, positionBall])
+    positionPredBall()
+  }, [currentPrice, period, positionBall, positionPredBall])
 
   return (
     <div
@@ -512,6 +574,14 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
         >
           <span className="absolute -inset-1.5 animate-ping rounded-full bg-amber-400 opacity-75" />
           <span className="relative block h-3 w-3 rounded-full bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.8)] ring-2 ring-white dark:ring-zinc-900" />
+        </div>
+        <div
+          ref={predBallRef}
+          className="pointer-events-none absolute z-20 opacity-0 transition-all duration-300 ease-out"
+          style={{ transform: 'translate(-50%, -50%)', left: 0, top: 0 }}
+        >
+          <span className="absolute -inset-1.5 animate-ping rounded-full bg-blue-400 opacity-75" />
+          <span className="relative block h-3 w-3 rounded-full bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.8)] ring-2 ring-white dark:ring-zinc-900" />
         </div>
       </div>
     </div>

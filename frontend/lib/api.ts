@@ -1446,6 +1446,8 @@ export async function getNgGlobalSymbols(token: string): Promise<NgGlobalSymbolR
 export type NgPredictedPoint = { time: number; predicted_close: number; upper: number; lower: number }
 export type NgPredictionHistoryPoint = NgPredictedPoint & { actual_close: number | null; hit: boolean | null }
 export type NgPredictionAccuracy = { sample_size: number; hit_rate_pct: number | null; avg_error_pct: number | null }
+export type NgSessionOpenReference = { time: number; price: number }
+
 export type NgPrediction = {
   contract: string
   period: string
@@ -1457,6 +1459,7 @@ export type NgPrediction = {
   accuracy: NgPredictionAccuracy
   method: string
   note?: string
+  session_open_reference?: NgSessionOpenReference | null
 }
 
 // "1Wk"/"1Mo" are calendar-bucketed periods only valid for prediction calls

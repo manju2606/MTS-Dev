@@ -10,7 +10,7 @@ import {
   getNgQuote, listNgTrades, placeNgTrade, closeNgTrade, getBrokerStatus, getNgAiScore, getNgHistory, getNgTrend, getNgRangeStats, getNgPrediction, getNgPredictionArchive, getNgDashboardHistory, getNgSignals, getNgGlobalSymbols,
 } from '@/lib/api'
 import type {
-  NgQuote, McxTrade, BrokerStatus, NgAiScore, HistoryBar, ChartPeriod, McxContract, NgTrendLadder, TrendTimeframe, NgRangeStats, NgPrediction, NgPredictionHistoryPoint, PredictionPeriod, NgDashboardSnapshot, NgSignalsResponse, NgGlobalSymbolRow,
+  NgQuote, McxTrade, BrokerStatus, NgAiScore, HistoryBar, ChartPeriod, McxContract, NgTrendLadder, TrendTimeframe, NgRangeStats, NgPrediction, NgPredictionHistoryPoint, PredictionPeriod, NgDashboardSnapshot, NgSignalsResponse, NgGlobalSymbolRow, NgSessionOpenReference,
 } from '@/lib/api'
 
 function cls(...args: (string | false | null | undefined)[]) { return args.filter(Boolean).join(' ') }
@@ -150,14 +150,24 @@ function NgChart({ quote, score, contract, period, onPeriodChange }: {
   )
 }
 
-const ACCURACY_GROUPS: { label: string; period: PredictionPeriod }[] = [
-  { label: 'Minutes', period: '1m' },
-  { label: '15 Mins', period: '15m' },
-  { label: '30 Mins', period: '30m' },
-  { label: 'Hours', period: '1h' },
-]
+// Each intraday granularity gets its own single-group table (display order:
+// Hours, 30 Mins, 15 Mins, then Minutes split into two half-day tables --
+// see MinuteAccuracyTables) rather than one wide multi-group table, since a
+// full day of 1-minute rows alone would otherwise dominate the page.
+const HOURS_GROUP: { label: string; period: PredictionPeriod }[] = [{ label: 'Hours', period: '1h' }]
+const THIRTY_MIN_GROUP: { label: string; period: PredictionPeriod }[] = [{ label: '30 Mins', period: '30m' }]
+const FIFTEEN_MIN_GROUP: { label: string; period: PredictionPeriod }[] = [{ label: '15 Mins', period: '15m' }]
 const WEEK_GROUP: { label: string; period: PredictionPeriod }[] = [{ label: 'Weekly', period: '1Wk' }]
 const MONTH_GROUP: { label: string; period: PredictionPeriod }[] = [{ label: 'Monthly', period: '1Mo' }]
+// Combined 4-group layout for the (collapsed-by-default) archive view --
+// a compact past-day summary doesn't need the same one-table-per-granularity
+// split as the live "today" view.
+const ALL_INTRADAY_GROUPS: { label: string; period: PredictionPeriod }[] = [
+  { label: 'Hours', period: '1h' },
+  { label: '30 Mins', period: '30m' },
+  { label: '15 Mins', period: '15m' },
+  { label: 'Minutes', period: '1m' },
+]
 
 // Bounds how far back resolved (actual-known) rows are shown -- the forward
 // side (predicted-but-not-yet-happened) is intentionally NOT capped here,
@@ -167,20 +177,29 @@ const MONTH_GROUP: { label: string; period: PredictionPeriod }[] = [{ label: 'Mo
 // forward predictions get generated in the first place).
 const ACCURACY_MAX_PAST_ROWS = 25
 
-type AccuracyRow = { time: number; actual: number | null; predicted: number; accuracyPct: number | null }
-type AccuracyData = { history: NgPredictionHistoryPoint[]; predicted: { time: number; predicted_close: number }[] }
+type AccuracyRow = { time: number; actual: number | null; predicted: number; accuracyPct: number | null; isReference?: boolean }
+type AccuracyData = {
+  history: NgPredictionHistoryPoint[]
+  predicted: { time: number; predicted_close: number }[]
+  session_open_reference?: NgSessionOpenReference | null
+}
 
-function buildAccuracyRows(p: AccuracyData | undefined): AccuracyRow[] {
+function buildAccuracyRows(p: AccuracyData | undefined, minTime?: number): AccuracyRow[] {
   if (!p) return []
   const byTime = new Map<number, { time: number; predicted_close: number; actual_close: number | null }>()
   for (const h of p.history) byTime.set(h.time, { time: h.time, predicted_close: h.predicted_close, actual_close: h.actual_close })
   for (const pt of p.predicted) {
     if (!byTime.has(pt.time)) byTime.set(pt.time, { time: pt.time, predicted_close: pt.predicted_close, actual_close: null })
   }
-  const all = Array.from(byTime.values()).sort((a, b) => a.time - b.time)
+  // minTime scopes the "today" live table strictly to today's IST calendar
+  // day -- without it, resolved rows could reach back into yesterday to pad
+  // out to ACCURACY_MAX_PAST_ROWS whenever today alone doesn't have enough
+  // yet (e.g. early in the trading session).
+  let all = Array.from(byTime.values()).sort((a, b) => a.time - b.time)
+  if (minTime != null) all = all.filter(r => r.time >= minTime)
   const resolved = all.filter(r => r.actual_close != null).slice(-ACCURACY_MAX_PAST_ROWS)
   const pending = all.filter(r => r.actual_close == null)
-  return [...resolved, ...pending]
+  const rows: AccuracyRow[] = [...resolved, ...pending]
     .sort((a, b) => a.time - b.time)
     .map(r => ({
       time: r.time,
@@ -188,6 +207,15 @@ function buildAccuracyRows(p: AccuracyData | undefined): AccuracyRow[] {
       predicted: r.predicted_close,
       accuracyPct: r.actual_close != null ? Math.max(0, 100 - (Math.abs(r.actual_close - r.predicted_close) / r.actual_close) * 100) : null,
     }))
+  // "Hours" only: its first genuinely predictable bucket is an hour after
+  // session open (the current hour itself is real data, not a forecast),
+  // which otherwise makes it look like it starts later than every other
+  // column -- this reference row (real price, not a prediction) fills that.
+  const ref = p.session_open_reference
+  if (ref && !rows.some(r => r.time === ref.time)) {
+    rows.unshift({ time: ref.time, actual: ref.price, predicted: ref.price, accuracyPct: null, isReference: true })
+  }
+  return rows
 }
 
 function fmtPredictionTime(t: number): string {
@@ -220,6 +248,13 @@ function istDateStr(daysAgo: number): string {
 function fmtDateStrDisplay(dateStr: string): string {
   const [y, m, d] = dateStr.split('-').map(Number)
   return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' })
+}
+
+// Epoch seconds for 00:00 IST of a "YYYY-MM-DD" date -- 00:00 IST is 18:30
+// UTC of the *previous* calendar day (IST = UTC+5:30).
+function istDayStartEpoch(dateStr: string): number {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  return Math.floor((Date.UTC(y, m - 1, d) - 5.5 * 3600 * 1000) / 1000)
 }
 
 function CollapsibleCard({ title, subtitle, defaultOpen, children }: {
@@ -324,9 +359,11 @@ function AccuracyTrailGrid({ groups, rowsByGroup, showDate }: {
                       <td className="px-3 py-2 font-mono">{r ? `₹${r.predicted.toFixed(2)}` : ''}</td>
                       <td className="px-3 py-2 font-mono font-semibold">
                         {r ? (
-                          pending
-                            ? <span className="italic text-zinc-400">—</span>
-                            : <span className={accuracyColor(r.accuracyPct as number)}>{(r.accuracyPct as number).toFixed(2)}%</span>
+                          r.isReference
+                            ? <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">Session Open</span>
+                            : pending
+                              ? <span className="italic text-zinc-400">—</span>
+                              : <span className={accuracyColor(r.accuracyPct as number)}>{(r.accuracyPct as number).toFixed(2)}%</span>
                         ) : ''}
                       </td>
                     </Fragment>
@@ -342,12 +379,13 @@ function AccuracyTrailGrid({ groups, rowsByGroup, showDate }: {
 }
 
 // Live (polling) trail table -- "today", or the week/month tables.
-function LiveAccuracyTable({ title, groups, contract, defaultOpen, footnote }: {
+function LiveAccuracyTable({ title, groups, contract, defaultOpen, footnote, scopeToToday }: {
   title: string
   groups: { label: string; period: PredictionPeriod }[]
   contract: McxContract
   defaultOpen: boolean
   footnote: string
+  scopeToToday?: boolean
 }) {
   const [byPeriod, setByPeriod] = useState<Partial<Record<PredictionPeriod, NgPrediction>>>({})
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
@@ -368,7 +406,8 @@ function LiveAccuracyTable({ title, groups, contract, defaultOpen, footnote }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contract])
 
-  const rowsByGroup = groups.map(g => buildAccuracyRows(byPeriod[g.period]))
+  const minTime = scopeToToday ? istDayStartEpoch(istDateStr(0)) : undefined
+  const rowsByGroup = groups.map(g => buildAccuracyRows(byPeriod[g.period], minTime))
   const notes = groups.map(g => byPeriod[g.period]?.note).filter(Boolean)
 
   return (
@@ -397,7 +436,7 @@ function ArchivedAccuracyTable({ dateStr, contract }: { dateStr: string; contrac
     const t = localStorage.getItem('mts_token') ?? ''
     if (!t) return
     Promise.allSettled(
-      ACCURACY_GROUPS.map(g =>
+      ALL_INTRADAY_GROUPS.map(g =>
         getNgPredictionArchive(t, contract, g.period, dateStr).then(a =>
           setByPeriod(prev => ({ ...prev, [g.period]: { history: a.history, predicted: [] } })),
         ),
@@ -405,10 +444,10 @@ function ArchivedAccuracyTable({ dateStr, contract }: { dateStr: string; contrac
     ).then(() => setLoaded(true))
   }, [dateStr, contract])
 
-  const rowsByGroup = ACCURACY_GROUPS.map(g => buildAccuracyRows(byPeriod[g.period]))
+  const rowsByGroup = ALL_INTRADAY_GROUPS.map(g => buildAccuracyRows(byPeriod[g.period]))
 
   if (!loaded) return <div className="h-24 animate-pulse bg-zinc-50 dark:bg-zinc-800/40" />
-  return <AccuracyTrailGrid groups={ACCURACY_GROUPS} rowsByGroup={rowsByGroup} />
+  return <AccuracyTrailGrid groups={ALL_INTRADAY_GROUPS} rowsByGroup={rowsByGroup} />
 }
 
 function PredictionArchiveBrowser({ contract }: { contract: McxContract }) {
@@ -424,17 +463,82 @@ function PredictionArchiveBrowser({ contract }: { contract: McxContract }) {
   )
 }
 
+// IST hour-of-day (0-23) for an epoch-seconds value -- used to split a full
+// day of 1-minute rows into two half-day tables (see MinuteAccuracyTables).
+function istHourOfDay(epochSeconds: number): number {
+  const s = new Date(epochSeconds * 1000).toLocaleString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', hour12: false })
+  return parseInt(s, 10) % 24
+}
+
+// "Minutes" gets its own component (not LiveAccuracyTable) because a full
+// day of 1-minute rows needs to be fetched ONCE and then split into two
+// half-day tables client-side, rather than two independent fetches.
+function MinuteAccuracyTables({ contract }: { contract: McxContract }) {
+  const [data, setData] = useState<NgPrediction | undefined>(undefined)
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+
+  useEffect(() => {
+    const t = localStorage.getItem('mts_token') ?? ''
+    if (!t) return
+    function load() {
+      getNgPrediction(t, contract, '1m').then(p => { setData(p); setLastUpdated(new Date()) }).catch(() => {})
+    }
+    load()
+    const id = setInterval(load, 60_000)
+    return () => clearInterval(id)
+  }, [contract])
+
+  const allRows = buildAccuracyRows(data, istDayStartEpoch(istDateStr(0)))
+  const amRows = allRows.filter(r => istHourOfDay(r.time) < 16)
+  const pmRows = allRows.filter(r => istHourOfDay(r.time) >= 16)
+  const amGroup = [{ label: 'Minutes (9 AM – 4 PM)', period: '1m' as PredictionPeriod }]
+  const pmGroup = [{ label: 'Minutes (4 PM – 12 AM)', period: '1m' as PredictionPeriod }]
+  const liveDot = <LiveDot label={lastUpdated ? `Live · updated ${lastUpdated.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })}` : 'Loading…'} />
+  const footnote = 'Split into two half-day tables since a full day of 1-minute rows is otherwise too long for one. Time and Predicted Price are prefilled ahead of time; Actual Price and Accuracy show "pending" until real time reaches that row.'
+
+  return (
+    <>
+      <CollapsibleCard title="AI Prediction Accuracy Trail — 1 Minute (9:00 AM – 4:00 PM)" defaultOpen={false} subtitle={liveDot}>
+        {data?.note && <p className="px-4 py-3 text-xs text-amber-700 dark:text-amber-400">{data.note}</p>}
+        <AccuracyTrailGrid groups={amGroup} rowsByGroup={[amRows]} />
+        <p className="border-t border-zinc-100 px-4 py-2.5 text-[11px] text-zinc-400 dark:border-zinc-800">{footnote}</p>
+      </CollapsibleCard>
+      <CollapsibleCard title="AI Prediction Accuracy Trail — 1 Minute (4:00 PM – 12:00 AM)" defaultOpen={false} subtitle={liveDot}>
+        <AccuracyTrailGrid groups={pmGroup} rowsByGroup={[pmRows]} />
+        <p className="border-t border-zinc-100 px-4 py-2.5 text-[11px] text-zinc-400 dark:border-zinc-800">{footnote}</p>
+      </CollapsibleCard>
+    </>
+  )
+}
+
 function PredictionAccuracyTable({ contract }: { contract: McxContract }) {
-  const todayStr = istDateStr(0)
   return (
     <div className="space-y-3">
       <LiveAccuracyTable
-        title={`AI Prediction Accuracy Trail — ${fmtDateStrDisplay(todayStr)}`}
-        groups={ACCURACY_GROUPS}
+        title="AI Prediction Accuracy Trail — Hours"
+        groups={HOURS_GROUP}
         contract={contract}
         defaultOpen
-        footnote={`Time and Predicted Price are prefilled through the rest of the day as soon as they're generated; Actual Price and Accuracy show "pending" until real time reaches that row, then fill in automatically. Each column shows its own trail at that granularity (most recent ${ACCURACY_MAX_PAST_ROWS} resolved rows, plus every pending one) — rows aren't time-aligned across columns since each period ticks at its own cadence.`}
+        scopeToToday
+        footnote={'Time and Predicted Price are prefilled through the rest of the day as soon as they’re generated; Actual Price and Accuracy show "pending" until real time reaches that row, then fill in automatically. First row is the real session-open price, not a prediction.'}
       />
+      <LiveAccuracyTable
+        title="AI Prediction Accuracy Trail — 30 Mins"
+        groups={THIRTY_MIN_GROUP}
+        contract={contract}
+        defaultOpen
+        scopeToToday
+        footnote={'Time and Predicted Price are prefilled through the rest of the day as soon as they’re generated; Actual Price and Accuracy show "pending" until real time reaches that row, then fill in automatically. First row is the real session-open price, not a prediction.'}
+      />
+      <LiveAccuracyTable
+        title="AI Prediction Accuracy Trail — 15 Mins"
+        groups={FIFTEEN_MIN_GROUP}
+        contract={contract}
+        defaultOpen
+        scopeToToday
+        footnote={'Time and Predicted Price are prefilled through the rest of the day as soon as they’re generated; Actual Price and Accuracy show "pending" until real time reaches that row, then fill in automatically. First row is the real session-open price, not a prediction.'}
+      />
+      <MinuteAccuracyTables contract={contract} />
       <LiveAccuracyTable
         title="AI Prediction Accuracy Trail — Weekly"
         groups={WEEK_GROUP}

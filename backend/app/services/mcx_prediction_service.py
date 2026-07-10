@@ -21,9 +21,11 @@ from zoneinfo import ZoneInfo
 
 from app.infra.db.repositories.mcx_prediction_repo import McxPredictionRepository
 from app.infra.mcx import ng_indicators as ind
-from app.services.mcx_service import get_history, get_quote
+from app.services.mcx_service import get_history, get_quote, ist_now
 
 _IST = ZoneInfo("Asia/Kolkata")
+_SESSION_OPEN_HOUR = 9
+_SESSION_OPEN_MINUTE = 0
 
 # Real candle-bucket width in seconds per period -- mirrors
 # mcx_service._HISTORY_PERIOD_MAP's actual Kite interval choice (e.g. "30m"
@@ -82,13 +84,13 @@ MIN_CANDLES = 25
 # threshold accepts a rougher read from whatever's actually available
 # rather than never showing a week/month prediction at all.
 MIN_CANDLES_CALENDAR = 6
-# Cap on how many future buckets to prefill toward end-of-day -- unbounded
-# would mean ~1440 rows/day for the "Minutes" (1m) column alone, which is
-# both a lot of Mongo writes per call and useless to actually display.
-# 300 comfortably covers a full trading day for 15m/30m/1h (<=96 buckets/day
-# each); 1m/5m only get prefilled a few hours ahead, not the literal rest of
-# the day, as a deliberate trade-off against runaway storage/compute.
-MAX_HORIZON = 300
+# Cap on how many future buckets to prefill toward market close -- 900
+# covers a full trading day (09:00-23:45 IST = 885 minutes) even for the
+# "Minutes" (1m) column, the finest granularity. Mongo writes are cheap
+# (idempotent $setOnInsert upserts -- a later call in the same day only
+# inserts the buckets that don't already exist), so the cost here is mostly
+# how many rows the frontend ends up carrying, not backend load.
+MAX_HORIZON = 900
 
 
 def _buckets_until_market_close(last_time: int, bucket: int) -> int:
@@ -153,6 +155,19 @@ def _resample_calendar(daily_candles: list[dict], kind: str) -> list[dict]:
             }
         )
     return out
+
+
+async def _session_open_reference(user_id: str, contract: str) -> dict:
+    """The real price at today's MCX session open (09:00 IST) -- shown as a
+    distinct reference row (not a prediction) at the top of every intraday
+    accuracy table, so each one visually starts at 09:00 even though its
+    first genuinely predictable bucket is later (e.g. "Hours" can't predict
+    the 9-10 hour itself, since that's real/current data, not a forecast)."""
+    quote = await get_quote(user_id, contract)
+    today = ist_now().replace(
+        hour=_SESSION_OPEN_HOUR, minute=_SESSION_OPEN_MINUTE, second=0, microsecond=0
+    )
+    return {"time": int(today.timestamp()), "price": float(quote["open"])}
 
 
 def _slope_momentum_atr(candles: list[dict]) -> tuple[float, float, float, float]:
@@ -228,6 +243,13 @@ async def get_prediction(
     await repo.resolve_pending(user_id, contract, period, candles)
     accuracy = await repo.get_accuracy_stats(user_id, contract, period)
 
+    session_open_reference = None
+    if not is_calendar:
+        try:
+            session_open_reference = await _session_open_reference(user_id, contract)
+        except Exception:
+            session_open_reference = None
+
     if len(candles) < min_candles:
         note = f"Need at least {min_candles} candles for a forecast (have {len(candles)})."
         if is_calendar:
@@ -243,6 +265,7 @@ async def get_prediction(
             "accuracy": accuracy,
             "method": "ema20-slope + roc-momentum + atr-cone (local heuristic, not TimesFM)",
             "note": note,
+            "session_open_reference": session_open_reference,
         }
 
     last_time = int(candles[-1]["time"])
@@ -301,6 +324,7 @@ async def get_prediction(
         "history": history,
         "accuracy": accuracy,
         "method": "ema20-slope + roc-momentum + atr-cone (local heuristic, not TimesFM)",
+        "session_open_reference": session_open_reference,
     }
 
 

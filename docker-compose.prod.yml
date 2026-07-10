@@ -18,7 +18,13 @@ services:
   nginx:
     image: nginx:alpine
     ports:
-      - "80:80"
+      # IPv4-only bind: an unqualified "80:80" also publishes the IPv6
+      # wildcard ([::]:80) on Windows/Docker Desktop, and that IPv6 listener
+      # accepts the TCP handshake but never forwards traffic into the
+      # container -- browsers resolving "localhost" to ::1 first (the
+      # Windows default) hang indefinitely. 127.0.0.1 always worked; this
+      # makes plain "localhost" work too by not offering the broken path.
+      - "0.0.0.0:80:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:

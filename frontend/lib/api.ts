@@ -1445,7 +1445,19 @@ export async function getNgGlobalSymbols(token: string): Promise<NgGlobalSymbolR
 
 export type NgPredictedPoint = { time: number; predicted_close: number; upper: number; lower: number }
 export type NgPredictionHistoryPoint = NgPredictedPoint & { actual_close: number | null; hit: boolean | null }
-export type NgPredictionAccuracy = { sample_size: number; hit_rate_pct: number | null; avg_error_pct: number | null }
+export type NgPredictionAccuracy = {
+  sample_size: number
+  hit_rate_pct: number | null
+  avg_error_pct: number | null
+  // Present once this period has ever auto-recalibrated (see
+  // mcx_prediction_service.py's ACCURACY_RECALIBRATE_BELOW_PCT): the stats
+  // above are windowed to resolved predictions since recalibrated_at, not
+  // all-time -- full prediction history (pre- and post-recalibration) still
+  // shows in `history`, this only changes what the % is computed from.
+  recalibrated_at?: string
+  recalibrated?: boolean
+  recalibrated_from_pct?: number
+}
 export type NgSessionOpenReference = { time: number; price: number }
 
 export type NgPrediction = {

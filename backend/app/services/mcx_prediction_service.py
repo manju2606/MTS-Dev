@@ -99,6 +99,21 @@ MIN_CANDLES_CALENDAR = 6
 # how many rows the frontend ends up carrying, not backend load.
 MAX_HORIZON = 900
 
+# Recalibration: a straight-line extrapolation drifts further from reality
+# the longer a still-pending prediction sits unrefreshed (a bucket prefilled
+# at 09:05 for 11 PM keeps that 09:05 anchor for 14+ hours otherwise -- see
+# save_predictions' $setOnInsert, which only ever inserts a bucket once).
+# When the rolling accuracy for a period's *own* resolved predictions drops
+# below this, every still-pending (unresolved) bucket for that period gets
+# recomputed from the current live anchor/rate -- a real re-forecast, not a
+# display trick. Resolved predictions are never touched or hidden; the
+# accuracy stat's own sample window resets to "since this recalibration" so
+# it visibly reflects the improvement, while the full history stays intact
+# in the trail. Intraday periods only -- see REFERENCE_PERIOD's note on why
+# 1Wk/1Mo are deliberately excluded from shared short-horizon machinery.
+ACCURACY_RECALIBRATE_BELOW_PCT = 99.0
+MIN_RECALIBRATION_SAMPLE = 5
+
 
 def _snap_to_session_grid(t: int, bucket: int) -> int:
     """Snap epoch `t` down to the nearest `bucket`-second grid line anchored
@@ -267,7 +282,14 @@ async def get_prediction(
     min_candles = MIN_CANDLES_CALENDAR if is_calendar else MIN_CANDLES
 
     await repo.resolve_pending(user_id, contract, period, candles)
-    accuracy = await repo.get_accuracy_stats(user_id, contract, period)
+
+    recal_state = None if is_calendar else await repo.get_recalibration_state(
+        user_id, contract, period
+    )
+    since = recal_state["last_recalibrated_at"] if recal_state else None
+    accuracy = await repo.get_accuracy_stats(user_id, contract, period, since=since)
+    if recal_state:
+        accuracy["recalibrated_at"] = recal_state["last_recalibrated_at"].isoformat()
 
     session_open_reference = None
     if not is_calendar:
@@ -333,6 +355,31 @@ async def get_prediction(
                     "lower": round(proj_close - band, 2),
                 }
             )
+
+    if not is_calendar:
+        avg_error = accuracy.get("avg_error_pct")
+        sample_size = accuracy.get("sample_size", 0)
+        if (
+            avg_error is not None
+            and sample_size >= MIN_RECALIBRATION_SAMPLE
+            and (100 - avg_error) < ACCURACY_RECALIBRATE_BELOW_PCT
+        ):
+            await repo.refresh_pending(user_id, contract, period, predicted)
+            now = datetime.utcnow()
+            prev_acc_pct = round(100 - avg_error, 2)
+            await repo.set_recalibration_state(
+                user_id,
+                contract,
+                period,
+                now,
+                reason=f"accuracy {prev_acc_pct}% dropped below {ACCURACY_RECALIBRATE_BELOW_PCT}%",
+            )
+            accuracy = {
+                **accuracy,
+                "recalibrated": True,
+                "recalibrated_at": now.isoformat(),
+                "recalibrated_from_pct": prev_acc_pct,
+            }
 
     await repo.save_predictions(user_id, contract, period, predicted)
     # limit covers a day's worth of resolved+pending buckets for the finer

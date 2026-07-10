@@ -28,6 +28,10 @@ class McxPredictionRepository:
     def _col(self) -> motor.motor_asyncio.AsyncIOMotorCollection:  # type: ignore[type-arg]
         return _get_db()["mcx_predictions"]
 
+    @property
+    def _recal_col(self) -> motor.motor_asyncio.AsyncIOMotorCollection:  # type: ignore[type-arg]
+        return _get_db()["mcx_recalibrations"]
+
     async def save_predictions(
         self, user_id: str, contract: str, period: str, predictions: list[dict]
     ) -> None:
@@ -88,6 +92,54 @@ class McxPredictionRepository:
                 },
             )
 
+    async def refresh_pending(
+        self, user_id: str, contract: str, period: str, predictions: list[dict]
+    ) -> int:
+        """Overwrite predicted_close/upper/lower for buckets that are still
+        pending (not yet resolved) with freshly recomputed values -- used by
+        recalibration (see mcx_prediction_service.py) so near-future buckets
+        reflect the latest live price/rate instead of staying locked to
+        whatever the anchor was when they were first prefilled, often hours
+        earlier. Resolved (already-happened) predictions are never touched --
+        the past can't be rewritten, only future forecasts improved."""
+        updated = 0
+        for p in predictions:
+            result = await self._col.update_one(
+                {
+                    "user_id": user_id,
+                    "contract": contract.upper(),
+                    "period": period,
+                    "predicted_time": p["time"],
+                    "resolved": False,
+                },
+                {
+                    "$set": {
+                        "predicted_close": p["predicted_close"],
+                        "upper": p["upper"],
+                        "lower": p["lower"],
+                        "recalibrated_at": datetime.utcnow(),
+                    }
+                },
+            )
+            updated += result.modified_count
+        return updated
+
+    async def get_recalibration_state(
+        self, user_id: str, contract: str, period: str
+    ) -> dict | None:
+        return await self._recal_col.find_one(
+            {"user_id": user_id, "contract": contract.upper(), "period": period}, {"_id": 0}
+        )
+
+    async def set_recalibration_state(
+        self, user_id: str, contract: str, period: str, at: datetime, reason: str
+    ) -> None:
+        await self._recal_col.update_one(
+            {"user_id": user_id, "contract": contract.upper(), "period": period},
+            {"$set": {"last_recalibrated_at": at, "reason": reason}},
+            upsert=True,
+        )
+
     async def get_recent(
         self, user_id: str, contract: str, period: str, limit: int = 200
     ) -> list[dict]:
@@ -117,14 +169,21 @@ class McxPredictionRepository:
         return [d async for d in cursor]
 
     async def get_accuracy_stats(
-        self, user_id: str, contract: str, period: str, limit: int = 100
+        self,
+        user_id: str,
+        contract: str,
+        period: str,
+        limit: int = 100,
+        since: datetime | None = None,
     ) -> dict:
-        query = {
+        query: dict[str, object] = {
             "user_id": user_id,
             "contract": contract.upper(),
             "period": period,
             "resolved": True,
         }
+        if since is not None:
+            query["resolved_at"] = {"$gte": since}
         cursor = (
             self._col.find(query, {"_id": 0, "hit": 1, "error_pct": 1})
             .sort("resolved_at", -1)

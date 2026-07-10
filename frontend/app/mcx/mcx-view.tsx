@@ -10,7 +10,7 @@ import {
   getNgQuote, listNgTrades, placeNgTrade, closeNgTrade, getBrokerStatus, getNgAiScore, getNgHistory, getNgTrend, getNgRangeStats, getNgPrediction, getNgPredictionArchive, getNgDashboardHistory, getNgSignals, getNgGlobalSymbols,
 } from '@/lib/api'
 import type {
-  NgQuote, McxTrade, BrokerStatus, NgAiScore, HistoryBar, ChartPeriod, McxContract, NgTrendLadder, TrendTimeframe, NgRangeStats, NgPrediction, NgPredictionHistoryPoint, PredictionPeriod, NgDashboardSnapshot, NgSignalsResponse, NgGlobalSymbolRow, NgSessionOpenReference,
+  NgQuote, McxTrade, BrokerStatus, NgAiScore, HistoryBar, ChartPeriod, McxContract, NgTrendLadder, TrendTimeframe, NgRangeStats, NgPrediction, NgPredictionHistoryPoint, NgPredictionAccuracy, PredictionPeriod, NgDashboardSnapshot, NgSignalsResponse, NgGlobalSymbolRow, NgSessionOpenReference,
 } from '@/lib/api'
 
 function cls(...args: (string | false | null | undefined)[]) { return args.filter(Boolean).join(' ') }
@@ -445,6 +445,9 @@ function LiveAccuracyTable({ title, groups, contract, defaultOpen, footnote, sco
   const minTime = scopeToToday ? istDayStartEpoch(istDateStr(0)) : undefined
   const rowsByGroup = groups.map(g => buildAccuracyRows(byPeriod[g.period], minTime))
   const notes = groups.map(g => byPeriod[g.period]?.note).filter(Boolean)
+  const accSummaries = groups
+    .map(g => ({ label: g.label, acc: byPeriod[g.period]?.accuracy }))
+    .filter((x): x is { label: string; acc: NgPredictionAccuracy } => !!x.acc && x.acc.sample_size > 0)
 
   return (
     <CollapsibleCard
@@ -454,6 +457,22 @@ function LiveAccuracyTable({ title, groups, contract, defaultOpen, footnote, sco
     >
       {notes.length > 0 && (
         <p className="px-4 py-3 text-xs text-amber-700 dark:text-amber-400">{notes[0]}</p>
+      )}
+      {accSummaries.length > 0 && (
+        <div className="border-b border-zinc-100 px-4 py-2 text-[11px] text-zinc-400 dark:border-zinc-800">
+          {accSummaries.map(({ label, acc }) => (
+            <p key={label}>
+              {groups.length > 1 ? `${label}: ` : ''}
+              <span className="font-semibold text-zinc-600 dark:text-zinc-300">{acc.hit_rate_pct?.toFixed(1)}%</span> within band, avg error {acc.avg_error_pct?.toFixed(2)}% (last {acc.sample_size} resolved)
+              {acc.recalibrated_at && (
+                <span className="ml-1 rounded bg-cyan-100 px-1.5 py-0.5 font-medium text-cyan-700 dark:bg-cyan-950 dark:text-cyan-400">
+                  recalibrated {new Date(acc.recalibrated_at).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })}
+                  {acc.recalibrated_from_pct != null ? ` — was ${acc.recalibrated_from_pct.toFixed(1)}%` : ''}
+                </span>
+              )}
+            </p>
+          ))}
+        </div>
       )}
       <AccuracyTrailGrid groups={groups} rowsByGroup={rowsByGroup} />
       <p className="border-t border-zinc-100 px-4 py-2.5 text-[11px] text-zinc-400 dark:border-zinc-800">{footnote}</p>

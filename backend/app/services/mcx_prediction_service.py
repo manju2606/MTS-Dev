@@ -64,6 +64,13 @@ PERIOD_BUCKET_SECONDS: dict[str, int] = {
 # own appropriately-scaled slope.
 REFERENCE_PERIOD = "15m"
 
+# The four periods that actually get requested/displayed and share the
+# REFERENCE_PERIOD machinery above -- used to fan a recalibration event out
+# to every OTHER period sharing one anchor snapshot (see
+# _sync_recalibrate_other_periods) so their pending buckets never drift
+# apart from independently recalibrating at different moments.
+INTRADAY_PERIODS = ("1m", "15m", "30m", "1h")
+
 # "1Wk"/"1Mo" are calendar-bucketed (ISO week / calendar month), not fixed-
 # second buckets like everything else -- Kite has no native weekly/monthly
 # candle interval, so these are resampled here from daily candles, the same
@@ -271,6 +278,69 @@ async def _live_anchor(
         return fallback_price, fallback_time
 
 
+async def _sync_recalibrate_other_periods(
+    user_id: str,
+    contract: str,
+    repo: McxPredictionRepository,
+    triggered_period: str,
+    anchor_price: float,
+    anchor_time: int,
+    slope_per_second: float,
+    atr_per_sqrt_second: float,
+) -> None:
+    """When one intraday period's own accuracy trips the recalibration
+    threshold, refresh every OTHER intraday period's pending buckets from
+    that SAME anchor/rate snapshot right now, instead of letting each one
+    recalibrate independently whenever its own threshold happens to trip
+    later. Without this, two periods refreshed minutes apart each pull a
+    fresh live quote -- and since price genuinely moves between those calls,
+    their forecasts for the same future timestamp diverge. That's exactly
+    the "wildly different price for the same real timestamp" problem
+    REFERENCE_PERIOD/_live_anchor exist to prevent (see their docstrings);
+    independent per-period recalibration just reopens it for pending
+    buckets. Grid/horizon use `anchor_time` (not each period's own last
+    candle) as the reference point -- _snap_to_session_grid only depends on
+    time-of-day, so this still lands on the correct bucket grid."""
+    now = datetime.utcnow()
+    for period in INTRADAY_PERIODS:
+        if period == triggered_period:
+            continue
+        bucket = PERIOD_BUCKET_SECONDS[period]
+        grid_anchor = _snap_to_session_grid(anchor_time, bucket)
+        horizon = _buckets_until_market_close(grid_anchor, bucket)
+        predicted = []
+        for i in range(1, horizon + 1):
+            t = grid_anchor + i * bucket
+            seconds_ahead = t - anchor_time
+            proj_close = anchor_price + slope_per_second * seconds_ahead
+            band = atr_per_sqrt_second * (max(seconds_ahead, 0) ** 0.5)
+            predicted.append(
+                {
+                    "time": t,
+                    "predicted_close": round(proj_close, 2),
+                    "upper": round(proj_close + band, 2),
+                    "lower": round(proj_close - band, 2),
+                }
+            )
+        updated = await repo.refresh_pending(user_id, contract, period, predicted)
+        if not updated:
+            continue
+        prior = await repo.get_recalibration_state(user_id, contract, period)
+        since = prior["last_recalibrated_at"] if prior else None
+        stats = await repo.get_accuracy_stats(user_id, contract, period, since=since)
+        prev_avg_error = stats.get("avg_error_pct")
+        prev_acc_pct = round(100 - prev_avg_error, 2) if prev_avg_error is not None else None
+        await repo.set_recalibration_state(
+            user_id,
+            contract,
+            period,
+            now,
+            reason=f"synced from {triggered_period} recalibration",
+            from_accuracy_pct=prev_acc_pct,
+            deviation_pct=prev_avg_error,
+        )
+
+
 async def get_prediction(
     user_id: str, contract: str, period: str, repo: McxPredictionRepository
 ) -> dict:
@@ -393,6 +463,17 @@ async def get_prediction(
                 "recalibrated_from_pct": prev_acc_pct,
                 "recalibrated_deviation_pct": deviation_pct,
             }
+            if period in INTRADAY_PERIODS:
+                await _sync_recalibrate_other_periods(
+                    user_id,
+                    contract,
+                    repo,
+                    period,
+                    anchor_price,
+                    anchor_time,
+                    slope_per_second,
+                    atr_per_sqrt_second,
+                )
 
     await repo.save_predictions(user_id, contract, period, predicted)
     # limit covers a day's worth of resolved+pending buckets for the finer

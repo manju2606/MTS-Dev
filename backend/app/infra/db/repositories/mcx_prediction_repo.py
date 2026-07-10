@@ -138,8 +138,8 @@ class McxPredictionRepository:
         period: str,
         at: datetime,
         reason: str,
-        from_accuracy_pct: float,
-        deviation_pct: float,
+        from_accuracy_pct: float | None,
+        deviation_pct: float | None,
     ) -> None:
         """Persist the accuracy value that triggered this recalibration
         (from_accuracy_pct) and how far it had drifted from a perfect

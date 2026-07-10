@@ -230,6 +230,29 @@ function fmtPredictionDate(t: number): string {
   return new Date(t * 1000).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })
 }
 
+// Mirrors backend PERIOD_BUCKET_SECONDS (mcx_prediction_service.py) for just
+// the periods these live accuracy tables actually render.
+const PREDICTION_BUCKET_SECONDS: Partial<Record<PredictionPeriod, number>> = {
+  '1m': 60, '15m': 900, '30m': 1800, '1h': 3600,
+}
+
+// The row a table should highlight as "current" -- the smallest bucket-grid
+// point (anchored to today's 09:00 IST session open, same grid the backend
+// snaps predictions to) that is >= now. E.g. at 13:26 IST this is 13:26 for
+// the 1-minute grid, 13:30 for 15/30-minute grids, and 14:00 for the hourly
+// grid (i.e. the row representing the 13:00-14:00 hour). Rows from a
+// different calendar day never match, so this is a no-op on archived/past
+// tables without needing a separate flag.
+function currentBucketBoundary(period: PredictionPeriod, nowEpoch: number): number | null {
+  const bucket = PREDICTION_BUCKET_SECONDS[period]
+  if (!bucket) return null
+  const sessionOpen = istDayStartEpoch(istDateStr(0)) + 9 * 3600
+  const elapsed = nowEpoch - sessionOpen
+  if (elapsed < 0) return sessionOpen
+  const gridFloor = sessionOpen + Math.floor(elapsed / bucket) * bucket
+  return gridFloor === nowEpoch ? gridFloor : gridFloor + bucket
+}
+
 function accuracyColor(pct: number): string {
   return pct >= 95 ? 'text-emerald-600 dark:text-emerald-400' : pct >= 80 ? 'text-amber-600 dark:text-amber-400' : 'text-red-500 dark:text-red-400'
 }
@@ -341,6 +364,15 @@ function AccuracyTrailGrid({ groups, rowsByGroup, showDate }: {
   const maxRows = Math.max(0, ...rowsByGroup.map(r => r.length))
   const fmtTime = showDate ? (t: number) => `${fmtPredictionDate(t)} ${fmtPredictionTime(t)}` : fmtPredictionTime
 
+  // Ticks every 20s so the highlighted "current" row advances on its own
+  // without needing a full data refetch.
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000))
+  useEffect(() => {
+    const id = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 20_000)
+    return () => clearInterval(id)
+  }, [])
+  const currentBoundaries = groups.map(g => currentBucketBoundary(g.period, now))
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-xs">
@@ -384,16 +416,19 @@ function AccuracyTrailGrid({ groups, rowsByGroup, showDate }: {
                 {rowsByGroup.map((rows, gi) => {
                   const r = rows[i]
                   const pending = r && r.actual == null
+                  const isCurrent = !!r && r.time === currentBoundaries[gi]
+                  const highlightCls = isCurrent && 'bg-cyan-50 dark:bg-cyan-950/40'
                   return (
                     <Fragment key={gi}>
-                      <td className={cls('px-3 py-2 font-mono text-zinc-500', gi > 0 && 'border-l border-zinc-100 dark:border-zinc-800')}>
+                      <td className={cls('px-3 py-2 font-mono text-zinc-500', gi > 0 && 'border-l border-zinc-100 dark:border-zinc-800', highlightCls)} title={isCurrent ? 'Current time' : undefined}>
                         {r ? fmtTime(r.time) : ''}
+                        {isCurrent && <span className="ml-1.5 rounded-full bg-cyan-500 px-1.5 py-0.5 text-[9px] font-bold uppercase text-white">Now</span>}
                       </td>
-                      <td className="px-3 py-2 font-mono">
+                      <td className={cls('px-3 py-2 font-mono', highlightCls)}>
                         {r ? (pending ? <span className="italic text-zinc-400">pending</span> : `₹${r.actual?.toFixed(2)}`) : ''}
                       </td>
-                      <td className="px-3 py-2 font-mono">{r ? `₹${r.predicted.toFixed(2)}` : ''}</td>
-                      <td className="px-3 py-2 font-mono font-semibold">
+                      <td className={cls('px-3 py-2 font-mono', highlightCls)}>{r ? `₹${r.predicted.toFixed(2)}` : ''}</td>
+                      <td className={cls('px-3 py-2 font-mono font-semibold', highlightCls)}>
                         {r ? (
                           r.isReference
                             ? <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">Session Open</span>

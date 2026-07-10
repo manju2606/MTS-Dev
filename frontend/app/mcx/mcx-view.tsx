@@ -7,10 +7,10 @@ import { NavBar } from '@/components/nav-bar'
 import { PriceChart } from '@/components/price-chart'
 import type { AILevels, RefLine, PredictionPoint } from '@/components/price-chart'
 import {
-  getNgQuote, listNgTrades, placeNgTrade, closeNgTrade, getBrokerStatus, getNgAiScore, getNgHistory, getNgTrend, getNgRangeStats, getNgPrediction, getNgPredictionArchive, getNgDashboardHistory, getNgSignals, getNgGlobalSymbols, getNgNews, getMe, ApiError,
+  getNgQuote, listNgTrades, placeNgTrade, closeNgTrade, getBrokerStatus, getNgAiScore, getNgHistory, getNgTrend, getNgRangeStats, getNgPrediction, getNgPredictionArchive, getNgDashboardHistory, getNgSignals, getNgGlobalSymbols, getNgGlobalSymbolsHistory, getNgNews, getMe, ApiError,
 } from '@/lib/api'
 import type {
-  NgQuote, McxTrade, BrokerStatus, NgAiScore, HistoryBar, ChartPeriod, McxContract, NgTrendLadder, TrendTimeframe, NgRangeStats, NgPrediction, NgPredictionHistoryPoint, NgPredictionAccuracy, PredictionPeriod, NgDashboardSnapshot, NgSignalsResponse, NgGlobalSymbolRow, NgSessionOpenReference, NgNewsResponse,
+  NgQuote, McxTrade, BrokerStatus, NgAiScore, HistoryBar, ChartPeriod, McxContract, NgTrendLadder, TrendTimeframe, NgRangeStats, NgPrediction, NgPredictionHistoryPoint, NgPredictionAccuracy, PredictionPeriod, NgDashboardSnapshot, NgSignalsResponse, NgGlobalSymbolRow, NgGlobalSymbolSnapshot, NgSessionOpenReference, NgNewsResponse,
 } from '@/lib/api'
 
 function cls(...args: (string | false | null | undefined)[]) { return args.filter(Boolean).join(' ') }
@@ -1032,6 +1032,124 @@ function GlobalGasSymbolsTable() {
   )
 }
 
+type GlobalHistoryRow = {
+  bucketKey: string
+  symbolKey: string
+  display_symbol: string
+  ltp: number | null
+  change_pct: number | null
+  high: number | null
+  low: number | null
+  trend: string
+  ai_strength: number | null
+}
+
+function aggregateGlobalSnapshots(
+  snapshots: NgGlobalSymbolSnapshot[],
+  keyFn: (date: string) => string,
+): GlobalHistoryRow[] {
+  const groups = new Map<string, NgGlobalSymbolSnapshot[]>()
+  for (const s of snapshots) {
+    const k = `${keyFn(s.date)}__${s.key}`
+    const arr = groups.get(k) ?? []
+    arr.push(s)
+    groups.set(k, arr)
+  }
+  const rows = Array.from(groups.values()).map((items): GlobalHistoryRow => {
+    const sorted = [...items].sort((a, b) => a.date.localeCompare(b.date))
+    const last = sorted[sorted.length - 1]
+    const highs = sorted.map(s => s.high).filter((h): h is number => h != null)
+    const lows = sorted.map(s => s.low).filter((l): l is number => l != null)
+    return {
+      bucketKey: keyFn(last.date),
+      symbolKey: last.key,
+      display_symbol: last.display_symbol,
+      ltp: last.ltp,
+      change_pct: last.change_pct,
+      high: highs.length ? Math.max(...highs) : null,
+      low: lows.length ? Math.min(...lows) : null,
+      trend: last.trend,
+      ai_strength: last.ai_strength,
+    }
+  })
+  return rows.sort((a, b) => b.bucketKey.localeCompare(a.bucketKey) || a.display_symbol.localeCompare(b.display_symbol))
+}
+
+function GlobalSymbolsHistoryTable({ title, rows, keyLabel, defaultOpen }: {
+  title: string
+  rows: GlobalHistoryRow[]
+  keyLabel: string
+  defaultOpen: boolean
+}) {
+  return (
+    <CollapsibleCard title={title} defaultOpen={defaultOpen}>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/60">
+              {[keyLabel, 'Symbol', 'LTP', '% Change', 'High', 'Low', 'Trend', 'AI Strength'].map(h => (
+                <th key={h} className="px-3 py-2 text-left font-medium text-zinc-500">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800">
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="px-3 py-8 text-center text-zinc-400">
+                  No snapshots yet — builds up once the daily snapshot job runs (near MCX close each trading day).
+                </td>
+              </tr>
+            ) : (
+              rows.map(r => (
+                <tr key={`${r.bucketKey}-${r.symbolKey}`} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
+                  <td className="px-3 py-2.5 font-mono text-zinc-500">{r.bucketKey}</td>
+                  <td className="px-3 py-2.5 font-semibold text-zinc-900 dark:text-zinc-50">{r.display_symbol}</td>
+                  <td className="px-3 py-2.5 font-mono">{r.ltp != null ? `₹${r.ltp.toFixed(2)}` : '—'}</td>
+                  <td className={cls('px-3 py-2.5 font-mono', r.change_pct != null ? pnlColor(r.change_pct) : '')}>
+                    {r.change_pct != null ? `${r.change_pct >= 0 ? '+' : ''}${r.change_pct.toFixed(2)}%` : '—'}
+                  </td>
+                  <td className="px-3 py-2.5 font-mono text-emerald-600 dark:text-emerald-400">{r.high != null ? `₹${r.high.toFixed(2)}` : '—'}</td>
+                  <td className="px-3 py-2.5 font-mono text-red-500 dark:text-red-400">{r.low != null ? `₹${r.low.toFixed(2)}` : '—'}</td>
+                  <td className="px-3 py-2.5">
+                    <span className={cls('rounded-full px-2.5 py-0.5 text-[10px] font-bold', trendBadgeStyle(r.trend))}>{r.trend}</span>
+                  </td>
+                  <td className="px-3 py-2.5 font-mono font-semibold">{r.ai_strength != null ? r.ai_strength.toFixed(1) : '—'}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </CollapsibleCard>
+  )
+}
+
+function GlobalSymbolsHistory() {
+  const [snapshots, setSnapshots] = useState<NgGlobalSymbolSnapshot[]>([])
+
+  useEffect(() => {
+    const t = localStorage.getItem('mts_token') ?? ''
+    if (!t) return
+    getNgGlobalSymbolsHistory(t, 90).then(setSnapshots).catch(() => {})
+  }, [])
+
+  const dayRows: GlobalHistoryRow[] = snapshots.map(s => ({
+    bucketKey: s.date, symbolKey: s.key, display_symbol: s.display_symbol, ltp: s.ltp,
+    change_pct: s.change_pct, high: s.high, low: s.low, trend: s.trend, ai_strength: s.ai_strength,
+  })).sort((a, b) => b.bucketKey.localeCompare(a.bucketKey) || a.display_symbol.localeCompare(b.display_symbol))
+  const weekRows = aggregateGlobalSnapshots(snapshots, istWeekKey)
+  const monthRows = aggregateGlobalSnapshots(snapshots, s => s.slice(0, 7))
+
+  return (
+    <div className="space-y-3">
+      <p className="px-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Global Natural Gas Symbols History</p>
+      <GlobalSymbolsHistoryTable title="Daily" rows={dayRows} keyLabel="Date" defaultOpen={false} />
+      <GlobalSymbolsHistoryTable title="Weekly (Monday start)" rows={weekRows} keyLabel="Week Of" defaultOpen={false} />
+      <GlobalSymbolsHistoryTable title="Monthly" rows={monthRows} keyLabel="Month" defaultOpen={false} />
+    </div>
+  )
+}
+
 function NgDashboard({ quote, score, buyScore, sellScore, contract, loading, error }: {
   quote: NgQuote | null
   score: NgAiScore | null
@@ -1102,6 +1220,7 @@ function NgDashboard({ quote, score, buyScore, sellScore, contract, loading, err
       </div>
 
       <GlobalGasSymbolsTable />
+      <GlobalSymbolsHistory />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <BuySellScale buy={buyScore} sell={sellScore} />
@@ -2041,7 +2160,7 @@ export default function McxView() {
 
   return (
     <div className="min-h-full bg-zinc-50 dark:bg-zinc-950">
-      <NavBar active="MCX" />
+      <NavBar active="Natural Gas" />
       <main className="mx-auto max-w-5xl px-4 py-8">
         <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
           <div>

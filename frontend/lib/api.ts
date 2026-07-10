@@ -1385,6 +1385,36 @@ export async function getNgDashboardHistory(
   return res.json()
 }
 
+// One row's daily snapshot from the Global Natural Gas Symbols table --
+// `key` is the stable row identifier ("NG" | "NGMINI" | "henry_hub" | "ttf"),
+// not each row's own tradingsymbol/ticker (MCX's changes monthly on roll).
+export type NgGlobalSymbolSnapshot = {
+  key: string
+  date: string
+  display_symbol: string
+  ltp: number | null
+  change_pct: number | null
+  high: number | null
+  low: number | null
+  trend: string
+  ai_strength: number | null
+}
+
+export async function getNgGlobalSymbolsHistory(
+  token: string,
+  days = 90,
+): Promise<NgGlobalSymbolSnapshot[]> {
+  const res = await fetch(
+    `${BASE}/api/v1/mcx/ng/global-symbols-history?days=${days}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch Global Symbols history')
+  }
+  return res.json()
+}
+
 export type NgTradeSignal = {
   direction: 'BUY' | 'SELL'
   tradingsymbol: string | null

@@ -406,15 +406,26 @@ async def _run_mcx_dashboard_snapshot() -> None:
     (LTP/OHLCV/OI + both directions' AI score) for every connected user, so
     the Dashboard tab has a persistent Day/Week/Month history instead of
     only ever showing "right now" (see mcx_dashboard_snapshot_service.py).
-    Weekly/monthly views are aggregated client-side from these daily rows."""
+    Weekly/monthly views are aggregated client-side from these daily rows.
+    Also snapshots the Global Natural Gas Symbols table's full row set (NG,
+    NGMINI, Henry Hub, Dutch TTF) the same way, once per user rather than
+    per contract since one call already covers all four rows (see
+    mcx_global_symbols_snapshot_service.py)."""
     try:
         from app.infra.brokers import session_store
         from app.infra.db.repositories.mcx_dashboard_snapshot_repo import (
             McxDashboardSnapshotRepository,
         )
+        from app.infra.db.repositories.mcx_global_symbols_snapshot_repo import (
+            McxGlobalSymbolsSnapshotRepository,
+        )
         from app.services.mcx_dashboard_snapshot_service import build_and_save_snapshot
+        from app.services.mcx_global_symbols_snapshot_service import (
+            build_and_save_global_symbols_snapshot,
+        )
 
         repo = McxDashboardSnapshotRepository()
+        global_repo = McxGlobalSymbolsSnapshotRepository()
         user_ids = await session_store.list_connected_user_ids()
         checked = 0
         for user_id in user_ids:
@@ -430,6 +441,15 @@ async def _run_mcx_dashboard_snapshot() -> None:
                         error=str(exc),
                     )
                 await asyncio.sleep(0)
+            try:
+                await build_and_save_global_symbols_snapshot(user_id, global_repo)
+            except Exception as exc:
+                log.warning(
+                    "scheduler.mcx_dashboard_snapshot.global_symbols_error",
+                    user_id=user_id,
+                    error=str(exc),
+                )
+            await asyncio.sleep(0)
         log.info("scheduler.mcx_dashboard_snapshot.done", users=len(user_ids), checked=checked)
     except Exception as exc:
         log.error("scheduler.mcx_dashboard_snapshot.error", error=str(exc))

@@ -86,7 +86,7 @@ def _fetch_yf_daily_sync(ticker: str) -> list[dict]:
     return out
 
 
-async def _global_ticker_row(cfg: dict[str, str]) -> dict:
+async def _global_ticker_row(key: str, cfg: dict[str, str]) -> dict:
     loop = asyncio.get_event_loop()
     try:
         candles = await loop.run_in_executor(None, partial(_fetch_yf_daily_sync, cfg["ticker"]))
@@ -101,6 +101,7 @@ async def _global_ticker_row(cfg: dict[str, str]) -> dict:
 
     if len(candles) < 2:
         return {
+            "key": key,
             "symbol": cfg["ticker"],
             "display_symbol": cfg["display"],
             "exchange": cfg["exchange"],
@@ -128,6 +129,7 @@ async def _global_ticker_row(cfg: dict[str, str]) -> dict:
     trend = classify_trend(candles)
 
     return {
+        "key": key,
         "symbol": cfg["ticker"],
         "display_symbol": cfg["display"],
         "exchange": cfg["exchange"],
@@ -154,6 +156,7 @@ async def _mcx_symbol_row(user_id: str, contract: str) -> dict:
     score = await compute_ng_ai_score(user_id, "BUY", 100_000.0, contract)
 
     return {
+        "key": contract.upper(),
         "symbol": quote["tradingsymbol"],
         "display_symbol": "MCX Natural Gas" if contract == "NG" else "MCX Natural Gas Mini",
         "exchange": "MCX",
@@ -181,6 +184,7 @@ async def get_global_symbols(user_id: str) -> list[dict]:
         except Exception as exc:
             rows.append(
                 {
+                    "key": contract.upper(),
                     "symbol": contract,
                     "display_symbol": (
                         "MCX Natural Gas" if contract == "NG" else "MCX Natural Gas Mini"
@@ -202,6 +206,6 @@ async def get_global_symbols(user_id: str) -> list[dict]:
                     "note": str(exc),
                 }
             )
-    for cfg in _GLOBAL_TICKERS.values():
-        rows.append(await _global_ticker_row(cfg))
+    for key, cfg in _GLOBAL_TICKERS.items():
+        rows.append(await _global_ticker_row(key, cfg))
     return rows

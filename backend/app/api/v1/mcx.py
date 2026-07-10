@@ -142,6 +142,22 @@ async def ng_dashboard_history(
     return await get_snapshot_range(str(current_user.id), contract, days, repo)
 
 
+@router.get("/ng/global-symbols-history")
+async def ng_global_symbols_history(current_user: CurrentUser, days: int = 90) -> list[dict]:
+    """Daily snapshots of every Global Natural Gas Symbols row (NG, NGMINI,
+    Henry Hub, Dutch TTF) for the last `days` days -- the frontend groups by
+    each row's `key` and aggregates into Day/Week/Month views, same pattern
+    as ng_dashboard_history above (see
+    mcx_global_symbols_snapshot_service.py)."""
+    from app.infra.db.repositories.mcx_global_symbols_snapshot_repo import (
+        McxGlobalSymbolsSnapshotRepository,
+    )
+    from app.services.mcx_global_symbols_snapshot_service import get_global_symbols_snapshot_range
+
+    repo = McxGlobalSymbolsSnapshotRepository()
+    return await get_global_symbols_snapshot_range(str(current_user.id), days, repo)
+
+
 @router.get("/ng/global-symbols")
 async def ng_global_symbols(current_user: CurrentUser) -> list[dict]:
     """MCX Natural Gas / Natural Gas Mini (real, via Kite) alongside Henry

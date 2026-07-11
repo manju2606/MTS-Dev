@@ -1,7 +1,9 @@
 """MCX Natural Gas / Natural Gas Mini — live quote (via connected Zerodha
 Kite account) and paper trading (reuses the same Trade domain model as
 equity paper trading). Routes stay under /mcx/ng/* for backward compat;
-a `contract` query param ("NG" or "NGMINI") selects which instrument."""
+a `contract` query param selects which instrument -- "NG" (front month) or
+"NGMINI", or a specific NG expiry month ("NG_AUG", "NG_SEP", "NG_OCT",
+"NG_NOV", "NG_DEC")."""
 
 from typing import Literal
 from uuid import UUID
@@ -18,7 +20,7 @@ _trader_or_admin = Depends(require_role(UserRole.ADMIN, UserRole.TRADER))
 
 router = APIRouter(prefix="/mcx", tags=["mcx"])
 
-McxContract = Literal["NG", "NGMINI"]
+McxContract = Literal["NG", "NGMINI", "NG_AUG", "NG_SEP", "NG_OCT", "NG_NOV", "NG_DEC"]
 
 
 @router.get("/ng/quote")

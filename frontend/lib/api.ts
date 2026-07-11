@@ -1260,7 +1260,7 @@ export type NgQuote = {
 }
 
 export type McxTrade = Trade & { lots: number }
-export type McxContract = 'NG' | 'NGMINI'
+export type McxContract = 'NG' | 'NGMINI' | 'NG_AUG' | 'NG_SEP' | 'NG_OCT' | 'NG_NOV' | 'NG_DEC'
 
 export type PlaceNgTradeBody = {
   signal: 'BUY' | 'SELL'

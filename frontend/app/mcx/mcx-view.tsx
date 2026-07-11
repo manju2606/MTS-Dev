@@ -15,12 +15,25 @@ import type {
 
 function cls(...args: (string | false | null | undefined)[]) { return args.filter(Boolean).join(' ') }
 function pnlColor(v: number) { return v > 0 ? 'text-emerald-600 dark:text-emerald-400' : v < 0 ? 'text-red-500 dark:text-red-400' : 'text-zinc-500' }
+// True for the NG product, whether front-month ("NG") or a specific expiry
+// ("NG_AUG" etc.) -- used to keep the "Natural Gas" pill and watchlist row
+// highlighted for any NG expiry, not just the exact front-month value.
+function isNgProduct(c: McxContract) { return c === 'NG' || c.startsWith('NG_') }
 
 type Tab = 'dashboard' | 'chart' | 'trend' | 'ai' | 'trade' | 'portfolio'
 
 const CONTRACTS: { id: McxContract; label: string }[] = [
   { id: 'NG', label: 'Natural Gas' },
   { id: 'NGMINI', label: 'Natural Gas Mini' },
+]
+
+const EXPIRY_CHIPS: { id: McxContract; label: string }[] = [
+  { id: 'NG', label: 'Front Month' },
+  { id: 'NG_AUG', label: 'AUG' },
+  { id: 'NG_SEP', label: 'SEP' },
+  { id: 'NG_OCT', label: 'OCT' },
+  { id: 'NG_NOV', label: 'NOV' },
+  { id: 'NG_DEC', label: 'DEC' },
 ]
 
 type TradePrefill = { signal: 'BUY' | 'SELL'; lots: number; stopLoss: number; target: number }
@@ -788,7 +801,7 @@ function NgWatchlist({ contract }: { contract: McxContract }) {
               key={c.id}
               className={cls(
                 'flex items-center justify-between rounded-lg px-3 py-2',
-                contract === c.id ? 'bg-indigo-50 dark:bg-indigo-950/30' : 'bg-zinc-50 dark:bg-zinc-800/40',
+                (c.id === 'NGMINI' ? contract === 'NGMINI' : isNgProduct(contract)) ? 'bg-indigo-50 dark:bg-indigo-950/30' : 'bg-zinc-50 dark:bg-zinc-800/40',
               )}
             >
               <div>
@@ -2169,17 +2182,33 @@ export default function McxView() {
               Live front-month MCX futures dashboard, multi-timeframe trend alerts, and paper trading against the real price.
             </p>
           </div>
-          <div className="flex gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800">
-            {CONTRACTS.map(c => (
-              <button key={c.id} onClick={() => { setContract(c.id); setScore(null); setBuyScore(null); setSellScore(null) }}
-                className={cls(
-                  'rounded-md px-3 py-1.5 text-xs font-semibold transition-colors',
-                  contract === c.id ? 'bg-white text-zinc-900 shadow dark:bg-zinc-900 dark:text-zinc-50' : 'text-zinc-500 dark:text-zinc-400',
-                )}
-              >
-                {c.label}
-              </button>
-            ))}
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800">
+              {CONTRACTS.map(c => (
+                <button key={c.id} onClick={() => { setContract(c.id); setScore(null); setBuyScore(null); setSellScore(null) }}
+                  className={cls(
+                    'rounded-md px-3 py-1.5 text-xs font-semibold transition-colors',
+                    (c.id === 'NGMINI' ? contract === 'NGMINI' : isNgProduct(contract)) ? 'bg-white text-zinc-900 shadow dark:bg-zinc-900 dark:text-zinc-50' : 'text-zinc-500 dark:text-zinc-400',
+                  )}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+            {isNgProduct(contract) && (
+              <div className="flex gap-0.5 rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-800">
+                {EXPIRY_CHIPS.map(c => (
+                  <button key={c.id} onClick={() => { setContract(c.id); setScore(null); setBuyScore(null); setSellScore(null) }}
+                    className={cls(
+                      'rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors',
+                      contract === c.id ? 'bg-white text-zinc-900 shadow dark:bg-zinc-900 dark:text-zinc-50' : 'text-zinc-500 dark:text-zinc-400',
+                    )}
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 

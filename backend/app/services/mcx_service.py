@@ -50,6 +50,25 @@ MCX_CONTRACTS: dict[str, str] = {
     "NGMINI": "NATGASMINI",
 }
 
+# Specific-expiry NG contract codes ("NG_<3-letter month>") -- resolve_contract()
+# parses the suffix against this table to pick a particular expiry instead of
+# always the nearest unexpired one. Kite's tradingsymbol convention already
+# uses these same abbreviations (e.g. "NATURALGAS26AUGFUT").
+_MONTH_ABBR: dict[str, int] = {
+    "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
+    "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
+}
+
+# Specific-expiry NG codes tracked by the background scheduler alongside the
+# evergreen "NG" (front month) and "NGMINI" -- a plain list since which
+# months are worth tracking is a product decision, not something Kite's
+# instrument dump tells us. resolve_contract() already fails safely (a clear
+# ValueError, caught+logged per-iteration by every scheduler loop) for a
+# month MCX hasn't listed yet.
+TRACKED_MCX_CONTRACTS: list[str] = [
+    "NG", "NGMINI", "NG_AUG", "NG_SEP", "NG_OCT", "NG_NOV", "NG_DEC",
+]
+
 # MCX's instrument dump is large and only changes when contracts roll
 # (monthly) -- cache it for a day instead of re-downloading on every quote.
 _INSTRUMENTS_CACHE: dict[str, tuple[float, list[dict]]] = {}
@@ -130,13 +149,25 @@ async def _get_mcx_instruments(broker: ZerodhaBroker) -> list[dict]:
 
 
 async def resolve_contract(broker: ZerodhaBroker, contract: str = "NG") -> dict:
-    """The current front-month MCX futures contract for `contract` (one of
-    MCX_CONTRACTS' keys, e.g. "NG" or "NGMINI")."""
-    kite_name = MCX_CONTRACTS.get(contract.upper())
+    """The current MCX futures contract for `contract`. Either a bare
+    MCX_CONTRACTS key (e.g. "NG", "NGMINI") -- resolves to the front month,
+    i.e. the nearest unexpired expiry -- or a `<key>_<3-letter month>` code
+    (e.g. "NG_AUG") -- resolves to the nearest unexpired expiry falling in
+    that specific month."""
+    base, _, month_code = contract.upper().partition("_")
+    kite_name = MCX_CONTRACTS.get(base)
     if kite_name is None:
         raise ValueError(
             f"Unknown MCX contract '{contract}' -- expected one of {list(MCX_CONTRACTS)}"
         )
+    target_month: int | None = None
+    if month_code:
+        target_month = _MONTH_ABBR.get(month_code)
+        if target_month is None:
+            raise ValueError(
+                f"Unknown expiry month '{month_code}' in contract '{contract}' -- "
+                f"expected one of {list(_MONTH_ABBR)}"
+            )
 
     instruments = await _get_mcx_instruments(broker)
     candidates = [
@@ -159,6 +190,18 @@ async def resolve_contract(broker: ZerodhaBroker, contract: str = "NG") -> dict:
 
     today = date.today()
     unexpired = sorted((c for c in candidates if _expiry(c) >= today), key=_expiry)
+
+    if target_month is not None:
+        matching = [c for c in unexpired if _expiry(c).month == target_month]
+        if not matching:
+            available = sorted(_expiry(c).isoformat() for c in unexpired)
+            raise ValueError(
+                f"No unexpired '{kite_name}' contract found for expiry month '{month_code}' -- "
+                f"MCX/Kite may not have listed it yet. Available unexpired expiries: "
+                f"{available or 'none'}"
+            )
+        return matching[0]
+
     return unexpired[0] if unexpired else sorted(candidates, key=_expiry)[-1]
 
 

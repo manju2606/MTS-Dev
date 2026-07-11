@@ -124,6 +124,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: '/mcx-heatmap', label: 'MCX Heatmap', icon: 'squares',  desc: 'Live commodity-wide heatmap from MCX India' },
       { href: '/mcx',         label: 'Natural Gas',  icon: 'activity', desc: 'MCX Natural Gas · quotes, AI signal, predictions, paper trading' },
+      { href: '/mcx/metals',  label: 'Base Metals',  icon: 'layers',   desc: 'Aluminium, Copper, Lead, Nickel, Zinc, Gold & Silver · quotes, AI signal, predictions, paper trading' },
     ],
   },
   {

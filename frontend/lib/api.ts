@@ -1683,6 +1683,199 @@ export async function getNgAiScore(
   return res.json()
 }
 
+// ── MCX Base & Precious Metals ────────────────────────────────────────────────
+// Sibling to the NG section above -- same response shapes (reuses NgQuote,
+// NgRangeStats, NgDashboardSnapshot, NgSignalsResponse, NgPrediction,
+// NgPredictionArchive, NgTrendLadder, NgAiScore, McxTrade as-is), just a
+// different contract union and endpoint prefix (/mcx/metals/* vs /mcx/ng/*).
+// No global-symbols/news equivalents -- those are NG-specific widgets, out
+// of scope for metals.
+
+export type McxMetalsContract =
+  | 'ALUMINIUM' | 'ALUMINI' | 'COPPER' | 'LEAD' | 'LEADMINI' | 'NICKEL' | 'ZINC' | 'ZINCMINI'
+  | 'GOLD' | 'GOLDMINI' | 'GOLDTEN' | 'GOLDGUINEA' | 'GOLDPETAL'
+  | 'SILVER' | 'SILVERMINI' | 'SILVERMICRO' | 'SILVER100'
+
+export type PlaceMetalTradeBody = {
+  signal: 'BUY' | 'SELL'
+  lots: number
+  stop_loss: number
+  target: number
+  limit_price?: number
+  contract?: McxMetalsContract
+}
+
+export async function getMetalQuote(token: string, contract: McxMetalsContract = 'GOLD'): Promise<NgQuote> {
+  const res = await fetch(`${BASE}/api/v1/mcx/metals/quote?contract=${contract}`, { headers: authHeaders(token) })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch metals quote')
+  }
+  return res.json()
+}
+
+export async function listMetalTrades(token: string, status?: string): Promise<McxTrade[]> {
+  const url = status
+    ? `${BASE}/api/v1/mcx/metals/trades?trade_status=${encodeURIComponent(status)}`
+    : `${BASE}/api/v1/mcx/metals/trades`
+  const res = await fetch(url, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error('Failed to fetch metals trades')
+  return res.json()
+}
+
+export async function placeMetalTrade(token: string, body: PlaceMetalTradeBody): Promise<McxTrade> {
+  const res = await fetch(`${BASE}/api/v1/mcx/metals/trades`, {
+    method: 'POST',
+    headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error((data as { detail?: string }).detail ?? 'Failed to place metals trade')
+  }
+  return res.json()
+}
+
+export async function closeMetalTrade(token: string, tradeId: string, exitPrice?: number): Promise<McxTrade> {
+  const url = exitPrice != null
+    ? `${BASE}/api/v1/mcx/metals/trades/${tradeId}/close?exit_price=${exitPrice}`
+    : `${BASE}/api/v1/mcx/metals/trades/${tradeId}/close`
+  const res = await fetch(url, { method: 'POST', headers: authHeaders(token) })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error((data as { detail?: string }).detail ?? 'Failed to close metals trade')
+  }
+  return res.json()
+}
+
+export async function cancelMetalTrade(token: string, tradeId: string): Promise<McxTrade> {
+  const res = await fetch(`${BASE}/api/v1/mcx/metals/trades/${tradeId}/cancel`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error((data as { detail?: string }).detail ?? 'Failed to cancel metals trade')
+  }
+  return res.json()
+}
+
+export async function getMetalHistory(
+  token: string,
+  period: ChartPeriod = '1D',
+  contract: McxMetalsContract = 'GOLD',
+): Promise<HistoryBar[]> {
+  const res = await fetch(
+    `${BASE}/api/v1/mcx/metals/history?period=${period}&contract=${contract}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch metals history')
+  }
+  return res.json()
+}
+
+export async function getMetalRangeStats(token: string, contract: McxMetalsContract = 'GOLD'): Promise<NgRangeStats> {
+  const res = await fetch(`${BASE}/api/v1/mcx/metals/range-stats?contract=${contract}`, { headers: authHeaders(token) })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch metals range stats')
+  }
+  return res.json()
+}
+
+export async function getMetalDashboardHistory(
+  token: string,
+  contract: McxMetalsContract = 'GOLD',
+  days = 90,
+): Promise<NgDashboardSnapshot[]> {
+  const res = await fetch(
+    `${BASE}/api/v1/mcx/metals/dashboard-history?contract=${contract}&days=${days}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch metals dashboard history')
+  }
+  return res.json()
+}
+
+export async function getMetalSignals(
+  token: string,
+  contract: McxMetalsContract = 'GOLD',
+  limit = 50,
+): Promise<NgSignalsResponse> {
+  const res = await fetch(
+    `${BASE}/api/v1/mcx/metals/signals?contract=${contract}&limit=${limit}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch metals trade signals')
+  }
+  return res.json()
+}
+
+export async function getMetalPrediction(
+  token: string,
+  contract: McxMetalsContract = 'GOLD',
+  period: PredictionPeriod = '15m',
+): Promise<NgPrediction> {
+  const res = await fetch(
+    `${BASE}/api/v1/mcx/metals/predict?period=${period}&contract=${contract}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch metals prediction')
+  }
+  return res.json()
+}
+
+export async function getMetalPredictionArchive(
+  token: string,
+  contract: McxMetalsContract,
+  period: PredictionPeriod,
+  date: string,
+): Promise<NgPredictionArchive> {
+  const res = await fetch(
+    `${BASE}/api/v1/mcx/metals/predict-archive?period=${period}&contract=${contract}&date=${date}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch metals prediction archive')
+  }
+  return res.json()
+}
+
+export async function getMetalTrend(token: string, contract: McxMetalsContract = 'GOLD'): Promise<NgTrendLadder> {
+  const res = await fetch(`${BASE}/api/v1/mcx/metals/trend?contract=${contract}`, { headers: authHeaders(token) })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch metals trend')
+  }
+  return res.json()
+}
+
+export async function getMetalAiScore(
+  token: string,
+  direction: 'BUY' | 'SELL' = 'BUY',
+  capital = 100000,
+  contract: McxMetalsContract = 'GOLD',
+): Promise<NgAiScore> {
+  const res = await fetch(
+    `${BASE}/api/v1/mcx/metals/ai-score?direction=${direction}&capital=${capital}&contract=${contract}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch metals AI score')
+  }
+  return res.json()
+}
+
 // ── Phase 3: Broker ────────────────────────────────────────────────────────
 
 export async function getBrokerStatus(token: string): Promise<BrokerStatus> {

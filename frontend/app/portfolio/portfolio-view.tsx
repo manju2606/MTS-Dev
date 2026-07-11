@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { getPortfolio, saveJournalEntry, getJournalEntry } from '@/lib/api'
+import { getPortfolio, saveJournalEntry, getJournalEntry, closeTrade, closeNgTrade } from '@/lib/api'
 import type { PortfolioData, PortfolioPosition, PortfolioClosedTrade } from '@/lib/api'
 import { NavBar } from '@/components/nav-bar'
 import { EquityChart } from '@/components/equity-chart'
@@ -126,6 +126,29 @@ export default function PortfolioView() {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'open' | 'closed'>('open')
   const [journalTradeId, setJournalTradeId] = useState<string | null>(null)
+  const [closingId, setClosingId] = useState<string | null>(null)
+
+  async function refreshPortfolio() {
+    const t = tokenRef.current
+    if (!t) return
+    const d = await getPortfolio(t).catch(() => null)
+    if (!d) return
+    setData(d)
+    localStorage.setItem('mts_portfolio_cache', JSON.stringify(d))
+  }
+
+  async function handleClosePosition(p: PortfolioPosition) {
+    setClosingId(p.id)
+    try {
+      if (p.exchange === 'MCX') await closeNgTrade(tokenRef.current, p.id)
+      else await closeTrade(tokenRef.current, p.id)
+      await refreshPortfolio()
+    } catch {
+      // surfaced via the position staying in the open list; keep it simple
+    } finally {
+      setClosingId(null)
+    }
+  }
 
   useEffect(() => {
     const t = localStorage.getItem('mts_token')
@@ -252,7 +275,7 @@ export default function PortfolioView() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-zinc-100 text-left dark:border-zinc-800">
-                    {['Symbol', 'Side', 'Qty', 'Entry', 'Opened', 'Current', 'Invested', 'Unreal P&L', 'Target', 'Stop', 'Days', 'Conf'].map(h => (
+                    {['Symbol', 'Side', 'Qty', 'Entry', 'Opened', 'Current', 'Invested', 'Unreal P&L', 'Target', 'Stop', 'Days', 'Conf', ''].map(h => (
                       <th key={h} className="px-3 py-3 text-xs font-medium text-zinc-500">{h}</th>
                     ))}
                   </tr>
@@ -298,6 +321,13 @@ export default function PortfolioView() {
                       <td className="px-3 py-3 text-xs text-zinc-500">{p.days_held}d</td>
                       <td className="px-3 py-3 text-xs text-zinc-500">
                         {p.ai_confidence !== null ? `${Math.round(p.ai_confidence * 100)}%` : '—'}
+                      </td>
+                      <td className="px-3 py-3">
+                        <button onClick={() => handleClosePosition(p)} disabled={closingId === p.id}
+                          className="rounded-lg bg-zinc-100 px-2.5 py-1 text-[11px] font-semibold text-zinc-700 hover:bg-zinc-200 disabled:opacity-60 dark:bg-zinc-800 dark:text-zinc-200"
+                        >
+                          {closingId === p.id ? 'Closing…' : 'Close'}
+                        </button>
                       </td>
                     </tr>
                   ))}

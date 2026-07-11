@@ -83,10 +83,11 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
   const refLinesKey = JSON.stringify(refLines ?? [])
   const predictionKey = JSON.stringify(prediction ?? [])
 
-  // Shared by both the amber "actual price" ball and the blue "predicted
-  // price" ball -- same x (the current bar's time) either way, just a
-  // different y depending on which price is passed in.
-  const positionMarker = useCallback((ballEl: HTMLDivElement | null, price: number | null | undefined) => {
+  // Shared by both the amber "actual price" ball (always at the current
+  // bar's time) and the blue "predicted price" ball (at its own target
+  // bucket's time, which is ahead of the current bar -- see
+  // predictedPriceNow below).
+  const positionMarker = useCallback((ballEl: HTMLDivElement | null, time: UTCTimestamp | null, price: number | null | undefined) => {
     // Deferred to the next animation frame: reading priceToCoordinate/
     // timeToCoordinate synchronously right after a .update()/applyOptions()
     // call (candle live-tick, LTP price line) can return coordinates from
@@ -96,13 +97,12 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
     requestAnimationFrame(() => {
       const series = candleSeriesRef.current
       const chart = chartRef.current
-      const bar = lastBarRef.current
-      if (!series || !chart || !ballEl || !bar || price == null) {
+      if (!series || !chart || !ballEl || time == null || price == null) {
         if (ballEl) ballEl.style.opacity = '0'
         return
       }
       const y = series.priceToCoordinate(price)
-      const x = chart.timeScale().timeToCoordinate(bar.time)
+      const x = chart.timeScale().timeToCoordinate(time)
       if (y == null || x == null) {
         ballEl.style.opacity = '0'
         return
@@ -114,33 +114,36 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
   }, [])
 
   const positionBall = useCallback(
-    (price: number | null | undefined) => positionMarker(ballRef.current, price),
+    (price: number | null | undefined) => positionMarker(ballRef.current, lastBarRef.current?.time ?? null, price),
     [positionMarker],
   )
 
-  // Predicted price "as of now" -- the latest prediction bucket whose time
-  // has already arrived, from whichever period/timeline is currently
-  // selected (predictionRef is refreshed with that period's own prediction
-  // array below). Predictions don't necessarily share the chart's own
-  // candle grid (e.g. "30m" predictions are on a 30-min grid while the
-  // chart's real candles for that period are 15-min Kite candles), so this
-  // takes the most recent bucket at-or-before the current bar's time rather
-  // than requiring an exact time match.
-  const predictedPriceNow = useCallback((): number | null => {
+  // Predicted price for the *next* bucket to resolve -- e.g. on a 15-min
+  // chart at 06:30, the 06:30 candle is still forming (that's where the
+  // amber ball sits), so the prediction actually being tested next is the
+  // one targeting 06:45, not the already-past-or-forming 06:30 bucket.
+  // Anchored to the chart's own current bar (lastBarRef, the amber ball's
+  // exact time) plus one bucket -- deterministic and always one step ahead
+  // of the amber ball, rather than a separate wall-clock "now" lookup that
+  // could drift a few seconds either side of the bar boundary and land on
+  // the wrong bucket. Takes the first prediction point at-or-after that
+  // target since a period's prediction grid doesn't always match its
+  // chart's own candle grid (e.g. "30m" predictions vs 15-min Kite candles).
+  const predictedPriceNow = useCallback((): { time: UTCTimestamp; price: number } | null => {
     const bar = lastBarRef.current
-    const pts = predictionRef.current
-    if (!bar || !pts.length) return null
-    let best: number | null = null
-    for (const p of pts) {
-      if (p.time <= bar.time) best = p.predictedClose
-      else break
+    if (!bar) return null
+    const bucket = PERIOD_BUCKET_SECONDS[period] ?? 86400
+    const targetTime = bar.time + bucket
+    for (const p of predictionRef.current) {
+      if (p.time >= targetTime) return { time: p.time as UTCTimestamp, price: p.predictedClose }
     }
-    return best
-  }, [])
+    return null
+  }, [period])
 
   const positionPredBall = useCallback(() => {
-    const price = predictedPriceNow()
-    positionMarker(predBallRef.current, price)
+    const next = predictedPriceNow()
+    const price = next?.price ?? null
+    positionMarker(predBallRef.current, next?.time ?? null, price)
     if (candleSeriesRef.current) {
       if (price != null) {
         if (predLineRef.current) {

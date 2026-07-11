@@ -1916,6 +1916,14 @@ export default function McxMetalsView() {
             <p className="text-xs text-zinc-400">
               Live front-month MCX futures dashboard, multi-timeframe trend alerts, and paper trading against the real price.
             </p>
+            <a
+              href="https://www.mcxindia.com/circulars"
+              target="_blank"
+              rel="noreferrer"
+              className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+            >
+              MCX Announcements &amp; Circulars ↗
+            </a>
           </div>
           <div className="flex flex-col items-end gap-2">
             <div className="flex gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800">

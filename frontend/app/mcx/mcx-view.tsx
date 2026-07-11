@@ -2185,7 +2185,7 @@ export default function McxView() {
           <div className="flex flex-col items-end gap-2">
             <div className="flex gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800">
               {CONTRACTS.map(c => (
-                <button key={c.id} onClick={() => { setContract(c.id); setScore(null); setBuyScore(null); setSellScore(null) }}
+                <button key={c.id} onClick={() => { setContract(c.id); setScore(null); setBuyScore(null); setSellScore(null); setQuote(null); setQuoteError(null); setQuoteLoading(true) }}
                   className={cls(
                     'rounded-md px-3 py-1.5 text-xs font-semibold transition-colors',
                     (c.id === 'NGMINI' ? contract === 'NGMINI' : isNgProduct(contract)) ? 'bg-white text-zinc-900 shadow dark:bg-zinc-900 dark:text-zinc-50' : 'text-zinc-500 dark:text-zinc-400',
@@ -2198,7 +2198,7 @@ export default function McxView() {
             {isNgProduct(contract) && (
               <div className="flex gap-0.5 rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-800">
                 {EXPIRY_CHIPS.map(c => (
-                  <button key={c.id} onClick={() => { setContract(c.id); setScore(null); setBuyScore(null); setSellScore(null) }}
+                  <button key={c.id} onClick={() => { setContract(c.id); setScore(null); setBuyScore(null); setSellScore(null); setQuote(null); setQuoteError(null); setQuoteLoading(true) }}
                     className={cls(
                       'rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors',
                       contract === c.id ? 'bg-white text-zinc-900 shadow dark:bg-zinc-900 dark:text-zinc-50' : 'text-zinc-500 dark:text-zinc-400',

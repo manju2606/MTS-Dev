@@ -225,7 +225,7 @@ async def _fetch_live_quote(user_id: str, contract: str) -> dict:
     return {
         "contract": contract.upper(),
         "tradingsymbol": tradingsymbol,
-        "name": MCX_CONTRACTS[contract.upper()],
+        "name": MCX_CONTRACTS[contract.upper().partition("_")[0]],
         "expiry": str(c["expiry"]),
         "lot_size": int(c.get("lot_size", 1)),
         "tick_size": float(c.get("tick_size", 0.1)),

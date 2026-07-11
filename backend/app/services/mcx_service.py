@@ -148,12 +148,22 @@ async def _get_mcx_instruments(broker: ZerodhaBroker) -> list[dict]:
     return instruments
 
 
-async def resolve_contract(broker: ZerodhaBroker, contract: str = "NG") -> dict:
+async def resolve_contract(
+    broker: ZerodhaBroker, contract: str = "NG", allow_expired: bool = False
+) -> dict:
     """The current MCX futures contract for `contract`. Either a bare
     MCX_CONTRACTS key (e.g. "NG", "NGMINI") -- resolves to the front month,
     i.e. the nearest unexpired expiry -- or a `<key>_<3-letter month>` code
     (e.g. "NG_AUG") -- resolves to the nearest unexpired expiry falling in
-    that specific month."""
+    that specific month.
+
+    `allow_expired` (only meaningful for a `<key>_<month>` code) also
+    considers expired instruments, picking whichever expiry in that month is
+    closest to today -- past or future. Used by get_history() so a chart's
+    candle history for a month stays reviewable after that contract itself
+    has expired; live-price paths (get_quote, place_ng_trade, AI score,
+    trend, signals) keep the default, since there's no live price for an
+    instrument that's stopped trading."""
     base, _, month_code = contract.upper().partition("_")
     kite_name = MCX_CONTRACTS.get(base)
     if kite_name is None:
@@ -194,11 +204,16 @@ async def resolve_contract(broker: ZerodhaBroker, contract: str = "NG") -> dict:
     if target_month is not None:
         matching = [c for c in unexpired if _expiry(c).month == target_month]
         if not matching:
+            if allow_expired:
+                expired_matching = [c for c in candidates if _expiry(c).month == target_month]
+                if expired_matching:
+                    return min(expired_matching, key=lambda c: abs((_expiry(c) - today).days))
             available = sorted(_expiry(c).isoformat() for c in unexpired)
             raise ValueError(
-                f"No unexpired '{kite_name}' contract found for expiry month '{month_code}' -- "
-                f"MCX/Kite may not have listed it yet. Available unexpired expiries: "
-                f"{available or 'none'}"
+                f"No {'' if allow_expired else 'unexpired '}'{kite_name}' contract found for "
+                f"expiry month '{month_code}' -- MCX/Kite may not have listed it (yet, or ever, "
+                f"if it's since rolled out of Kite's instrument dump). Available unexpired "
+                f"expiries: {available or 'none'}"
             )
         return matching[0]
 
@@ -293,13 +308,18 @@ _HISTORY_PERIOD_MAP: dict[str, tuple[str, int]] = {
 
 
 async def get_history(user_id: str, period: str, contract: str = "NG") -> list[dict]:
-    """MCX OHLCV history for the front-month contract, in the same
-    {time, open, high, low, close, volume} shape the shared PriceChart
-    component already expects (see components/price-chart.tsx)."""
+    """MCX OHLCV history for `contract`, in the same {time, open, high, low,
+    close, volume} shape the shared PriceChart component already expects
+    (see components/price-chart.tsx). Resolves with allow_expired=True so a
+    specific-expiry contract's (e.g. "NG_AUG") candle history stays
+    reviewable after that contract itself has expired -- Kite's historical
+    data API works fine for a past instrument_token even once the contract
+    has stopped trading, as long as it hasn't rolled out of Kite's
+    instrument dump entirely."""
     from datetime import timedelta
 
     broker = await get_zerodha_broker(user_id)
-    c_info = await resolve_contract(broker, contract)
+    c_info = await resolve_contract(broker, contract, allow_expired=True)
     interval, days = _HISTORY_PERIOD_MAP.get(period, ("day", 365))
 
     to_dt = ist_now()

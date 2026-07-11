@@ -300,3 +300,16 @@ async def close_ng_trade(
         raise HTTPException(status_code=http_status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=http_status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.post("/ng/trades/{trade_id}/cancel", dependencies=[_trader_or_admin])
+async def cancel_ng_trade(trade_id: UUID, current_user: CurrentUser, repo: TradeDep) -> dict:
+    """Cancel a PENDING (unfilled LIMIT) MCX order before it triggers."""
+    from app.services.mcx_service import cancel_ng_trade
+
+    try:
+        return await cancel_ng_trade(str(current_user.id), repo, trade_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=http_status.HTTP_409_CONFLICT, detail=str(exc)) from exc

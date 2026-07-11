@@ -7,7 +7,7 @@ import { NavBar } from '@/components/nav-bar'
 import { PriceChart } from '@/components/price-chart'
 import type { AILevels, RefLine, PredictionPoint } from '@/components/price-chart'
 import {
-  getNgQuote, listNgTrades, placeNgTrade, closeNgTrade, getBrokerStatus, getNgAiScore, getNgHistory, getNgTrend, getNgRangeStats, getNgPrediction, getNgPredictionArchive, getNgDashboardHistory, getNgSignals, getNgGlobalSymbols, getNgGlobalSymbolsHistory, getNgNews, getMe, ApiError,
+  getNgQuote, listNgTrades, placeNgTrade, closeNgTrade, cancelNgTrade, getBrokerStatus, getNgAiScore, getNgHistory, getNgTrend, getNgRangeStats, getNgPrediction, getNgPredictionArchive, getNgDashboardHistory, getNgSignals, getNgGlobalSymbols, getNgGlobalSymbolsHistory, getNgNews, getMe, ApiError,
 } from '@/lib/api'
 import type {
   NgQuote, McxTrade, BrokerStatus, NgAiScore, HistoryBar, ChartPeriod, McxContract, NgTrendLadder, TrendTimeframe, NgRangeStats, NgPrediction, NgPredictionHistoryPoint, NgPredictionAccuracy, PredictionPeriod, NgDashboardSnapshot, NgSignalsResponse, NgGlobalSymbolRow, NgGlobalSymbolSnapshot, NgSessionOpenReference, NgNewsResponse,
@@ -1949,8 +1949,8 @@ function NgTradeForm({ quote, onPlaced, prefill, contract }: { quote: NgQuote | 
 
 // ── Portfolio ─────────────────────────────────────────────────────────────────
 
-function TradeRow({ t, showClose, onClose, closing }: {
-  t: McxTrade; showClose: boolean; onClose?: (id: string) => void; closing?: boolean
+function TradeRow({ t, showClose, onClose, onCancel, closing }: {
+  t: McxTrade; showClose: boolean; onClose?: (id: string) => void; onCancel?: (id: string) => void; closing?: boolean
 }) {
   return (
     <tr className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
@@ -1975,6 +1975,13 @@ function TradeRow({ t, showClose, onClose, closing }: {
                 {closing ? 'Closing…' : 'Close'}
               </button>
             )}
+            {t.status === 'pending' && onCancel && (
+              <button onClick={() => onCancel(t.id)} disabled={closing}
+                className="rounded-lg bg-zinc-100 px-2.5 py-1 text-[11px] font-semibold text-zinc-700 hover:bg-zinc-200 disabled:opacity-60 dark:bg-zinc-800 dark:text-zinc-200"
+              >
+                {closing ? 'Cancelling…' : 'Cancel'}
+              </button>
+            )}
           </td>
         </>
       ) : (
@@ -1990,8 +1997,8 @@ function TradeRow({ t, showClose, onClose, closing }: {
   )
 }
 
-function NgPortfolio({ trades, loading, onClose, closingId }: {
-  trades: McxTrade[]; loading: boolean; onClose: (id: string) => void; closingId: string | null
+function NgPortfolio({ trades, loading, onClose, onCancel, closingId }: {
+  trades: McxTrade[]; loading: boolean; onClose: (id: string) => void; onCancel: (id: string) => void; closingId: string | null
 }) {
   const open = trades.filter(t => t.status === 'open' || t.status === 'pending')
   const closed = trades.filter(t => t.status === 'closed' || t.status === 'cancelled')
@@ -2038,7 +2045,7 @@ function NgPortfolio({ trades, loading, onClose, closingId }: {
               </thead>
               <tbody className="divide-y divide-zinc-50 bg-white dark:divide-zinc-800 dark:bg-zinc-900">
                 {open.map(t => (
-                  <TradeRow key={t.id} t={t} showClose onClose={onClose} closing={closingId === t.id} />
+                  <TradeRow key={t.id} t={t} showClose onClose={onClose} onCancel={onCancel} closing={closingId === t.id} />
                 ))}
               </tbody>
             </table>
@@ -2169,6 +2176,18 @@ export default function McxView() {
     }
   }
 
+  async function handleCancel(id: string) {
+    setClosingId(id)
+    try {
+      await cancelNgTrade(tokenRef.current, id)
+      loadTrades()
+    } catch {
+      // surfaced via trade list staying unchanged; keep it simple
+    } finally {
+      setClosingId(null)
+    }
+  }
+
   const zerodhaConnected = broker?.broker === 'zerodha' && broker.connected
 
   return (
@@ -2257,7 +2276,7 @@ export default function McxView() {
         )}
         {tab === 'trade' && <NgTradeForm quote={quote} onPlaced={loadTrades} prefill={tradePrefill} contract={contract} />}
         {tab === 'portfolio' && (
-          <NgPortfolio trades={trades} loading={tradesLoading} onClose={handleClose} closingId={closingId} />
+          <NgPortfolio trades={trades} loading={tradesLoading} onClose={handleClose} onCancel={handleCancel} closingId={closingId} />
         )}
       </main>
     </div>

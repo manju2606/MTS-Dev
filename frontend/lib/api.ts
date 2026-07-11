@@ -1314,6 +1314,18 @@ export async function closeNgTrade(token: string, tradeId: string, exitPrice?: n
   return res.json()
 }
 
+export async function cancelNgTrade(token: string, tradeId: string): Promise<McxTrade> {
+  const res = await fetch(`${BASE}/api/v1/mcx/ng/trades/${tradeId}/cancel`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error((data as { detail?: string }).detail ?? 'Failed to cancel MCX trade')
+  }
+  return res.json()
+}
+
 export async function getNgHistory(
   token: string,
   period: ChartPeriod = '1D',

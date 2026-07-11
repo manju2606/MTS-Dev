@@ -516,3 +516,30 @@ async def close_ng_trade(
     updated = await repo.update(trade)
     log.info("mcx.trade.closed", symbol=trade.symbol, exit_price=price)
     return _trade_dict(updated, lot_size)
+
+
+async def cancel_ng_trade(user_id: str, repo, trade_id: UUID) -> dict:
+    """Cancel a PENDING (unfilled LIMIT) MCX order before it triggers --
+    the only way out for one, since MCX limit orders have no fill-checking
+    job (position_monitor.py's is NSE/BSE-only via YFinance) and
+    close_ng_trade() only accepts an OPEN trade."""
+    trade = await repo.get_by_id(trade_id)
+    if not trade or str(trade.user_id) != user_id or trade.exchange != "MCX":
+        raise LookupError("Trade not found")
+    if trade.status != TradeStatus.PENDING:
+        raise ValueError(f"Only pending orders can be cancelled (trade is {trade.status})")
+
+    # Best-effort lot size for display only -- cancelling must still work
+    # without a live broker connection (e.g. an expired Zerodha token is
+    # exactly the kind of situation that leaves someone wanting to cancel
+    # a stuck pending order in the first place).
+    try:
+        broker = await get_zerodha_broker(user_id)
+        lot_size = await _lot_size_for_symbol(broker, trade.symbol)
+    except McxNotConnectedError:
+        lot_size = 100 if trade.symbol.upper().startswith("NATGASMINI") else 1250
+
+    trade.status = TradeStatus.CANCELLED
+    updated = await repo.update(trade)
+    log.info("mcx.trade.cancelled", symbol=trade.symbol)
+    return _trade_dict(updated, lot_size)

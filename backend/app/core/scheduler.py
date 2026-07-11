@@ -497,6 +497,180 @@ async def _run_mcx_signal_check() -> None:
         log.error("scheduler.mcx_signal.error", error=str(exc))
 
 
+async def _run_mcx_metals_trend_check() -> None:
+    """Metals twin of _run_mcx_trend_check -- same 15-min cadence, iterates
+    all 17 tracked metals contracts instead of NG's 7."""
+    try:
+        from app.infra.brokers import session_store
+        from app.services.mcx_metals_service import TRACKED_MCX_METALS_CONTRACTS
+        from app.services.mcx_metals_trend_service import compute_and_store_metal_snapshot
+
+        user_ids = await session_store.list_connected_user_ids()
+        checked, alerted = 0, 0
+        for user_id in user_ids:
+            for contract in TRACKED_MCX_METALS_CONTRACTS:
+                try:
+                    result = await compute_and_store_metal_snapshot(user_id, contract)
+                    checked += 1
+                    if result.get("changes"):
+                        alerted += 1
+                except Exception as exc:
+                    log.warning(
+                        "scheduler.mcx_metals_trend.contract_error",
+                        user_id=user_id,
+                        contract=contract,
+                        error=str(exc),
+                    )
+                await asyncio.sleep(0)
+        log.info(
+            "scheduler.mcx_metals_trend.done", users=len(user_ids), checked=checked, alerted=alerted
+        )
+    except Exception as exc:
+        log.error("scheduler.mcx_metals_trend.error", error=str(exc))
+
+
+async def _run_mcx_metals_prediction_check() -> None:
+    """Metals twin of _run_mcx_prediction_check -- same 5-min cadence, same
+    intraday period set."""
+    try:
+        from app.infra.brokers import session_store
+        from app.infra.db.repositories.mcx_prediction_repo import McxPredictionRepository
+        from app.services.mcx_metals_prediction_service import get_metal_prediction
+        from app.services.mcx_metals_service import TRACKED_MCX_METALS_CONTRACTS
+
+        repo = McxPredictionRepository()
+        user_ids = await session_store.list_connected_user_ids()
+        checked = 0
+        for user_id in user_ids:
+            for contract in TRACKED_MCX_METALS_CONTRACTS:
+                for period in _MCX_PREDICTION_PERIODS:
+                    try:
+                        await get_metal_prediction(user_id, contract, period, repo)
+                        checked += 1
+                    except Exception as exc:
+                        log.warning(
+                            "scheduler.mcx_metals_prediction.contract_error",
+                            user_id=user_id,
+                            contract=contract,
+                            period=period,
+                            error=str(exc),
+                        )
+                    await asyncio.sleep(0)
+        log.info("scheduler.mcx_metals_prediction.done", users=len(user_ids), checked=checked)
+    except Exception as exc:
+        log.error("scheduler.mcx_metals_prediction.error", error=str(exc))
+
+
+async def _run_mcx_metals_calendar_prediction_check() -> None:
+    """Metals twin of _run_mcx_calendar_prediction_check -- once daily."""
+    try:
+        from app.infra.brokers import session_store
+        from app.infra.db.repositories.mcx_prediction_repo import McxPredictionRepository
+        from app.services.mcx_metals_prediction_service import get_metal_prediction
+        from app.services.mcx_metals_service import TRACKED_MCX_METALS_CONTRACTS
+
+        repo = McxPredictionRepository()
+        user_ids = await session_store.list_connected_user_ids()
+        checked = 0
+        for user_id in user_ids:
+            for contract in TRACKED_MCX_METALS_CONTRACTS:
+                for period in _MCX_CALENDAR_PREDICTION_PERIODS:
+                    try:
+                        await get_metal_prediction(user_id, contract, period, repo)
+                        checked += 1
+                    except Exception as exc:
+                        log.warning(
+                            "scheduler.mcx_metals_calendar_prediction.contract_error",
+                            user_id=user_id,
+                            contract=contract,
+                            period=period,
+                            error=str(exc),
+                        )
+                    await asyncio.sleep(0)
+        log.info(
+            "scheduler.mcx_metals_calendar_prediction.done", users=len(user_ids), checked=checked
+        )
+    except Exception as exc:
+        log.error("scheduler.mcx_metals_calendar_prediction.error", error=str(exc))
+
+
+async def _run_mcx_metals_dashboard_snapshot() -> None:
+    """Metals twin of _run_mcx_dashboard_snapshot -- once daily near MCX
+    close. No Global Symbols equivalent for metals (that's an NG-specific
+    comparison widget, out of scope)."""
+    try:
+        from app.infra.brokers import session_store
+        from app.infra.db.repositories.mcx_dashboard_snapshot_repo import (
+            McxDashboardSnapshotRepository,
+        )
+        from app.services.mcx_metals_dashboard_snapshot_service import (
+            build_and_save_metal_snapshot,
+        )
+        from app.services.mcx_metals_service import TRACKED_MCX_METALS_CONTRACTS
+
+        repo = McxDashboardSnapshotRepository()
+        user_ids = await session_store.list_connected_user_ids()
+        checked = 0
+        for user_id in user_ids:
+            for contract in TRACKED_MCX_METALS_CONTRACTS:
+                try:
+                    await build_and_save_metal_snapshot(user_id, contract, repo)
+                    checked += 1
+                except Exception as exc:
+                    log.warning(
+                        "scheduler.mcx_metals_dashboard_snapshot.contract_error",
+                        user_id=user_id,
+                        contract=contract,
+                        error=str(exc),
+                    )
+                await asyncio.sleep(0)
+        log.info(
+            "scheduler.mcx_metals_dashboard_snapshot.done", users=len(user_ids), checked=checked
+        )
+    except Exception as exc:
+        log.error("scheduler.mcx_metals_dashboard_snapshot.error", error=str(exc))
+
+
+async def _run_mcx_metals_signal_check() -> None:
+    """Metals twin of _run_mcx_signal_check -- same 5-min cadence."""
+    try:
+        from app.infra.brokers import session_store
+        from app.infra.db.repositories.mcx_signal_repo import McxSignalRepository
+        from app.services.mcx_metals_ai_score_service import compute_metal_ai_score
+        from app.services.mcx_metals_service import TRACKED_MCX_METALS_CONTRACTS
+        from app.services.mcx_metals_signal_service import (
+            check_and_log_signal,
+            resolve_open_metal_signals,
+        )
+
+        repo = McxSignalRepository()
+        user_ids = await session_store.list_connected_user_ids()
+        logged, closed = 0, 0
+        for user_id in user_ids:
+            for contract in TRACKED_MCX_METALS_CONTRACTS:
+                try:
+                    for direction in ("BUY", "SELL"):
+                        score = await compute_metal_ai_score(
+                            user_id, direction, 100_000.0, contract
+                        )
+                        if await check_and_log_signal(user_id, contract, direction, score, repo):
+                            logged += 1
+                    closed += await resolve_open_metal_signals(user_id, contract, repo)
+                except Exception as exc:
+                    log.warning(
+                        "scheduler.mcx_metals_signal.contract_error",
+                        user_id=user_id,
+                        contract=contract,
+                        error=str(exc),
+                    )
+                await asyncio.sleep(0)
+        log.info(
+            "scheduler.mcx_metals_signal.done", users=len(user_ids), logged=logged, closed=closed
+        )
+    except Exception as exc:
+        log.error("scheduler.mcx_metals_signal.error", error=str(exc))
+
+
 async def _run_mcx_ng_news_fetch() -> None:
     """Every 30 min, 07:00-23:30 IST (covers pre-market and the full MCX
     session): fetch international Natural Gas / energy news (OilPrice.com,
@@ -964,6 +1138,58 @@ def start_scheduler() -> None:
         ),
         id="mcx_signal_check",
         name="MCX — AI Trade Signal Logging + Resolution",
+        max_instances=1,
+        misfire_grace_time=180,
+    )
+
+    # Metals twins of the five MCX jobs above -- same cadences, offset by a
+    # few seconds so they don't fire in the same instant as the NG ones.
+    _scheduler.add_job(
+        _run_mcx_metals_trend_check,
+        CronTrigger(
+            day_of_week="mon-fri", hour="9-23", minute="0,15,30,45", second=35,
+            timezone="Asia/Kolkata",
+        ),
+        id="mcx_metals_trend_check",
+        name="MCX Metals — Trend Change Check + Alerts",
+        max_instances=1,
+        misfire_grace_time=300,
+    )
+    _scheduler.add_job(
+        _run_mcx_metals_prediction_check,
+        CronTrigger(
+            day_of_week="mon-fri", hour="9-23", minute="*/5", second=40,
+            timezone="Asia/Kolkata",
+        ),
+        id="mcx_metals_prediction_check",
+        name="MCX Metals — Prediction Generation + Accuracy Resolution",
+        max_instances=1,
+        misfire_grace_time=180,
+    )
+    _scheduler.add_job(
+        _run_mcx_metals_calendar_prediction_check,
+        CronTrigger(day_of_week="mon-fri", hour=9, minute=6, second=0, timezone="Asia/Kolkata"),
+        id="mcx_metals_calendar_prediction_check",
+        name="MCX Metals — Week/Month Prediction Generation",
+        max_instances=1,
+        misfire_grace_time=3600,
+    )
+    _scheduler.add_job(
+        _run_mcx_metals_dashboard_snapshot,
+        CronTrigger(day_of_week="mon-fri", hour=23, minute=51, second=0, timezone="Asia/Kolkata"),
+        id="mcx_metals_dashboard_snapshot",
+        name="MCX Metals — Dashboard Daily Snapshot",
+        max_instances=1,
+        misfire_grace_time=3600,
+    )
+    _scheduler.add_job(
+        _run_mcx_metals_signal_check,
+        CronTrigger(
+            day_of_week="mon-fri", hour="9-23", minute="*/5", second=50,
+            timezone="Asia/Kolkata",
+        ),
+        id="mcx_metals_signal_check",
+        name="MCX Metals — AI Trade Signal Logging + Resolution",
         max_instances=1,
         misfire_grace_time=180,
     )

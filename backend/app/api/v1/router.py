@@ -22,6 +22,7 @@ from app.api.v1 import (
     market_pulse,
     market_sources,
     mcx,
+    mcx_metals,
     ml_api,
     notifications,
     options,
@@ -87,3 +88,4 @@ router.include_router(trading_agent.router)
 router.include_router(alerting.router)
 router.include_router(dsws.router)
 router.include_router(mcx.router)
+router.include_router(mcx_metals.router)

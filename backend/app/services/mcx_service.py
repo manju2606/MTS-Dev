@@ -480,7 +480,12 @@ async def place_ng_trade(
 async def list_ng_trades(user_id: str, repo, trade_status: TradeStatus | None = None) -> list[dict]:
     broker = await session_store.get(user_id)
     trades = await repo.list_by_user(UUID(user_id), trade_status)
-    mcx_trades = [t for t in trades if t.exchange == "MCX"]
+    ng_names = set(MCX_CONTRACTS.values())
+    mcx_trades = [
+        t
+        for t in trades
+        if t.exchange == "MCX" and any(t.symbol.upper().startswith(n) for n in ng_names)
+    ]
 
     async def _lot_size(t: Trade) -> int:
         if isinstance(broker, ZerodhaBroker):

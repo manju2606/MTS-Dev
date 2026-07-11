@@ -158,6 +158,22 @@ async def metal_signals(
     return await list_metal_signals_with_accuracy(str(current_user.id), contract, limit, repo)
 
 
+@router.get("/news")
+async def metal_news(current_user: CurrentUser, limit: int = 20) -> dict:
+    """Recent international Base & Precious Metals news (OilPrice.com,
+    Investing.com Commodities, filtered to metals relevance), keyword-scored
+    for sentiment -- the same feed backing the Metals-AI Pro score's News
+    Filter category (see mcx_metals_ai_score_service.py). Reads whatever the
+    scheduler's own fetch job already persisted, not a live RSS pull."""
+    from app.infra.db.repositories.mcx_metals_news_repo import McxMetalsNewsRepository
+
+    items = await McxMetalsNewsRepository().get_recent(limit=limit)
+    avg_sentiment = None
+    if items:
+        avg_sentiment = round(sum(n["sentiment_score"] for n in items) / len(items), 3)
+    return {"articles": items, "avg_sentiment": avg_sentiment}
+
+
 @router.get("/range-stats")
 async def metal_range_stats(
     current_user: CurrentUser, contract: McxMetalsContract = "GOLD"

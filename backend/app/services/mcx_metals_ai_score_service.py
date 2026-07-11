@@ -12,12 +12,15 @@ Two categories differ from NG's score:
   correlate is simply excluded (USD/INR + DXY still checked) -- same
   graceful-degradation pattern the score already uses elsewhere for
   uncomputable checks.
-- News Filter is omitted entirely -- no metals news feed exists (confirmed
-  acceptable; the score already normalizes against whichever categories are
-  actually present, so this doesn't skew the 0-100 scale, just narrows it).
+- News Filter reads app/infra/mcx/metals_news_fetcher.py's own feed (a
+  separate Mongo collection from NG's, via McxMetalsNewsRepository) instead
+  of NG's gas-only-filtered one -- same feeds (OilPrice.com, Investing.com
+  Commodities), different keyword relevance filter.
 """
 
 from __future__ import annotations
+
+from datetime import datetime, timedelta
 
 from app.infra.mcx import ng_indicators as ind
 from app.services.mcx_ai_score_service import (
@@ -115,8 +118,60 @@ def _score_metal_correlation(corr: dict, direction: str, family: str) -> dict:
     inr, dxy = corr.get("usd_inr"), corr.get("dxy")
     checks.append(_check("USD/INR alignment", _aligned(inr), pts, f"{inr}%"))
     checks.append(_check("DXY alignment (inverse)", _aligned(dxy, invert=True), pts, f"{dxy}%"))
-    excluded.append("News sentiment (no metals news source configured)")
     return _category("Correlation", 5, checks, excluded)
+
+
+# How far back "recent" metals news reaches, and how far a keyword-scored
+# average sentiment has to lean before it's treated as opposing a direction
+# -- same rationale/values as NG's own news filter.
+_NEWS_LOOKBACK_HOURS = 48
+_NEWS_SENTIMENT_DEADBAND = 0.1
+
+
+async def _recent_metals_news() -> list[dict]:
+    """Reads whatever the scheduler's own metals news job already fetched
+    and persisted (see app/infra/mcx/metals_news_fetcher.py) -- must not hit
+    the RSS feeds live on every score computation."""
+    try:
+        from app.infra.db.repositories.mcx_metals_news_repo import McxMetalsNewsRepository
+
+        since = datetime.utcnow() - timedelta(hours=_NEWS_LOOKBACK_HOURS)
+        return await McxMetalsNewsRepository().get_recent(limit=50, since=since)
+    except Exception:
+        return []
+
+
+def _score_metal_news(news_items: list[dict], direction: str) -> dict:
+    # No economic-calendar API -- these remain genuinely unmeasured, same as
+    # NG's own excluded macro events (just metals-appropriate ones).
+    excluded = [
+        "US Fed rate decisions",
+        "Chinese demand/PMI data",
+        "Mine supply disruptions / strikes",
+        "geopolitical events -- verify manually before trading",
+    ]
+    if not news_items:
+        return _category(
+            "News Filter", 5, [],
+            ["Recent metals news sentiment (no articles fetched yet)", *excluded],
+        )
+
+    avg_sentiment = sum(n["sentiment_score"] for n in news_items) / len(news_items)
+    bull = direction == "BUY"
+    opposes = (
+        avg_sentiment < -_NEWS_SENTIMENT_DEADBAND
+        if bull
+        else avg_sentiment > _NEWS_SENTIMENT_DEADBAND
+    )
+    checks = [
+        _check(
+            f"Recent metals news sentiment ({avg_sentiment:+.2f})",
+            not opposes,
+            5.0,
+            f"{len(news_items)} articles in the last {_NEWS_LOOKBACK_HOURS}h",
+        )
+    ]
+    return _category("News Filter", 5, checks, excluded)
 
 
 async def compute_metal_ai_score(
@@ -141,6 +196,7 @@ async def compute_metal_ai_score(
     h, low, c = ind.highs(candles), ind.lows(candles), ind.closes(candles)
     family = _METAL_FAMILY[contract.upper()]
     corr = _fetch_metal_correlation_sync(family)
+    news_items = await _recent_metals_news()
 
     categories = [
         _score_trend(c, direction),
@@ -150,6 +206,7 @@ async def compute_metal_ai_score(
         _score_order_flow(candles, direction),
         _score_volatility(candles, direction),
         _score_metal_correlation(corr, direction, family),
+        _score_metal_news(news_items, direction),
     ]
 
     earned = sum(cat["earned"] for cat in categories)

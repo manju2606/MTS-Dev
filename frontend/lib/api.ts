@@ -1876,6 +1876,17 @@ export async function getMetalAiScore(
   return res.json()
 }
 
+// Reuses NgNewsResponse/NgNewsArticle -- identical response shape to NG's
+// own news feed, just backed by /mcx/metals/news (a separate feed+collection).
+export async function getMetalNews(token: string, limit = 20): Promise<NgNewsResponse> {
+  const res = await fetch(`${BASE}/api/v1/mcx/metals/news?limit=${limit}`, { headers: authHeaders(token) })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch metals news')
+  }
+  return res.json()
+}
+
 // ── Phase 3: Broker ────────────────────────────────────────────────────────
 
 export async function getBrokerStatus(token: string): Promise<BrokerStatus> {

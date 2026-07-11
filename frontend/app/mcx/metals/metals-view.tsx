@@ -7,10 +7,10 @@ import { NavBar } from '@/components/nav-bar'
 import { PriceChart } from '@/components/price-chart'
 import type { AILevels, RefLine, PredictionPoint } from '@/components/price-chart'
 import {
-  getMetalQuote, listMetalTrades, placeMetalTrade, closeMetalTrade, cancelMetalTrade, getBrokerStatus, getMetalAiScore, getMetalHistory, getMetalTrend, getMetalRangeStats, getMetalPrediction, getMetalPredictionArchive, getMetalDashboardHistory, getMetalSignals, getMe, ApiError,
+  getMetalQuote, listMetalTrades, placeMetalTrade, closeMetalTrade, cancelMetalTrade, getBrokerStatus, getMetalAiScore, getMetalHistory, getMetalTrend, getMetalRangeStats, getMetalPrediction, getMetalPredictionArchive, getMetalDashboardHistory, getMetalSignals, getMetalNews, getMe, ApiError,
 } from '@/lib/api'
 import type {
-  NgQuote, McxTrade, BrokerStatus, NgAiScore, HistoryBar, ChartPeriod, McxMetalsContract, NgTrendLadder, TrendTimeframe, NgRangeStats, NgPrediction, NgPredictionHistoryPoint, NgPredictionAccuracy, PredictionPeriod, NgDashboardSnapshot, NgSignalsResponse, NgSessionOpenReference,
+  NgQuote, McxTrade, BrokerStatus, NgAiScore, HistoryBar, ChartPeriod, McxMetalsContract, NgTrendLadder, TrendTimeframe, NgRangeStats, NgPrediction, NgPredictionHistoryPoint, NgPredictionAccuracy, PredictionPeriod, NgDashboardSnapshot, NgSignalsResponse, NgSessionOpenReference, NgNewsResponse,
 } from '@/lib/api'
 
 function cls(...args: (string | false | null | undefined)[]) { return args.filter(Boolean).join(' ') }
@@ -1152,11 +1152,11 @@ function AiSignalPanel({ onUseTrade, score, onScoreChange, contract }: {
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 px-4 py-3 text-xs text-indigo-700 dark:border-indigo-900 dark:bg-indigo-950/10 dark:text-indigo-300">
-        Metals-AI Pro v1 — rule-based score across Trend/Momentum/Volume/Price Action/Order Flow/Volatility/Correlation.
+        Metals-AI Pro v1 — rule-based score across Trend/Momentum/Volume/Price Action/Order Flow/Volatility/Correlation/News Filter.
         Volume Profile, Cumulative Delta, and bid/ask imbalance aren&apos;t available yet (no tick data or L2 depth) —
-        excluded from scoring, not silently failed. No metals news feed exists, so Correlation is the only cross-market
-        check (Gold/Silver/Copper vs. their own futures plus USD/INR and DXY; the other four metals check USD/INR and
-        DXY only). No ML: this is rule-based only, same as the NG score.
+        excluded from scoring, not silently failed. Correlation checks Gold/Silver/Copper vs. their own futures plus
+        USD/INR and DXY (the other four metals check USD/INR and DXY only). No ML: this is rule-based only, same as
+        the NG score.
       </div>
 
       <div className="flex flex-wrap items-end gap-3">
@@ -1360,6 +1360,80 @@ function TradeSignalsTable({ contract }: { contract: McxMetalsContract }) {
         Logged automatically (not tied to whether you actually placed a trade) whenever the AI score hits verdict
         TRADE, one open signal per direction at a time. Closes WIN (target hit), LOSS (stop-loss hit), or EXPIRED
         after 5 trading days with neither. Accuracy = wins ÷ (wins + losses), excluding expired.
+      </p>
+    </CollapsibleCard>
+  )
+}
+
+function newsSentimentLabel(score: number): { label: string; cls: string } {
+  if (score > 0.1) return { label: 'Bullish', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400' }
+  if (score < -0.1) return { label: 'Bearish', cls: 'bg-red-100 text-red-600 dark:bg-red-950/50 dark:text-red-400' }
+  return { label: 'Neutral', cls: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300' }
+}
+
+// International metals news feeding the AI score's News Filter category
+// (see mcx_metals_ai_score_service.py's _score_metal_news) -- shown here so
+// a directional nudge from news sentiment isn't an invisible black box.
+function MetalsNewsPanel() {
+  const [data, setData] = useState<NgNewsResponse | null>(null)
+
+  useEffect(() => {
+    const t = localStorage.getItem('mts_token') ?? ''
+    if (!t) return
+    function load() {
+      getMetalNews(t, 20).then(setData).catch(() => {})
+    }
+    load()
+    const id = setInterval(load, 300_000)
+    return () => clearInterval(id)
+  }, [])
+
+  const overall = data?.avg_sentiment != null ? newsSentimentLabel(data.avg_sentiment) : null
+
+  return (
+    <CollapsibleCard
+      title="Recent Metals News"
+      defaultOpen={false}
+      subtitle={
+        overall ? (
+          <span className="flex items-center gap-1.5 text-[11px] text-zinc-400">
+            Overall
+            <span className={cls('rounded-full px-2 py-0.5 text-[10px] font-bold', overall.cls)}>{overall.label}</span>
+            ({data?.avg_sentiment?.toFixed(2)})
+          </span>
+        ) : (
+          <span className="text-[11px] text-zinc-400">No recent articles</span>
+        )
+      }
+    >
+      {!data || data.articles.length === 0 ? (
+        <p className="px-4 py-8 text-center text-xs text-zinc-400">
+          No metals-relevant articles fetched yet — the news feed job runs every 30 minutes.
+        </p>
+      ) : (
+        <ul className="divide-y divide-zinc-50 dark:divide-zinc-800">
+          {data.articles.map((a, i) => {
+            const s = newsSentimentLabel(a.sentiment_score)
+            return (
+              <li key={i} className="px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <a href={a.url} target="_blank" rel="noreferrer" className="text-xs font-medium text-zinc-800 hover:underline dark:text-zinc-200">
+                    {a.title}
+                  </a>
+                  <span className={cls('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold', s.cls)}>{s.label}</span>
+                </div>
+                <p className="mt-1 text-[11px] text-zinc-400">
+                  {a.source} &middot; {new Date(a.published_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                </p>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      <p className="border-t border-zinc-100 px-4 py-2.5 text-[11px] text-zinc-400 dark:border-zinc-800">
+        OilPrice.com and Investing.com Commodities, filtered to Base/Precious Metals-relevant articles and
+        keyword-scored for sentiment (not an LLM read of the article) — the same feed behind the AI score's News
+        Filter category. A coarse signal, not analysis; verify anything that looks market-moving before trading on it.
       </p>
     </CollapsibleCard>
   )
@@ -1925,6 +1999,7 @@ export default function McxMetalsView() {
               contract={contract}
             />
             <TradeSignalsTable contract={contract} />
+            <MetalsNewsPanel />
           </div>
         )}
         {tab === 'trade' && <MetalTradeForm quote={quote} onPlaced={loadTrades} prefill={tradePrefill} contract={contract} />}

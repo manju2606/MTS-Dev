@@ -691,6 +691,22 @@ async def _run_mcx_ng_news_fetch() -> None:
         log.error("scheduler.mcx_ng_news.error", error=str(exc))
 
 
+async def _run_mcx_metals_news_fetch() -> None:
+    """Metals twin of _run_mcx_ng_news_fetch -- same cadence, same two
+    underlying feeds (both already cover metals), a metals-relevance
+    keyword filter instead of NG's gas-only one, and a separate Mongo
+    collection (McxMetalsNewsRepository) so articles never mix with NG's."""
+    try:
+        from app.infra.db.repositories.mcx_metals_news_repo import McxMetalsNewsRepository
+        from app.infra.mcx.metals_news_fetcher import fetch_metals_news
+
+        items = await fetch_metals_news()
+        saved = await McxMetalsNewsRepository().save_news(items)
+        log.info("scheduler.mcx_metals_news.done", fetched=len(items), new=saved)
+    except Exception as exc:
+        log.error("scheduler.mcx_metals_news.error", error=str(exc))
+
+
 async def _run_zerodha_token_check() -> None:
     """08:45 IST weekdays, before market open: validate every connected
     user's Zerodha session against Kite (not just "we have a token cached"
@@ -1215,6 +1231,17 @@ def start_scheduler() -> None:
         CronTrigger(hour="7-23", minute="0,30", second=40, timezone="Asia/Kolkata"),
         id="mcx_ng_news_fetch",
         name="MCX — International NG News Fetch",
+        max_instances=1,
+        misfire_grace_time=600,
+    )
+
+    # Metals twin of the NG news fetch above -- same cadence, offset a few
+    # seconds so they don't hit the same feeds in the same instant.
+    _scheduler.add_job(
+        _run_mcx_metals_news_fetch,
+        CronTrigger(hour="7-23", minute="0,30", second=45, timezone="Asia/Kolkata"),
+        id="mcx_metals_news_fetch",
+        name="MCX — International Metals News Fetch",
         max_instances=1,
         misfire_grace_time=600,
     )

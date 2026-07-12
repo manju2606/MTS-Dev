@@ -782,6 +782,41 @@ async def _run_mcx_metals_news_fetch() -> None:
         log.error("scheduler.mcx_metals_news.error", error=str(exc))
 
 
+async def _run_crypto_prediction_prewarm() -> None:
+    """Every 4 min, every day (crypto trades 24/7, no weekday/session gate
+    like MCX): proactively refresh crypto_service's quotes + OHLC caches
+    for every tracked coin/period, so GET /crypto/ranked and /crypto/ohlc
+    always serve from a warm cache instead of a real user's request being
+    the one that triggers a ~21-call CoinGecko cold-start burst.
+
+    4 min, not 5, to stay ahead of crypto_service._OHLC_TTL (300s/5 min)
+    with a safety margin -- if this job's own cadence drifted to exactly
+    the TTL, a slow run could let the cache go cold right before the next
+    tick. CoinGecko's public-tier rate limit is real (confirmed live: a
+    lone request stayed 429'd for several minutes after a 21-call burst),
+    so crypto_service._coingecko_get() already paces every outbound call
+    through a shared minimum-interval gate -- this job doesn't need its
+    own throttling on top of that, just needs to trigger the fetches."""
+    try:
+        from app.services import crypto_service
+
+        await crypto_service.get_quotes()
+        warmed = 0
+        for coin in crypto_service.TRACKED_COINS:
+            for period in crypto_service.OHLC_PERIODS:
+                try:
+                    await crypto_service.get_ohlc(coin, period)
+                    warmed += 1
+                except Exception as exc:
+                    log.warning(
+                        "scheduler.crypto_prewarm.pair_error", coin=coin, period=period,
+                        error=str(exc),
+                    )
+        log.info("scheduler.crypto_prewarm.done", warmed=warmed)
+    except Exception as exc:
+        log.error("scheduler.crypto_prewarm.error", error=str(exc))
+
+
 async def _run_zerodha_token_check() -> None:
     """08:45 IST weekdays, before market open: validate every connected
     user's Zerodha session against Kite (not just "we have a token cached"
@@ -1335,6 +1370,18 @@ def start_scheduler() -> None:
         name="MCX — International Metals News Fetch",
         max_instances=1,
         misfire_grace_time=600,
+    )
+
+    # Crypto candle/quote cache pre-warm every 4 min, every day (24/7
+    # market, no weekday gate) -- see _run_crypto_prediction_prewarm's own
+    # docstring for why 4 min against a 5-min cache TTL.
+    _scheduler.add_job(
+        _run_crypto_prediction_prewarm,
+        CronTrigger(minute="*/4", second=15, timezone="Asia/Kolkata"),
+        id="crypto_prediction_prewarm",
+        name="Crypto — Quote/OHLC Cache Pre-warm",
+        max_instances=1,
+        misfire_grace_time=120,
     )
 
     _scheduler.start()

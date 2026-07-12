@@ -27,6 +27,11 @@ type PriceChartProps = {
   exchangeLabel?: string
   refLines?: RefLine[]
   prediction?: PredictionPoint[]
+  // Overrides the period-selector button list -- e.g. Crypto only has
+  // 30m/4h/4d backing data (CoinGecko's OHLC endpoint), not the full
+  // MCX/equity period set. Defaults to that full set when omitted, so
+  // every existing caller is unaffected.
+  periods?: ChartPeriod[]
 }
 
 const PERIODS: ChartPeriod[] = ['1m', '5m', '15m', '30m', '45m', '1h', '1D', '5D', '1W', '1M', '3M', '6M', '1Y']
@@ -39,6 +44,7 @@ const PERIODS: ChartPeriod[] = ['1m', '5m', '15m', '30m', '45m', '1h', '1D', '5D
 const PERIOD_BUCKET_SECONDS: Record<ChartPeriod, number> = {
   '1m': 60, '5m': 300, '15m': 900, '30m': 900, '45m': 3600, '1h': 3600,
   '1D': 86400, '5D': 86400, '1W': 86400, '1M': 86400, '3M': 86400, '6M': 86400, '1Y': 86400,
+  '4h': 14400, '8h': 28800, '4d': 345600,
 }
 
 // Default zoomed-in window (number of most-recent bars) shown on load, per
@@ -53,6 +59,7 @@ const PERIOD_BUCKET_SECONDS: Record<ChartPeriod, number> = {
 const DEFAULT_VISIBLE_BARS: Partial<Record<ChartPeriod, number>> = {
   '1m': 120, '5m': 100, '15m': 80, '30m': 60, '45m': 60, '1h': 48,
   '1D': 15, '5D': 20, '1W': 30, '1M': 45, '3M': 90, '6M': 180, '1Y': 250,
+  '4h': 40, '8h': 24, '4d': 30,
 }
 
 // lightweight-charts assumes UTC for UTCTimestamp values -- these force IST
@@ -68,7 +75,7 @@ function formatIstTickTime(time: number): string {
   })
 }
 
-export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLevels, currentPrice, exchangeLabel, refLines, prediction }: PriceChartProps) {
+export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLevels, currentPrice, exchangeLabel, refLines, prediction, periods }: PriceChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
@@ -527,7 +534,7 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
           </span>
         </span>
         <div className="flex items-center gap-1">
-          {PERIODS.map(p => (
+          {(periods ?? PERIODS).map(p => (
             <button
               key={p}
               onClick={() => onPeriodChange(p)}

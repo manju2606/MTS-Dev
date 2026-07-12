@@ -1077,7 +1077,7 @@ export type HistoryBar = {
   volume: number
 }
 
-export type ChartPeriod = '1m' | '1D' | '5m' | '5D' | '15m' | '30m' | '45m' | '1W' | '1h' | '1M' | '3M' | '6M' | '1Y'
+export type ChartPeriod = '1m' | '1D' | '5m' | '5D' | '15m' | '30m' | '45m' | '1W' | '1h' | '1M' | '3M' | '6M' | '1Y' | '4h' | '8h' | '4d'
 
 export async function getHistory(
   token: string,
@@ -1534,6 +1534,7 @@ export type CryptoQuote = {
   name: string
   image: string | null
   price: number
+  price_usd: number | null
   change_24h: number | null
   change_pct_24h: number | null
   high_24h: number | null
@@ -1545,6 +1546,28 @@ export type CryptoQuote = {
 }
 
 export type CryptoHistoryPoint = { time: number; price: number }
+export type CryptoOhlcPeriod = '30m' | '1h' | '4h' | '8h' | '4d'
+
+export type CryptoPredictedPoint = { time: number; predicted_close: number; upper: number; lower: number }
+export type CryptoPrediction = {
+  coin: CryptoCoin
+  period: CryptoOhlcPeriod
+  last_actual_time?: number
+  last_actual_close?: number
+  predicted: CryptoPredictedPoint[]
+  method: string
+  note?: string
+}
+
+export type CryptoRankedRow = {
+  code: CryptoCoin
+  name: string
+  price: number | null
+  price_usd: number | null
+  change_pct_24h: number | null
+  predicted: Record<CryptoOhlcPeriod, number | null>
+}
+export type CryptoRankedResponse = { generated_at: string; ranked: CryptoRankedRow[] }
 
 export async function getCryptoQuotes(token: string): Promise<CryptoQuote[]> {
   const res = await fetch(`${BASE}/api/v1/crypto/quotes`, { headers: authHeaders(token) })
@@ -1565,6 +1588,44 @@ export async function getCryptoHistory(
   if (!res.ok) {
     const b = await res.json().catch(() => ({}))
     throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch crypto history')
+  }
+  return res.json()
+}
+
+export async function getCryptoOhlc(
+  token: string, coin: CryptoCoin, period: CryptoOhlcPeriod = '30m',
+): Promise<HistoryBar[]> {
+  const res = await fetch(
+    `${BASE}/api/v1/crypto/ohlc?coin=${coin}&period=${period}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch crypto OHLC')
+  }
+  const bars: Omit<HistoryBar, 'volume'>[] = await res.json()
+  return bars.map(b => ({ ...b, volume: 0 }))
+}
+
+export async function getCryptoPredict(
+  token: string, coin: CryptoCoin, period: CryptoOhlcPeriod = '30m',
+): Promise<CryptoPrediction> {
+  const res = await fetch(
+    `${BASE}/api/v1/crypto/predict?coin=${coin}&period=${period}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch crypto prediction')
+  }
+  return res.json()
+}
+
+export async function getCryptoRanked(token: string): Promise<CryptoRankedResponse> {
+  const res = await fetch(`${BASE}/api/v1/crypto/ranked`, { headers: authHeaders(token) })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch ranked crypto predictions')
   }
   return res.json()
 }

@@ -70,11 +70,13 @@ function HeatTile({ row, rank }: { row: McxDashboardRow; rank: number }) {
 // big swing stands out at a glance, on top of the existing green/red sign
 // coloring on the % text itself: 3-5% yellow, 5-10% light blue, >10% light
 // green -- bands don't overlap (3-5% wins over 5-10%'s lower edge, etc).
+// Solid (not translucent) fills + dark text -- the earlier translucent
+// version blended into the dark navy table background too easily.
 function magnitudeHighlight(pct: number): string | null {
   const abs = Math.abs(pct)
-  if (abs > 10) return 'rgba(74, 222, 128, 0.28)'   // light green
-  if (abs > 5) return 'rgba(56, 189, 248, 0.28)'    // light blue
-  if (abs > 3) return 'rgba(250, 204, 21, 0.28)'    // yellow
+  if (abs > 10) return '#4ade80'   // light green
+  if (abs > 5) return '#38bdf8'    // light blue
+  if (abs > 3) return '#facc15'    // yellow
   return null
 }
 
@@ -84,12 +86,12 @@ function PredictedCell({ predicted, ltp }: { predicted: number | null; ltp: numb
   const highlight = pct !== null ? magnitudeHighlight(pct) : null
   return (
     <span
-      className="rounded px-1.5 py-0.5"
-      style={{ color: '#94a3b8', background: highlight ?? undefined }}
+      className="rounded px-1.5 py-0.5 font-semibold"
+      style={{ color: highlight ? '#0b1220' : '#94a3b8', background: highlight ?? undefined }}
     >
       {fmtPrice(predicted)}
       {pct !== null && (
-        <span style={{ color: pct >= 0 ? '#22c55e' : '#ef4444' }}>
+        <span style={{ color: highlight ? '#0b1220' : (pct >= 0 ? '#22c55e' : '#ef4444') }}>
           {' '}({pct >= 0 ? '+' : ''}{pct.toFixed(2)}%)
         </span>
       )}

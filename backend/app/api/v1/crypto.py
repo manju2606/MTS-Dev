@@ -1,6 +1,6 @@
-"""Crypto quotes, OHLC candles, and price prediction via CoinGecko's public
-API -- see app/services/crypto_service.py and crypto_prediction_service.py.
-No paper trading/AI score yet (unlike MCX)."""
+"""Crypto quotes (CoinGecko) + OHLC candles and price prediction (Binance)
+-- see app/services/crypto_service.py, binance_service.py, and
+crypto_prediction_service.py. No paper trading/AI score yet (unlike MCX)."""
 
 from typing import Literal
 
@@ -13,7 +13,7 @@ router = APIRouter(prefix="/crypto", tags=["crypto"])
 
 CryptoCoin = Literal["BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE"]
 CryptoHistoryDays = Literal["1", "7", "14", "30", "90", "180", "365"]
-CryptoOhlcPeriod = Literal["30m", "1h", "4h", "8h", "4d"]
+CryptoOhlcPeriod = Literal["1m", "5m", "15m", "30m", "1h", "4h", "8h", "1D", "1W", "1M"]
 
 
 @router.get("/quotes")
@@ -48,10 +48,10 @@ async def crypto_history(
 async def crypto_ohlc(
     current_user: CurrentUser, coin: CryptoCoin = "BTC", period: CryptoOhlcPeriod = "30m"
 ) -> list[dict]:
-    from app.services.crypto_service import get_ohlc
+    from app.services.binance_service import get_klines
 
     try:
-        return await get_ohlc(coin, period)
+        return await get_klines(coin, period)
     except Exception as exc:
         raise HTTPException(
             status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,

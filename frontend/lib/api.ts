@@ -1077,7 +1077,7 @@ export type HistoryBar = {
   volume: number
 }
 
-export type ChartPeriod = '1m' | '1D' | '5m' | '5D' | '15m' | '30m' | '45m' | '1W' | '1h' | '1M' | '3M' | '6M' | '1Y' | '4h' | '8h' | '4d'
+export type ChartPeriod = '1m' | '1D' | '5m' | '5D' | '15m' | '30m' | '45m' | '1W' | '1h' | '1M' | '3M' | '6M' | '1Y' | '4h' | '8h'
 
 export async function getHistory(
   token: string,
@@ -1546,7 +1546,7 @@ export type CryptoQuote = {
 }
 
 export type CryptoHistoryPoint = { time: number; price: number }
-export type CryptoOhlcPeriod = '30m' | '1h' | '4h' | '8h' | '4d'
+export type CryptoOhlcPeriod = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '8h' | '1D' | '1W' | '1M'
 
 export type CryptoPredictedPoint = { time: number; predicted_close: number; upper: number; lower: number }
 export type CryptoPrediction = {
@@ -1559,13 +1559,18 @@ export type CryptoPrediction = {
   note?: string
 }
 
+// The Ranked Crypto Prediction table's 3 columns -- a deliberately
+// narrower set than the full CryptoOhlcPeriod the chart's selector
+// offers, matching backend crypto_prediction_service.RANKED_PERIODS.
+export type CryptoRankedPeriod = '15m' | '1h' | '1D'
+
 export type CryptoRankedRow = {
   code: CryptoCoin
   name: string
   price: number | null
   price_usd: number | null
   change_pct_24h: number | null
-  predicted: Record<CryptoOhlcPeriod, number | null>
+  predicted: Record<CryptoRankedPeriod, number | null>
 }
 export type CryptoRankedResponse = { generated_at: string; ranked: CryptoRankedRow[] }
 

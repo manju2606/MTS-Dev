@@ -1,8 +1,10 @@
-"""Crypto quotes + price history via CoinGecko's public API -- no broker
+"""Crypto quotes (+ USD price) via CoinGecko's public API -- no broker
 session needed (unlike MCX/Zerodha), since this is public, non-personalized
-market data with no per-user auth. v1 scope: live quotes + a basic price
-chart only, no AI score/predictions/signals/paper-trading yet (see MCX for
-that fuller pattern, once/if this gets extended the same way).
+market data with no per-user auth. OHLC candles for the chart come from
+Binance instead (see binance_service.py) -- CoinGecko's free OHLC endpoint
+tops out at 30-minute granularity with no native 1m/5m/15m/1D/1W/1M
+candles, so it's kept here only for quotes/heat-map prices and the
+now-unused-by-the-chart get_history() price-point series.
 
 CoinGecko's free public API is rate-limited per source IP, shared across
 every user of this app since calls come from this one server -- confirmed
@@ -17,7 +19,9 @@ its own call at the same moment, silently allowing ~2x the intended rate.
 mcx_service.py already hit this exact class of bug for its own quote
 cache (see that module's docstring on why it uses Redis, not
 _INSTRUMENTS_CACHE's in-process dict, for anything that needs to be
-consistent across workers).
+consistent across workers). binance_service.py reuses the cache helpers
+below (_local_lock/_cache_get_fresh/_cache_get_any/_cache_set) since
+they're generic, not CoinGecko-specific.
 """
 
 from __future__ import annotations
@@ -53,34 +57,8 @@ TRACKED_COINS: dict[str, str] = {
     "DOGE": "dogecoin",
 }
 
-# OHLC period -> CoinGecko `days` param. CoinGecko's OHLC endpoint doesn't
-# take an interval directly -- granularity is auto-selected by the `days`
-# window: 1 day -> 30-min candles, 2-30 days -> 4-hour, 90+ days -> 4-DAY
-# candles (verified live -- there is no native daily-candle OHLC tier on
-# this endpoint, so "4d" is labeled honestly as 4-day, not "1D").
-OHLC_PERIODS: dict[str, str] = {"30m": "1", "4h": "30", "4d": "365"}
-
-# Periods with no native CoinGecko granularity, built by merging pairs of
-# an OHLC_PERIODS base period's candles instead -- CoinGecko has nothing
-# finer than 30m at all (no source data to derive 1m/5m/15m from, only
-# aggregate *up* from), but 1h (2x30m) and 8h (2x4h) are legitimate
-# aggregations of data already being fetched/cached.
-DERIVED_PERIODS: dict[str, tuple[str, int]] = {"1h": ("30m", 2), "8h": ("4h", 2)}
-
-PERIOD_BUCKET_SECONDS: dict[str, int] = {
-    "30m": 1800, "1h": 3600, "4h": 14400, "8h": 28800, "4d": 345600,
-}
-
 _QUOTES_TTL = 30
 _HISTORY_TTL = 60
-# 5 min, not 2 -- get_ranked_predictions() needs up to 21 OHLC calls
-# (7 coins x 3 periods) to fully populate on a cold cache, which even
-# safely paced takes real time against CoinGecko's public-tier rate limit
-# (see _COINGECKO_MIN_INTERVAL below); a short TTL would force that full
-# slow cold-start repeatedly instead of only once per window. The
-# scheduler's crypto_prediction_prewarm job (every 4 min) keeps this warm
-# proactively so real user requests should rarely see a cold cache at all.
-_OHLC_TTL = 300
 
 _REDIS_PREFIX = "crypto:"
 
@@ -323,79 +301,3 @@ async def get_history(coin: str, days: str = "1") -> list[dict]:
         return points
 
 
-def _merge_candles(candles: list[dict], factor: int) -> list[dict]:
-    """Merges every `factor` consecutive candles into one wider candle --
-    open of the first, close of the last, high/low across the group.
-    Drops any trailing partial group (fewer than `factor` left over)
-    rather than emitting a candle that doesn't actually span the full
-    wider bucket."""
-    out = []
-    usable = len(candles) - (len(candles) % factor)
-    for i in range(0, usable, factor):
-        group = candles[i : i + factor]
-        out.append(
-            {
-                "time": group[0]["time"],
-                "open": group[0]["open"],
-                "high": max(c["high"] for c in group),
-                "low": min(c["low"] for c in group),
-                "close": group[-1]["close"],
-            }
-        )
-    return out
-
-
-async def get_ohlc(coin: str, period: str = "30m") -> list[dict]:
-    """OHLC candles for `period`, in the same {time, open, high, low,
-    close} shape mcx_service.get_history() uses (minus volume --
-    CoinGecko's OHLC endpoint doesn't provide it). `period` is either a
-    native OHLC_PERIODS key (fetched directly from CoinGecko) or a
-    DERIVED_PERIODS key (built by merging an already-fetched/cached base
-    period's candles -- no extra CoinGecko call)."""
-    derived = DERIVED_PERIODS.get(period)
-    if derived is not None:
-        base_period, factor = derived
-        base_candles = await get_ohlc(coin, base_period)
-        return _merge_candles(base_candles, factor)
-
-    coingecko_id = TRACKED_COINS.get(coin.upper())
-    if coingecko_id is None:
-        raise ValueError(f"Unknown crypto code '{coin}' -- expected one of {list(TRACKED_COINS)}")
-    days = OHLC_PERIODS.get(period)
-    if days is None:
-        raise ValueError(
-            f"Unknown crypto period '{period}' -- expected one of "
-            f"{[*OHLC_PERIODS, *DERIVED_PERIODS]}"
-        )
-
-    cache_key = f"ohlc:{coingecko_id}:{period}"
-    cached = await _cache_get_fresh(cache_key, _OHLC_TTL)
-    if cached is not None:
-        return cached
-
-    async with _local_lock(cache_key):
-        cached = await _cache_get_fresh(cache_key, _OHLC_TTL)
-        if cached is not None:
-            return cached
-        try:
-            data = await _coingecko_get_list(
-                f"/coins/{coingecko_id}/ohlc", {"vs_currency": "inr", "days": days}
-            )
-        except Exception:
-            stale = await _cache_get_any(cache_key)
-            if stale is not None:
-                return stale
-            raise
-
-        candles = [
-            {
-                "time": int(t / 1000),
-                "open": round(o, 2),
-                "high": round(h, 2),
-                "low": round(low_, 2),
-                "close": round(c, 2),
-            }
-            for t, o, h, low_, c in data
-        ]
-        await _cache_set(cache_key, candles, _OHLC_TTL)
-        return candles

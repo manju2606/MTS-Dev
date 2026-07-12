@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { IChartApi, ISeriesApi, IPriceLine, UTCTimestamp } from 'lightweight-charts'
 import type { HistoryBar, ChartPeriod } from '@/lib/api'
 
@@ -27,11 +27,22 @@ type PriceChartProps = {
   exchangeLabel?: string
   refLines?: RefLine[]
   prediction?: PredictionPoint[]
-  // Overrides the period-selector button list -- e.g. Crypto only has
-  // 30m/4h/4d backing data (CoinGecko's OHLC endpoint), not the full
-  // MCX/equity period set. Defaults to that full set when omitted, so
-  // every existing caller is unaffected.
+  // Overrides the period-selector button list -- e.g. Crypto has its own
+  // full 1m-1M set (Binance klines), not the MCX/equity one. Defaults to
+  // that full set when omitted, so every existing caller is unaffected.
   periods?: ChartPeriod[]
+  // Per-caller overrides for the two maps below -- needed because "30m"/
+  // "1W"/"1M" mean genuinely different bucket widths for MCX (resampled
+  // from 15-min/daily Kite candles -- see PERIOD_BUCKET_SECONDS' own
+  // comment) than for Crypto (real 30-min/weekly/monthly Binance candles).
+  // Only the overridden keys change; everything else still falls back to
+  // the shared defaults below.
+  periodBucketSeconds?: Partial<Record<ChartPeriod, number>>
+  defaultVisibleBars?: Partial<Record<ChartPeriod, number>>
+  // Price-line label prefix ("LTP ₹1234.56", "AI Predicted ₹1234.56", …).
+  // Defaults to ₹ (every existing MCX/equity caller is INR) -- Crypto's
+  // Binance-sourced chart data is USD, so it passes "$" here instead.
+  currencySymbol?: string
 }
 
 const PERIODS: ChartPeriod[] = ['1m', '5m', '15m', '30m', '45m', '1h', '1D', '5D', '1W', '1M', '3M', '6M', '1Y']
@@ -44,7 +55,7 @@ const PERIODS: ChartPeriod[] = ['1m', '5m', '15m', '30m', '45m', '1h', '1D', '5D
 const PERIOD_BUCKET_SECONDS: Record<ChartPeriod, number> = {
   '1m': 60, '5m': 300, '15m': 900, '30m': 900, '45m': 3600, '1h': 3600,
   '1D': 86400, '5D': 86400, '1W': 86400, '1M': 86400, '3M': 86400, '6M': 86400, '1Y': 86400,
-  '4h': 14400, '8h': 28800, '4d': 345600,
+  '4h': 14400, '8h': 28800,
 }
 
 // Default zoomed-in window (number of most-recent bars) shown on load, per
@@ -59,7 +70,7 @@ const PERIOD_BUCKET_SECONDS: Record<ChartPeriod, number> = {
 const DEFAULT_VISIBLE_BARS: Partial<Record<ChartPeriod, number>> = {
   '1m': 120, '5m': 100, '15m': 80, '30m': 60, '45m': 60, '1h': 48,
   '1D': 15, '5D': 20, '1W': 30, '1M': 45, '3M': 90, '6M': 180, '1Y': 250,
-  '4h': 40, '8h': 24, '4d': 30,
+  '4h': 40, '8h': 24,
 }
 
 // lightweight-charts assumes UTC for UTCTimestamp values -- these force IST
@@ -75,7 +86,15 @@ function formatIstTickTime(time: number): string {
   })
 }
 
-export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLevels, currentPrice, exchangeLabel, refLines, prediction, periods }: PriceChartProps) {
+export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLevels, currentPrice, exchangeLabel, refLines, prediction, periods, periodBucketSeconds, defaultVisibleBars, currencySymbol = '₹' }: PriceChartProps) {
+  const bucketSecondsMap = useMemo(
+    () => ({ ...PERIOD_BUCKET_SECONDS, ...periodBucketSeconds }),
+    [periodBucketSeconds],
+  )
+  const visibleBarsMap = useMemo(
+    () => ({ ...DEFAULT_VISIBLE_BARS, ...defaultVisibleBars }),
+    [defaultVisibleBars],
+  )
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
@@ -139,13 +158,13 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
   const predictedPriceNow = useCallback((): { time: UTCTimestamp; price: number } | null => {
     const bar = lastBarRef.current
     if (!bar) return null
-    const bucket = PERIOD_BUCKET_SECONDS[period] ?? 86400
+    const bucket = bucketSecondsMap[period] ?? 86400
     const targetTime = bar.time + bucket
     for (const p of predictionRef.current) {
       if (p.time >= targetTime) return { time: p.time as UTCTimestamp, price: p.predictedClose }
     }
     return null
-  }, [period])
+  }, [period, bucketSecondsMap])
 
   const positionPredBall = useCallback(() => {
     const next = predictedPriceNow()
@@ -154,7 +173,7 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
     if (candleSeriesRef.current) {
       if (price != null) {
         if (predLineRef.current) {
-          predLineRef.current.applyOptions({ price, title: `AI Predicted ₹${price.toFixed(2)}` })
+          predLineRef.current.applyOptions({ price, title: `AI Predicted ${currencySymbol}${price.toFixed(2)}` })
         } else {
           import('lightweight-charts').then(({ LineStyle }) => {
             if (!candleSeriesRef.current || predLineRef.current) return
@@ -164,7 +183,7 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
               lineWidth: 2,
               lineStyle: LineStyle.Dashed,
               axisLabelVisible: true,
-              title: `AI Predicted ₹${price.toFixed(2)}`,
+              title: `AI Predicted ${currencySymbol}${price.toFixed(2)}`,
             })
           })
         }
@@ -173,7 +192,7 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
         predLineRef.current = null
       }
     }
-  }, [positionMarker, predictedPriceNow])
+  }, [positionMarker, predictedPriceNow, currencySymbol])
 
   useEffect(() => {
     function onFullscreenChange() {
@@ -343,7 +362,7 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
             lineWidth: 1,
             lineStyle: LineStyle.Dotted,
             axisLabelVisible: true,
-            title: `${rl.label} ₹${rl.price.toFixed(2)}`,
+            title: `${rl.label} ${currencySymbol}${rl.price.toFixed(2)}`,
           })
         }
 
@@ -381,12 +400,12 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
             lineWidth: 2,
             lineStyle: LineStyle.Solid,
             axisLabelVisible: true,
-            title: `LTP ₹${currentPrice.toFixed(2)}`,
+            title: `LTP ${currencySymbol}${currentPrice.toFixed(2)}`,
           })
         }
 
         const lastRaw = data[data.length - 1]
-        const bucket = PERIOD_BUCKET_SECONDS[period] ?? 86400
+        const bucket = bucketSecondsMap[period] ?? 86400
         let anchorTime: UTCTimestamp | null = null
         if (lastRaw) {
           // Kite's historical_data() only returns *closed* candles -- the
@@ -420,7 +439,7 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
         // data.length and threw off index-based range math -- including
         // where the LTP ball ended up, since it's positioned by looking up
         // its bar's time on that same (miscounted) axis.
-        const visibleBars = DEFAULT_VISIBLE_BARS[period]
+        const visibleBars = visibleBarsMap[period]
         if (visibleBars && anchorTime != null) {
           const span = visibleBars * bucket
           chart.timeScale().setVisibleRange({
@@ -471,7 +490,7 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
 
     if (lastBarRef.current) {
       const bar = lastBarRef.current
-      const bucket = PERIOD_BUCKET_SECONDS[period] ?? 86400
+      const bucket = bucketSecondsMap[period] ?? 86400
       const nowSec = Math.floor(Date.now() / 1000)
       const elapsed = nowSec - bar.time
 
@@ -500,7 +519,7 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
     }
 
     if (ltpLineRef.current) {
-      ltpLineRef.current.applyOptions({ price: currentPrice, title: `LTP ₹${currentPrice.toFixed(2)}` })
+      ltpLineRef.current.applyOptions({ price: currentPrice, title: `LTP ${currencySymbol}${currentPrice.toFixed(2)}` })
     } else {
       import('lightweight-charts').then(({ LineStyle }) => {
         if (!candleSeriesRef.current || ltpLineRef.current) return
@@ -510,14 +529,14 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
           lineWidth: 2,
           lineStyle: LineStyle.Solid,
           axisLabelVisible: true,
-          title: `LTP ₹${currentPrice.toFixed(2)}`,
+          title: `LTP ${currencySymbol}${currentPrice.toFixed(2)}`,
         })
       })
     }
 
     positionBall(currentPrice)
     positionPredBall()
-  }, [currentPrice, period, positionBall, positionPredBall])
+  }, [currentPrice, period, positionBall, positionPredBall, bucketSecondsMap, currencySymbol])
 
   return (
     <div

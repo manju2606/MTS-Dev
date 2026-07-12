@@ -7,7 +7,7 @@ import {
   getCryptoQuotes, getCryptoOhlc, getCryptoPredict, getCryptoRanked,
 } from '@/lib/api'
 import type {
-  CryptoQuote, CryptoCoin, CryptoOhlcPeriod, CryptoRankedRow, HistoryBar,
+  CryptoQuote, CryptoCoin, CryptoOhlcPeriod, CryptoRankedPeriod, CryptoRankedRow, HistoryBar, ChartPeriod,
 } from '@/lib/api'
 import type { PredictionPoint } from '@/components/price-chart'
 
@@ -23,7 +23,26 @@ function tileColor(rank: number): string {
   return TILE_BG[Math.min(rank, TILE_BG.length - 1)]
 }
 
-const CHART_PERIODS: CryptoOhlcPeriod[] = ['30m', '1h', '4h', '8h', '4d']
+// Binance's own klines intervals -- the full set, unlike MCX's period
+// system which is fixed to Kite's own intervals (see PriceChart's
+// periodBucketSeconds/defaultVisibleBars overrides below for why "30m"/
+// "1W"/"1M" need different bucket widths here than MCX uses for the same
+// labels).
+const CHART_PERIODS: CryptoOhlcPeriod[] = ['1m', '5m', '15m', '30m', '1h', '4h', '8h', '1D', '1W', '1M']
+const RANKED_PERIODS: CryptoRankedPeriod[] = ['15m', '1h', '1D']
+
+// Real Binance candle-bucket widths, overriding PriceChart's MCX-flavoured
+// defaults for the labels that mean something different for crypto: MCX's
+// "30m" is resampled from 15-min Kite candles (900s roll-over), but
+// Binance gives a genuine 30-min candle (1800s); MCX's "1W"/"1M" are
+// daily-resampled views (86400s), but Binance gives true weekly/monthly
+// candles.
+const CRYPTO_BUCKET_SECONDS: Partial<Record<ChartPeriod, number>> = {
+  '30m': 1800, '1W': 604800, '1M': 2592000,
+}
+const CRYPTO_VISIBLE_BARS: Partial<Record<ChartPeriod, number>> = {
+  '1m': 60, '5m': 60, '15m': 60, '30m': 48, '1h': 48, '4h': 40, '8h': 24, '1D': 30, '1W': 20, '1M': 12,
+}
 
 function fmtInr(v: number | null): string {
   if (v === null) return '—'
@@ -80,16 +99,21 @@ function magnitudeHighlight(pct: number): string | null {
   return null
 }
 
-function PredictedCell({ predicted, price }: { predicted: number | null; price: number | null }) {
+// Predicted prices come from Binance (USD-denominated candles, see
+// binance_service.py), not CoinGecko's INR quotes -- comparing against
+// row.price (INR) instead of row.price_usd here previously produced a
+// nonsensical ~-99% "change" (INR values run ~83x larger than USD for
+// the same real price). $, not ₹, for both the prefix and the % base.
+function PredictedCell({ predicted, priceUsd }: { predicted: number | null; priceUsd: number | null }) {
   if (predicted === null) return <span className="text-zinc-400">—</span>
-  const pct = price ? ((predicted - price) / price) * 100 : null
+  const pct = priceUsd ? ((predicted - priceUsd) / priceUsd) * 100 : null
   const highlight = pct !== null ? magnitudeHighlight(pct) : null
   return (
     <span
       className="rounded px-1.5 py-0.5 font-semibold"
       style={{ color: highlight ? '#0b1220' : undefined, background: highlight ?? undefined }}
     >
-      {fmtInr(predicted)}
+      ${fmtUsd(predicted)}
       {pct !== null && (
         <span className={highlight ? '' : pct >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}>
           {' '}({pct >= 0 ? '+' : ''}{pct.toFixed(2)}%)
@@ -105,7 +129,7 @@ function RankedPredictionTable({ rows }: { rows: CryptoRankedRow[] }) {
       <table className="w-full text-xs">
         <thead>
           <tr className="border-b border-zinc-100 dark:border-zinc-800">
-            {['Rank', 'Coin', 'LTP (₹)', 'LTP ($)', 'Chg%', '30m', '4H', '4D'].map(h => (
+            {['Rank', 'Coin', 'LTP (₹)', 'LTP ($)', 'Chg%', '15m', '1H', '1D'].map(h => (
               <th key={h} className="whitespace-nowrap px-3 py-2.5 text-left font-medium text-zinc-400">{h}</th>
             ))}
           </tr>
@@ -126,9 +150,9 @@ function RankedPredictionTable({ rows }: { rows: CryptoRankedRow[] }) {
                   </span>
                 ) : '—'}
               </td>
-              {(['30m', '4h', '4d'] as CryptoOhlcPeriod[]).map(p => (
+              {RANKED_PERIODS.map(p => (
                 <td key={p} className="whitespace-nowrap px-3 py-2">
-                  <PredictedCell predicted={row.predicted[p]} price={row.price} />
+                  <PredictedCell predicted={row.predicted[p]} priceUsd={row.price_usd} />
                 </td>
               ))}
             </tr>
@@ -228,8 +252,9 @@ export default function CryptoView() {
           <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">🪙 Crypto</h1>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
             Live prices via CoinGecko (₹ &amp; $) &middot; quotes refresh every {QUOTES_POLL_MS / 1000}s.
-            Prediction is the same local heuristic MCX uses (EMA slope + ROC momentum + ATR cone), not a trained
-            model &mdash; still no paper trading yet.
+            Chart candles are from Binance (USD pairs, 1m-1M real timeframes). Prediction is the same local
+            heuristic MCX uses (EMA slope + ROC momentum + ATR cone), not a trained model &mdash; still no
+            paper trading yet.
           </p>
         </div>
 
@@ -293,9 +318,12 @@ export default function CryptoView() {
               period={chartPeriod}
               onPeriodChange={p => setChartPeriod(p as CryptoOhlcPeriod)}
               periods={CHART_PERIODS}
+              periodBucketSeconds={CRYPTO_BUCKET_SECONDS}
+              defaultVisibleBars={CRYPTO_VISIBLE_BARS}
               loading={chartLoading}
-              currentPrice={selectedQuote?.price ?? null}
-              exchangeLabel="CoinGecko"
+              currentPrice={selectedQuote?.price_usd ?? null}
+              exchangeLabel="Binance"
+              currencySymbol="$"
               prediction={prediction}
             />
           </>

@@ -784,28 +784,29 @@ async def _run_mcx_metals_news_fetch() -> None:
 
 async def _run_crypto_prediction_prewarm() -> None:
     """Every 4 min, every day (crypto trades 24/7, no weekday/session gate
-    like MCX): proactively refresh crypto_service's quotes + OHLC caches
-    for every tracked coin/period, so GET /crypto/ranked and /crypto/ohlc
-    always serve from a warm cache instead of a real user's request being
-    the one that triggers a ~21-call CoinGecko cold-start burst.
+    like MCX): proactively refresh crypto_service's quotes cache (CoinGecko)
+    and binance_service's klines cache for every tracked coin x the ranked
+    table's periods, so GET /crypto/ranked always serves from a warm cache
+    instead of a real user's request paying the cold-start cost.
 
-    4 min, not 5, to stay ahead of crypto_service._OHLC_TTL (300s/5 min)
-    with a safety margin -- if this job's own cadence drifted to exactly
-    the TTL, a slow run could let the cache go cold right before the next
-    tick. CoinGecko's public-tier rate limit is real (confirmed live: a
-    lone request stayed 429'd for several minutes after a 21-call burst),
-    so crypto_service._coingecko_get() already paces every outbound call
-    through a shared minimum-interval gate -- this job doesn't need its
-    own throttling on top of that, just needs to trigger the fetches."""
+    Binance's public rate limit (~1200 weight/min, klines cost ~2 each) has
+    far more headroom than CoinGecko's -- confirmed live, CoinGecko's public
+    tier stayed 429'd for several minutes after a mere 21-call burst, which
+    is why this job exists at all (the CoinGecko quotes side of it).
+    Binance's klines fetches don't strictly need pre-warming at that rate
+    limit, but keeping them warm here too means /crypto/ranked's response
+    time doesn't depend on Binance's live latency on every single request."""
     try:
         from app.services import crypto_service
+        from app.services.binance_service import get_klines
+        from app.services.crypto_prediction_service import RANKED_PERIODS
 
         await crypto_service.get_quotes()
         warmed = 0
         for coin in crypto_service.TRACKED_COINS:
-            for period in crypto_service.OHLC_PERIODS:
+            for period in RANKED_PERIODS:
                 try:
-                    await crypto_service.get_ohlc(coin, period)
+                    await get_klines(coin, period)
                     warmed += 1
                 except Exception as exc:
                     log.warning(
@@ -1374,7 +1375,7 @@ def start_scheduler() -> None:
 
     # Crypto candle/quote cache pre-warm every 4 min, every day (24/7
     # market, no weekday gate) -- see _run_crypto_prediction_prewarm's own
-    # docstring for why 4 min against a 5-min cache TTL.
+    # docstring.
     _scheduler.add_job(
         _run_crypto_prediction_prewarm,
         CronTrigger(minute="*/4", second=15, timezone="Asia/Kolkata"),

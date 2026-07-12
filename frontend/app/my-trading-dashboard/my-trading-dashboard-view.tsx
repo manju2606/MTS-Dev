@@ -8,22 +8,30 @@ import type { McxDashboardRow, McxRankedDashboard } from '@/lib/api'
 const POLL_MS = 20_000
 const RANK_MEDALS = ['🥇', '🥈', '🥉']
 
-const VERDICT_STYLE: Record<McxDashboardRow['verdict'], string> = {
-  TRADE: 'bg-emerald-600 text-white',
-  WATCHLIST: 'bg-amber-500 text-white',
-  NO_TRADE: 'bg-zinc-400 text-white',
+// Same palette as AI_Commodity_Trading_Dashboard_Pro_v3.html: tiles shade
+// from emerald (best rank) to dark red (worst) regardless of verdict, and
+// buy/hold/sell get fixed colors in the table -- ranks beyond the
+// mockup's 5 defined tiers reuse the last (dark red) tier.
+const TILE_BG = ['#065f46', '#15803d', '#4d7c0f', '#b45309', '#991b1b']
+const SIGNAL_COLOR: Record<'BUY' | 'HOLD' | 'SELL', string> = {
+  BUY: '#22c55e',
+  HOLD: '#facc15',
+  SELL: '#ef4444',
 }
-const TILE_ACCENT: Record<McxDashboardRow['verdict'], string> = {
-  TRADE: 'border-emerald-300 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30',
-  WATCHLIST: 'border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30',
-  NO_TRADE: 'border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900',
+
+function tileColor(rank: number): string {
+  return TILE_BG[Math.min(rank, TILE_BG.length - 1)]
+}
+
+function signalOf(row: McxDashboardRow): 'BUY' | 'HOLD' | 'SELL' {
+  return row.verdict === 'NO_TRADE' ? 'HOLD' : row.direction
 }
 
 function PctChange({ pct }: { pct: number | null }) {
-  if (pct === null) return <span className="text-zinc-400">—</span>
+  if (pct === null) return <span style={{ color: '#64748b' }}>—</span>
   const pos = pct >= 0
   return (
-    <span className={pos ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}>
+    <span style={{ color: pos ? '#22c55e' : '#ef4444' }}>
       {pos ? '+' : ''}{pct.toFixed(2)}%
     </span>
   )
@@ -43,17 +51,17 @@ function timeAgo(iso: string): string {
 }
 
 function HeatTile({ row, rank }: { row: McxDashboardRow; rank: number }) {
+  const signal = signalOf(row)
   return (
-    <div className={`rounded-2xl border p-4 text-center shadow-sm ${TILE_ACCENT[row.verdict]}`}>
+    <div
+      className="rounded-2xl p-4 text-center font-bold shadow-[0_8px_20px_rgba(0,0,0,0.35)]"
+      style={{ background: tileColor(rank), color: '#eef2ff' }}
+    >
       <div className="text-lg">{RANK_MEDALS[rank] ?? `#${rank + 1}`}</div>
       <div className="mt-1 text-2xl">{row.icon}</div>
-      <p className="mt-1 truncate text-xs font-bold text-zinc-800 dark:text-zinc-100">{row.name}</p>
-      <p className="mt-1 text-lg font-extrabold text-zinc-900 dark:text-zinc-50">
-        {(row.ai_score_pct / 10).toFixed(1)}/10
-      </p>
-      <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${VERDICT_STYLE[row.verdict]}`}>
-        {row.ai_score_pct.toFixed(0)}% · {row.verdict === 'NO_TRADE' ? 'HOLD' : row.direction}
-      </span>
+      <p className="mt-1 truncate text-xs">{row.name}</p>
+      <p className="mt-1 text-xl font-extrabold">{(row.ai_score_pct / 10).toFixed(1)}/10</p>
+      <p className="mt-1 text-xs">{row.ai_score_pct.toFixed(0)}% &middot; {signal}</p>
     </div>
   )
 }
@@ -66,25 +74,21 @@ const PRED_COLS: { key: keyof McxDashboardRow['predicted']; label: string }[] = 
 ]
 
 function RankRow({ row, rank }: { row: McxDashboardRow; rank: number }) {
+  const signal = signalOf(row)
   return (
-    <tr className="border-b border-zinc-50 dark:border-zinc-800/50 hover:bg-zinc-50 dark:hover:bg-zinc-800/30">
-      <td className="whitespace-nowrap px-3 py-2 font-semibold text-zinc-700 dark:text-zinc-200">
-        {RANK_MEDALS[rank] ?? rank + 1}
+    <tr style={{ borderBottom: '1px solid #24324d' }}>
+      <td className="px-2 py-2 text-center">{RANK_MEDALS[rank] ?? rank + 1}</td>
+      <td className="px-2 py-2 text-center">
+        <span className="mr-1">{row.icon}</span>{row.name}
       </td>
-      <td className="px-3 py-2">
-        <span className="mr-1">{row.icon}</span>
-        <span className="font-medium text-zinc-800 dark:text-zinc-100">{row.name}</span>
-      </td>
-      <td className="px-3 py-2 text-zinc-700 dark:text-zinc-300">{fmtPrice(row.ltp)}</td>
-      <td className="px-3 py-2"><PctChange pct={row.change_pct} /></td>
-      <td className="px-3 py-2 font-semibold text-zinc-800 dark:text-zinc-100">{row.ai_score_pct.toFixed(1)}%</td>
-      <td className="px-3 py-2">
-        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${VERDICT_STYLE[row.verdict]}`}>
-          {row.verdict === 'NO_TRADE' ? 'HOLD' : row.direction}
-        </span>
+      <td className="px-2 py-2 text-center">{fmtPrice(row.ltp)}</td>
+      <td className="px-2 py-2 text-center"><PctChange pct={row.change_pct} /></td>
+      <td className="px-2 py-2 text-center font-semibold">{row.ai_score_pct.toFixed(1)}%</td>
+      <td className="px-2 py-2 text-center font-bold" style={{ color: SIGNAL_COLOR[signal] }}>
+        {signal}
       </td>
       {PRED_COLS.map(c => (
-        <td key={c.key} className="px-3 py-2 text-zinc-500 dark:text-zinc-400">
+        <td key={c.key} className="px-2 py-2 text-center" style={{ color: '#94a3b8' }}>
           {fmtPrice(row.predicted[c.key])}
         </td>
       ))}
@@ -117,58 +121,62 @@ export default function MyTradingDashboardView() {
   const ranked = data?.ranked ?? []
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
+    <div className="min-h-screen" style={{ background: '#0b1220', color: '#eef2ff' }}>
       <NavBar active="My Trading Dashboard" />
-      <div className="mx-auto max-w-7xl px-4 py-8">
 
+      <div
+        className="px-4 py-4 text-center text-xl font-bold sm:text-2xl"
+        style={{ background: 'linear-gradient(90deg,#2563eb,#7c3aed,#06b6d4)' }}
+      >
+        📈 My Trading Dashboard
+      </div>
+
+      <div className="mx-auto max-w-7xl px-4 py-6">
         <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">📈 My Trading Dashboard</h1>
-            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-              Every tracked MCX contract (Natural Gas + Base &amp; Precious Metals), ranked together by AI Strength.
-            </p>
-          </div>
+          <p className="text-sm" style={{ color: '#cbd5e1' }}>
+            Every tracked MCX contract (Natural Gas + Base &amp; Precious Metals), ranked together by AI Strength.
+          </p>
           {data && (
-            <div className="text-right text-xs text-zinc-400">
-              <p>Prices refresh every {POLL_MS / 1000}s · updated {timeAgo(data.generated_at)}</p>
-              <p>AI Strength refreshes every ~5 min · showing top {ranked.length} of {data.total_tracked} scored ({data.total_contracts} tracked)</p>
+            <div className="text-right text-xs" style={{ color: '#64748b' }}>
+              <p>Prices refresh every {POLL_MS / 1000}s &middot; updated {timeAgo(data.generated_at)}</p>
+              <p>AI Strength refreshes every ~5 min &middot; showing top {ranked.length} of {data.total_tracked} scored ({data.total_contracts} tracked)</p>
             </div>
           )}
         </div>
 
         {err && (
-          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+          <div className="mb-4 rounded-xl px-4 py-3 text-xs" style={{ background: '#450a0a', color: '#fca5a5' }}>
             {err}
           </div>
         )}
 
         {data === null && !err ? (
           <div className="flex justify-center py-16">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
           </div>
         ) : ranked.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 px-4 py-10 text-center text-sm text-zinc-400 dark:border-zinc-700 dark:bg-zinc-900">
+          <div className="rounded-xl px-4 py-10 text-center text-sm" style={{ background: '#141d33', color: '#94a3b8' }}>
             No AI-scored contracts yet — the background signal-check job scores every tracked contract every ~5 min;
             check back shortly, or visit the{' '}
-            <a href="/mcx" className="font-medium text-indigo-600 hover:underline dark:text-indigo-400">Natural Gas</a>{' '}
+            <a href="/mcx" className="font-medium text-indigo-400 hover:underline">Natural Gas</a>{' '}
             or{' '}
-            <a href="/mcx/metals" className="font-medium text-indigo-600 hover:underline dark:text-indigo-400">Metals</a>{' '}
+            <a href="/mcx/metals" className="font-medium text-indigo-400 hover:underline">Metals</a>{' '}
             page to trigger the first score.
           </div>
         ) : (
           <>
-            <h2 className="mb-3 text-sm font-semibold text-zinc-700 dark:text-zinc-200">🔥 AI Heat Map</h2>
+            <h2 className="mb-3 text-base font-bold">🔥 AI Heat Map (Automatically Ranked by AI Strength)</h2>
             <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
               {ranked.map((row, i) => <HeatTile key={row.contract} row={row} rank={i} />)}
             </div>
 
-            <h2 className="mb-3 text-sm font-semibold text-zinc-700 dark:text-zinc-200">📊 Ranked Dashboard</h2>
-            <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+            <h2 className="mb-3 text-base font-bold">📊 Ranked Commodity Dashboard</h2>
+            <div className="overflow-x-auto rounded-xl" style={{ background: '#141d33' }}>
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="border-b border-zinc-100 dark:border-zinc-800">
+                  <tr style={{ background: '#1e3a8a' }}>
                     {['Rank', 'Commodity', 'LTP', 'Chg%', 'AI Score', 'Signal', '1m', '15m', '30m', '1H'].map(h => (
-                      <th key={h} className="whitespace-nowrap px-3 py-2.5 text-left font-medium text-zinc-400">{h}</th>
+                      <th key={h} className="whitespace-nowrap px-2 py-2 text-center font-semibold">{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -178,12 +186,12 @@ export default function MyTradingDashboardView() {
               </table>
             </div>
 
-            <p className="mt-4 text-xs text-zinc-400">
+            <p className="mt-4 text-xs" style={{ color: '#64748b' }}>
               Predicted prices (1m/15m/30m/1H) are the NG-AI Pro / Metals-AI Pro local heuristic
               (EMA slope + ROC momentum + ATR cone, not a trained model) — see the{' '}
-              <a href="/mcx" className="font-medium text-indigo-600 hover:underline dark:text-indigo-400">Natural Gas</a>{' '}
+              <a href="/mcx" className="font-medium text-indigo-400 hover:underline">Natural Gas</a>{' '}
               or{' '}
-              <a href="/mcx/metals" className="font-medium text-indigo-600 hover:underline dark:text-indigo-400">Metals</a>{' '}
+              <a href="/mcx/metals" className="font-medium text-indigo-400 hover:underline">Metals</a>{' '}
               page for full accuracy tracking. A dash (—) means not enough candle history yet for that timeframe.
             </p>
           </>

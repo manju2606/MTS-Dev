@@ -38,6 +38,7 @@ const ICONS: Record<string, string> = {
   star:      'M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z',
   database:  'M12 2C6.477 2 2 4.239 2 7v10c0 2.761 4.477 5 10 5s10-2.239 10-5V7c0-2.761-4.477-5-10-5zM2 12c0 2.761 4.477 5 10 5s10-2.239 10-5M2 7c0 2.761 4.477 5 10 5s10-2.239 10-5',
   list:      'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01',
+  globe:     'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM2 12h20M12 2a15 15 0 0 1 4 10 15 15 0 0 1-4 10 15 15 0 0 1-4-10 15 15 0 0 1 4-10z',
 }
 
 function Icon({ name, size = 15 }: { name: string; size?: number }) {
@@ -138,6 +139,12 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'Crypto',
     icon:  'trendingUp',
     href:  '/crypto',
+    roles: ['viewer', 'trader', 'admin'],
+  },
+  {
+    label: 'International Market',
+    icon:  'globe',
+    href:  '/international-market',
     roles: ['viewer', 'trader', 'admin'],
   },
   {

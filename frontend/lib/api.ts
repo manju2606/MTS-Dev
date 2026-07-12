@@ -1751,6 +1751,35 @@ export async function removeUsaStock(token: string, code: string): Promise<void>
   }
 }
 
+// ── International Market (NASDAQ/NYSE) ──────────────────────────────────────
+
+export type InternationalMarketTrend = 'Bullish' | 'Bearish' | 'Neutral'
+
+export type InternationalMarketRow = {
+  code: UsaStockCode
+  price: number | null
+  change_pct: number | null
+  trend: InternationalMarketTrend
+  ai_score: number
+  confidence_pct: number
+}
+
+export type InternationalMarketDashboard = {
+  generated_at: string
+  period: string
+  method: string
+  ranked: InternationalMarketRow[]
+}
+
+export async function getInternationalMarketDashboard(token: string): Promise<InternationalMarketDashboard> {
+  const res = await fetch(`${BASE}/api/v1/international-market/dashboard`, { headers: authHeaders(token) })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch International Market dashboard')
+  }
+  return res.json()
+}
+
 export type NgGlobalSymbolRow = {
   symbol: string
   display_symbol: string

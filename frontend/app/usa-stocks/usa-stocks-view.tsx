@@ -311,14 +311,17 @@ export default function UsaStocksView() {
   const sortedRanked = useMemo(() => {
     const rows = ranked ?? []
     if (!rankSortKey) return rows
-    const sorted = [...rows].sort((a, b) => {
-      if (rankSortKey === 'code') return a.code.localeCompare(b.code)
+    // Sort directly according to rankSortDir rather than sorting ascending
+    // and reversing -- reversing after a stable sort also flips the
+    // tie-break order, which would visibly scramble rank order whenever
+    // rows share the same value on the sorted column.
+    const dir = rankSortDir === 'asc' ? 1 : -1
+    return [...rows].sort((a, b) => {
+      if (rankSortKey === 'code') return dir * a.code.localeCompare(b.code)
       const av = a[rankSortKey] ?? -Infinity
       const bv = b[rankSortKey] ?? -Infinity
-      return av - bv
+      return dir * (av - bv)
     })
-    if (rankSortDir === 'desc') sorted.reverse()
-    return sorted
   }, [ranked, rankSortKey, rankSortDir])
 
   return (

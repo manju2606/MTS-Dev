@@ -1635,6 +1635,99 @@ export async function getCryptoRanked(token: string): Promise<CryptoRankedRespon
   return res.json()
 }
 
+// ── USA Stocks ────────────────────────────────────────────────────────────────
+
+export type UsaStockCode =
+  | 'AAPL' | 'MSFT' | 'GOOGL' | 'AMZN' | 'NVDA' | 'META' | 'TSLA' | 'BRK-B' | 'LLY' | 'AVGO'
+  | 'JPM' | 'V' | 'UNH' | 'XOM' | 'MA' | 'JNJ' | 'PG' | 'HD' | 'COST' | 'MRK'
+  | 'ABBV' | 'CVX' | 'CRM' | 'BAC' | 'PEP' | 'KO' | 'ADBE' | 'WMT' | 'NFLX' | 'AMD'
+  | 'TMO' | 'MCD' | 'LIN' | 'CSCO' | 'ABT' | 'ACN' | 'ORCL' | 'DIS' | 'PM' | 'WFC'
+  | 'DHR' | 'VZ' | 'TXN' | 'INTU' | 'AMGN' | 'CAT' | 'IBM' | 'GE' | 'NOW' | 'QCOM'
+
+export type UsaStockQuote = {
+  code: UsaStockCode
+  price: number
+  change: number
+  change_pct: number
+  day_high: number
+  day_low: number
+  prev_close: number
+  volume: number
+}
+
+// yfinance offers no native 4h/8h (unlike Binance for crypto) -- see
+// usa_stocks_service.PERIODS.
+export type UsaStockOhlcPeriod = '1m' | '5m' | '15m' | '30m' | '1h' | '1D' | '1W' | '1M'
+
+export type UsaStockPredictedPoint = { time: number; predicted_close: number; upper: number; lower: number }
+export type UsaStockPrediction = {
+  code: UsaStockCode
+  period: UsaStockOhlcPeriod
+  last_actual_time?: number
+  last_actual_close?: number
+  predicted: UsaStockPredictedPoint[]
+  method: string
+  note?: string
+}
+
+// Matches backend usa_stocks_prediction_service.RANKED_PERIODS.
+export type UsaStockRankedPeriod = '15m' | '1h' | '1D'
+
+export type UsaStockRankedRow = {
+  code: UsaStockCode
+  price: number | null
+  change_pct: number | null
+  predicted: Record<UsaStockRankedPeriod, number | null>
+}
+export type UsaStockRankedResponse = { generated_at: string; ranked: UsaStockRankedRow[] }
+
+export async function getUsaStockQuotes(token: string): Promise<UsaStockQuote[]> {
+  const res = await fetch(`${BASE}/api/v1/usa-stocks/quotes`, { headers: authHeaders(token) })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch USA stock quotes')
+  }
+  return res.json()
+}
+
+export async function getUsaStockOhlc(
+  token: string, code: UsaStockCode, period: UsaStockOhlcPeriod = '30m',
+): Promise<HistoryBar[]> {
+  const res = await fetch(
+    `${BASE}/api/v1/usa-stocks/ohlc?code=${code}&period=${period}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch USA stock OHLC')
+  }
+  const bars: Omit<HistoryBar, 'volume'>[] = await res.json()
+  return bars.map(b => ({ ...b, volume: 0 }))
+}
+
+export async function getUsaStockPredict(
+  token: string, code: UsaStockCode, period: UsaStockOhlcPeriod = '30m',
+): Promise<UsaStockPrediction> {
+  const res = await fetch(
+    `${BASE}/api/v1/usa-stocks/predict?code=${code}&period=${period}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch USA stock prediction')
+  }
+  return res.json()
+}
+
+export async function getUsaStockRanked(token: string): Promise<UsaStockRankedResponse> {
+  const res = await fetch(`${BASE}/api/v1/usa-stocks/ranked`, { headers: authHeaders(token) })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch ranked USA stock predictions')
+  }
+  return res.json()
+}
+
 export type NgGlobalSymbolRow = {
   symbol: string
   display_symbol: string

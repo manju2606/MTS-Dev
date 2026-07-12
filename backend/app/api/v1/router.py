@@ -38,6 +38,7 @@ from app.api.v1 import (
     strategy_api,
     tax_report,
     trading_agent,
+    usa_stocks,
     usage,
     webhook_api,
     ws,
@@ -91,3 +92,4 @@ router.include_router(dsws.router)
 router.include_router(mcx.router)
 router.include_router(mcx_metals.router)
 router.include_router(crypto.router)
+router.include_router(usa_stocks.router)

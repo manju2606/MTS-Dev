@@ -129,6 +129,12 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    label: 'USA Stocks',
+    icon:  'barChart',
+    href:  '/usa-stocks',
+    roles: ['viewer', 'trader', 'admin'],
+  },
+  {
     label: 'Crypto',
     icon:  'trendingUp',
     href:  '/crypto',

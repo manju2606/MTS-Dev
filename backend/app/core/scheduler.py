@@ -818,6 +818,37 @@ async def _run_crypto_prediction_prewarm() -> None:
         log.error("scheduler.crypto_prewarm.error", error=str(exc))
 
 
+async def _run_usa_stocks_prediction_prewarm() -> None:
+    """Every 10 min, NYSE/NASDAQ regular hours only (unlike crypto's 24/7
+    job, US equities actually close -- yfinance's own intraday data doesn't
+    move outside ~19:00-01:30 IST regular hours anyway, so prewarming
+    around the clock would just be wasted yfinance calls). Proactively
+    refreshes usa_stocks_service's quotes cache and klines cache for every
+    tracked stock x the ranked table's periods, so GET /usa-stocks/ranked
+    serves from a warm cache instead of a real request paying the cold-
+    start cost (50 tickers x 3 periods = 150 blocking yfinance calls,
+    each already wrapped in run_in_executor by usa_stocks_service)."""
+    try:
+        from app.services import usa_stocks_service
+        from app.services.usa_stocks_prediction_service import RANKED_PERIODS
+
+        await usa_stocks_service.get_quotes()
+        warmed = 0
+        for code in usa_stocks_service.TRACKED_STOCKS:
+            for period in RANKED_PERIODS:
+                try:
+                    await usa_stocks_service.get_klines(code, period)
+                    warmed += 1
+                except Exception as exc:
+                    log.warning(
+                        "scheduler.usa_stocks_prewarm.pair_error", code=code, period=period,
+                        error=str(exc),
+                    )
+        log.info("scheduler.usa_stocks_prewarm.done", warmed=warmed)
+    except Exception as exc:
+        log.error("scheduler.usa_stocks_prewarm.error", error=str(exc))
+
+
 async def _run_zerodha_token_check() -> None:
     """08:45 IST weekdays, before market open: validate every connected
     user's Zerodha session against Kite (not just "we have a token cached"
@@ -1381,6 +1412,28 @@ def start_scheduler() -> None:
         CronTrigger(minute="*/4", second=15, timezone="Asia/Kolkata"),
         id="crypto_prediction_prewarm",
         name="Crypto — Quote/OHLC Cache Pre-warm",
+        max_instances=1,
+        misfire_grace_time=120,
+    )
+
+    # USA Stocks candle/quote cache pre-warm every 10 min, NYSE/NASDAQ
+    # regular hours only (19:00-23:59 and 00:00-01:30 IST, wrapping past
+    # midnight -- two windows since Cron can't express a single wrap-around
+    # range) -- see _run_usa_stocks_prediction_prewarm's own docstring for
+    # why this doesn't run 24/7 like crypto's twin job.
+    _scheduler.add_job(
+        _run_usa_stocks_prediction_prewarm,
+        CronTrigger(hour="19-23", minute="*/10", second=30, timezone="Asia/Kolkata"),
+        id="usa_stocks_prediction_prewarm_evening",
+        name="USA Stocks — Quote/OHLC Cache Pre-warm (evening IST)",
+        max_instances=1,
+        misfire_grace_time=120,
+    )
+    _scheduler.add_job(
+        _run_usa_stocks_prediction_prewarm,
+        CronTrigger(hour="0-1", minute="*/10", second=30, timezone="Asia/Kolkata"),
+        id="usa_stocks_prediction_prewarm_night",
+        name="USA Stocks — Quote/OHLC Cache Pre-warm (past-midnight IST)",
         max_instances=1,
         misfire_grace_time=120,
     )

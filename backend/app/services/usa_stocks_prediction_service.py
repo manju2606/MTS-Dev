@@ -26,7 +26,7 @@ from datetime import datetime
 
 from app.services.mcx_prediction_service import _slope_momentum_atr
 from app.services.usa_stocks_service import PERIODS as USA_STOCK_PERIODS
-from app.services.usa_stocks_service import TRACKED_STOCKS, get_klines, get_quotes
+from app.services.usa_stocks_service import get_klines, get_quotes, get_tracked_codes
 
 PREDICT_HORIZON = 10
 MIN_CANDLES = 20
@@ -105,7 +105,8 @@ async def get_ranked_predictions() -> dict:
             "predicted": dict(zip(RANKED_PERIODS, preds, strict=True)),
         }
 
-    rows = await asyncio.gather(*[_row(code) for code in TRACKED_STOCKS])
+    codes = await get_tracked_codes()
+    rows = await asyncio.gather(*[_row(code) for code in codes])
 
     def _sort_key(row: dict) -> float:
         pct = row["change_pct"]

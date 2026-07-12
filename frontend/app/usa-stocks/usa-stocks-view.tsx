@@ -4,12 +4,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NavBar } from '@/components/nav-bar'
 import { PriceChart } from '@/components/price-chart'
 import {
-  getUsaStockQuotes, getUsaStockOhlc, getUsaStockPredict, getUsaStockRanked,
+  getUsaStockQuotes, getUsaStockOhlc, getUsaStockPredict, getUsaStockRanked, addUsaStock, removeUsaStock,
 } from '@/lib/api'
 import type {
   UsaStockQuote, UsaStockCode, UsaStockOhlcPeriod, UsaStockRankedPeriod, UsaStockRankedRow, HistoryBar, ChartPeriod,
 } from '@/lib/api'
 import type { PredictionPoint } from '@/components/price-chart'
+import { USA_STOCK_DIRECTORY } from '@/lib/usa-stock-directory'
 
 const QUOTES_POLL_MS = 30_000
 const RANK_MEDALS = ['🥇', '🥈', '🥉']
@@ -44,17 +45,29 @@ function fmtUsd(v: number | null): string {
 }
 
 function HeatTile({
-  quote, rank, selected, onClick,
-}: { quote: UsaStockQuote; rank: number; selected: boolean; onClick: () => void }) {
+  quote, rank, selected, onClick, onRemove,
+}: { quote: UsaStockQuote; rank: number; selected: boolean; onClick: () => void; onRemove: (code: string) => void }) {
   const pct = quote.change_pct
   return (
     <button
       onClick={onClick}
-      className={`flex flex-col items-start rounded-2xl p-4 text-left font-bold shadow-[0_8px_20px_rgba(0,0,0,0.25)] transition-transform ${
+      className={`relative flex flex-col items-start rounded-2xl p-4 text-left font-bold shadow-[0_8px_20px_rgba(0,0,0,0.25)] transition-transform ${
         selected ? 'scale-[1.03] ring-2 ring-white/70' : 'hover:scale-[1.02]'
       }`}
       style={{ background: tileColor(rank), color: '#eef2ff' }}
     >
+      {quote.is_custom && (
+        <span
+          role="button"
+          tabIndex={0}
+          onClick={e => { e.stopPropagation(); onRemove(quote.code) }}
+          onKeyDown={e => { if (e.key === 'Enter') { e.stopPropagation(); onRemove(quote.code) } }}
+          className="absolute right-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-black/30 text-[10px] leading-none opacity-70 hover:opacity-100"
+          title="Remove from tracked stocks"
+        >
+          ×
+        </span>
+      )}
       <div className="flex w-full items-center justify-between gap-2">
         <span className="text-base">{RANK_MEDALS[rank] ?? `#${rank + 1}`}</span>
         <span className="text-sm font-extrabold">{quote.code}</span>
@@ -97,13 +110,40 @@ function PredictedCell({ predicted, price }: { predicted: number | null; price: 
   )
 }
 
-function RankedPredictionTable({ rows }: { rows: UsaStockRankedRow[] }) {
+type RankedSortKey = 'code' | 'price' | 'change_pct'
+const RANKED_SORT_COLUMNS: { key: RankedSortKey; label: string }[] = [
+  { key: 'code', label: 'Stock' },
+  { key: 'price', label: 'LTP ($)' },
+  { key: 'change_pct', label: 'Chg%' },
+]
+
+function RankedPredictionTable({
+  rows, sortKey, sortDir, onToggleSort,
+}: {
+  rows: UsaStockRankedRow[]
+  sortKey: RankedSortKey | null
+  sortDir: 'asc' | 'desc'
+  onToggleSort: (key: RankedSortKey) => void
+}) {
   return (
     <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
       <table className="w-full text-xs">
         <thead>
           <tr className="border-b border-zinc-100 dark:border-zinc-800">
-            {['Rank', 'Stock', 'LTP ($)', 'Chg%', '15m', '1H', '1D'].map(h => (
+            <th className="whitespace-nowrap px-3 py-2.5 text-left font-medium text-zinc-400">Rank</th>
+            {RANKED_SORT_COLUMNS.map(({ key, label }) => (
+              <th
+                key={key}
+                onClick={() => onToggleSort(key)}
+                className="cursor-pointer select-none whitespace-nowrap px-3 py-2.5 text-left font-medium text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+              >
+                {label}
+                <span className="ml-1 inline-block w-2.5 text-[9px]" style={{ opacity: sortKey === key ? 1 : 0.35 }}>
+                  {sortKey === key && sortDir === 'asc' ? '▲' : '▼'}
+                </span>
+              </th>
+            ))}
+            {['15m', '1H', '1D'].map(h => (
               <th key={h} className="whitespace-nowrap px-3 py-2.5 text-left font-medium text-zinc-400">{h}</th>
             ))}
           </tr>
@@ -145,7 +185,22 @@ export default function UsaStocksView() {
   const [prediction, setPrediction] = useState<PredictionPoint[]>([])
   const [chartLoading, setChartLoading] = useState(false)
   const [ranked, setRanked] = useState<UsaStockRankedRow[] | null>(null)
+  const [addCode, setAddCode] = useState('')
+  const [addBusy, setAddBusy] = useState(false)
+  const [addErr, setAddErr] = useState<string | null>(null)
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [rankSortKey, setRankSortKey] = useState<RankedSortKey | null>(null)
+  const [rankSortDir, setRankSortDir] = useState<'asc' | 'desc'>('desc')
   const tokenRef = useRef('')
+
+  const toggleRankSort = useCallback((key: RankedSortKey) => {
+    if (key === rankSortKey) {
+      setRankSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setRankSortKey(key)
+      setRankSortDir('desc')
+    }
+  }, [rankSortKey])
 
   const loadQuotes = useCallback(async () => {
     const token = tokenRef.current
@@ -204,6 +259,38 @@ export default function UsaStocksView() {
     loadChart(selectedStock, chartPeriod).catch(() => {})
   }, [selectedStock, chartPeriod, loadChart])
 
+  const handleAdd = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault()
+    const token = tokenRef.current
+    const code = addCode.trim().toUpperCase()
+    if (!token || !code) return
+    setAddBusy(true)
+    setAddErr(null)
+    setShowSuggestions(false)
+    try {
+      await addUsaStock(token, code)
+      setAddCode('')
+      setSelectedStock(code)
+      await Promise.all([loadQuotes(), loadRanked()])
+    } catch (e) {
+      setAddErr(e instanceof Error ? e.message : 'Failed to add stock')
+    } finally {
+      setAddBusy(false)
+    }
+  }, [addCode, loadQuotes, loadRanked])
+
+  const handleRemove = useCallback(async (code: string) => {
+    const token = tokenRef.current
+    if (!token) return
+    try {
+      await removeUsaStock(token, code)
+      if (selectedStock === code) setSelectedStock('AAPL')
+      await Promise.all([loadQuotes(), loadRanked()])
+    } catch (e) {
+      setAddErr(e instanceof Error ? e.message : 'Failed to remove stock')
+    }
+  }, [selectedStock, loadQuotes, loadRanked])
+
   const selectedQuote = quotes?.find(q => q.code === selectedStock) ?? null
 
   // Heat map ranked by day % change (best performer first) -- same
@@ -212,6 +299,27 @@ export default function UsaStocksView() {
     () => [...(quotes ?? [])].sort((a, b) => (b.change_pct ?? -Infinity) - (a.change_pct ?? -Infinity)),
     [quotes],
   )
+
+  const suggestions = useMemo(() => {
+    const q = addCode.trim().toUpperCase()
+    if (!q) return []
+    return USA_STOCK_DIRECTORY
+      .filter(s => s.code.startsWith(q) || s.name.toUpperCase().includes(q))
+      .slice(0, 8)
+  }, [addCode])
+
+  const sortedRanked = useMemo(() => {
+    const rows = ranked ?? []
+    if (!rankSortKey) return rows
+    const sorted = [...rows].sort((a, b) => {
+      if (rankSortKey === 'code') return a.code.localeCompare(b.code)
+      const av = a[rankSortKey] ?? -Infinity
+      const bv = b[rankSortKey] ?? -Infinity
+      return av - bv
+    })
+    if (rankSortDir === 'desc') sorted.reverse()
+    return sorted
+  }, [ranked, rankSortKey, rankSortDir])
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
@@ -225,6 +333,43 @@ export default function UsaStocksView() {
             (EMA slope + ROC momentum + ATR cone), not a trained model &mdash; still no paper trading yet.
           </p>
         </div>
+
+        <form onSubmit={handleAdd} className="mb-4 flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <input
+              value={addCode}
+              onChange={e => { setAddCode(e.target.value); setShowSuggestions(true) }}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+              placeholder="Add ticker or company name, e.g. UBER"
+              className="w-64 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 placeholder:text-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+            />
+            {showSuggestions && suggestions.length > 0 && (
+              <ul className="absolute left-0 top-full z-10 mt-1 w-72 overflow-hidden rounded-lg border border-zinc-200 bg-white text-sm shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+                {suggestions.map(s => (
+                  <li key={s.code}>
+                    <button
+                      type="button"
+                      onMouseDown={() => { setAddCode(s.code); setShowSuggestions(false) }}
+                      className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                    >
+                      <span className="font-semibold text-zinc-800 dark:text-zinc-100">{s.code}</span>
+                      <span className="truncate text-xs text-zinc-500 dark:text-zinc-400">{s.name}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <button
+            type="submit"
+            disabled={addBusy || !addCode.trim()}
+            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
+          >
+            {addBusy ? 'Adding…' : '+ Add Stock'}
+          </button>
+          {addErr && <span className="text-xs text-red-500 dark:text-red-400">{addErr}</span>}
+        </form>
 
         {err && (
           <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
@@ -243,7 +388,7 @@ export default function UsaStocksView() {
             </h2>
             <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
               {heatRanked.map((q, i) => (
-                <HeatTile key={q.code} quote={q} rank={i} selected={q.code === selectedStock} onClick={() => setSelectedStock(q.code)} />
+                <HeatTile key={q.code} quote={q} rank={i} selected={q.code === selectedStock} onClick={() => setSelectedStock(q.code)} onRemove={handleRemove} />
               ))}
             </div>
 
@@ -256,7 +401,12 @@ export default function UsaStocksView() {
               </div>
             ) : (
               <div className="mb-8">
-                <RankedPredictionTable rows={ranked} />
+                <RankedPredictionTable
+                  rows={sortedRanked}
+                  sortKey={rankSortKey}
+                  sortDir={rankSortDir}
+                  onToggleSort={toggleRankSort}
+                />
                 <p className="mt-2 text-xs text-zinc-400">
                   Predicted prices are kept warm by a background job during NYSE/NASDAQ hours (same pattern
                   Crypto/MCX use) so this loads fast &mdash; a dash (—) means that stock/period hasn&apos;t been

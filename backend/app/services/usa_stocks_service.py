@@ -33,7 +33,14 @@ import math
 import structlog
 import yfinance as yf
 
-from app.services.crypto_service import _cache_get_any, _cache_get_fresh, _cache_set, _local_lock
+from app.infra.db.repositories.usa_stocks_custom_repo import UsaStocksCustomRepository
+from app.services.crypto_service import (
+    _cache_delete,
+    _cache_get_any,
+    _cache_get_fresh,
+    _cache_set,
+    _local_lock,
+)
 
 log = structlog.get_logger()
 
@@ -42,7 +49,9 @@ log = structlog.get_logger()
 # Top ~50 US stocks by market cap, a point-in-time snapshot (same "small
 # fixed starter set, easy to extend" tradeoff as crypto_service's
 # TRACKED_COINS) -- market-cap rankings shift over time, this isn't
-# re-derived live.
+# re-derived live. Any user can extend this from the UI via the
+# UsaStocksCustomRepository-backed codes layered on top -- see
+# get_tracked_codes()/is_tracked_code() below; this dict stays fixed.
 TRACKED_STOCKS: dict[str, str] = {
     code: code
     for code in [
@@ -51,6 +60,7 @@ TRACKED_STOCKS: dict[str, str] = {
         "ABBV", "CVX", "CRM", "BAC", "PEP", "KO", "ADBE", "WMT", "NFLX", "AMD",
         "TMO", "MCD", "LIN", "CSCO", "ABT", "ACN", "ORCL", "DIS", "PM", "WFC",
         "DHR", "VZ", "TXN", "INTU", "AMGN", "CAT", "IBM", "GE", "NOW", "QCOM",
+        "MU",
     ]
 }
 
@@ -137,6 +147,42 @@ def _fetch_klines_sync(ticker: str, interval: str, period: str) -> list[dict]:
     return candles
 
 
+async def get_tracked_codes() -> list[str]:
+    """Base 50 (fixed) + whatever's been added via the UI (shared, any
+    user), Mongo-backed -- see UsaStocksCustomRepository. Not Redis-cached
+    on top: get_quotes()'s own 30s quote cache already bounds how often
+    this runs, and a single indexed Mongo find is cheap enough to not need
+    a second cache layer."""
+    custom = await UsaStocksCustomRepository().list_codes()
+    return list(dict.fromkeys([*TRACKED_STOCKS.keys(), *(c.upper() for c in custom)]))
+
+
+async def is_tracked_code(code: str) -> bool:
+    return code.upper() in await get_tracked_codes()
+
+
+async def add_custom_stock(code: str, added_by: str) -> dict:
+    """Validates the ticker resolves via yfinance before persisting --
+    same validate-then-persist order the existing Watchlist feature uses
+    (backend/app/api/v1/scanner.py's add_item_to_watchlist), just against
+    yfinance instead of CompositeMarketDataClient since that's NSE/BSE-only.
+    Raises ValueError if the ticker doesn't resolve."""
+    code = code.upper().strip()
+    loop = asyncio.get_running_loop()
+    quote = await loop.run_in_executor(None, _fetch_quote_sync, code)
+    await UsaStocksCustomRepository().add_code(code, added_by)
+    await _cache_delete(f"{_REDIS_KEY_PREFIX}quotes")
+    quote["is_custom"] = True
+    return quote
+
+
+async def remove_custom_stock(code: str) -> None:
+    """No-op for codes in the fixed base 50 -- they're never stored in the
+    custom collection, so there's nothing there to delete."""
+    await UsaStocksCustomRepository().remove_code(code)
+    await _cache_delete(f"{_REDIS_KEY_PREFIX}quotes")
+
+
 async def get_quotes() -> list[dict]:
     cache_key = f"{_REDIS_KEY_PREFIX}quotes"
     ttl = 30
@@ -149,18 +195,20 @@ async def get_quotes() -> list[dict]:
         if cached is not None:
             return cached
 
+        codes = await get_tracked_codes()
+        base_codes = set(TRACKED_STOCKS.keys())
         loop = asyncio.get_running_loop()
 
-        async def _safe_fetch(code: str, ticker: str) -> dict | None:
+        async def _safe_fetch(code: str) -> dict | None:
             try:
-                return await loop.run_in_executor(None, _fetch_quote_sync, ticker)
+                quote = await loop.run_in_executor(None, _fetch_quote_sync, code)
+                quote["is_custom"] = code not in base_codes
+                return quote
             except Exception as exc:
                 log.warning("usa_stocks.quote.skipped", code=code, error=str(exc))
                 return None
 
-        results = await asyncio.gather(
-            *[_safe_fetch(code, ticker) for code, ticker in TRACKED_STOCKS.items()]
-        )
+        results = await asyncio.gather(*[_safe_fetch(code) for code in codes])
         quotes = [q for q in results if q is not None]
         if quotes:
             await _cache_set(cache_key, quotes, ttl)
@@ -171,9 +219,10 @@ async def get_quotes() -> list[dict]:
 
 
 async def get_klines(code: str, period: str) -> list[dict]:
-    ticker = TRACKED_STOCKS.get(code.upper())
-    if ticker is None:
-        raise ValueError(f"Unknown stock code '{code}' -- expected one of {list(TRACKED_STOCKS)}")
+    ticker = code.upper()
+    if not await is_tracked_code(ticker):
+        tracked = await get_tracked_codes()
+        raise ValueError(f"Unknown stock code '{code}' -- expected one of {tracked}")
     interval_info = PERIODS.get(period)
     if interval_info is None:
         raise ValueError(f"Unknown period '{period}' -- expected one of {list(PERIODS)}")

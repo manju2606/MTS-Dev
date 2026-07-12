@@ -1637,12 +1637,10 @@ export async function getCryptoRanked(token: string): Promise<CryptoRankedRespon
 
 // ── USA Stocks ────────────────────────────────────────────────────────────────
 
-export type UsaStockCode =
-  | 'AAPL' | 'MSFT' | 'GOOGL' | 'AMZN' | 'NVDA' | 'META' | 'TSLA' | 'BRK-B' | 'LLY' | 'AVGO'
-  | 'JPM' | 'V' | 'UNH' | 'XOM' | 'MA' | 'JNJ' | 'PG' | 'HD' | 'COST' | 'MRK'
-  | 'ABBV' | 'CVX' | 'CRM' | 'BAC' | 'PEP' | 'KO' | 'ADBE' | 'WMT' | 'NFLX' | 'AMD'
-  | 'TMO' | 'MCD' | 'LIN' | 'CSCO' | 'ABT' | 'ACN' | 'ORCL' | 'DIS' | 'PM' | 'WFC'
-  | 'DHR' | 'VZ' | 'TXN' | 'INTU' | 'AMGN' | 'CAT' | 'IBM' | 'GE' | 'NOW' | 'QCOM'
+// Not a fixed Literal union -- the tracked list is the base 50 plus
+// whatever's been added via POST /usa-stocks/custom (shared across all
+// users), so any string ticker can come back from the API.
+export type UsaStockCode = string
 
 export type UsaStockQuote = {
   code: UsaStockCode
@@ -1653,6 +1651,7 @@ export type UsaStockQuote = {
   day_low: number
   prev_close: number
   volume: number
+  is_custom: boolean
 }
 
 // yfinance offers no native 4h/8h (unlike Binance for crypto) -- see
@@ -1726,6 +1725,30 @@ export async function getUsaStockRanked(token: string): Promise<UsaStockRankedRe
     throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch ranked USA stock predictions')
   }
   return res.json()
+}
+
+export async function addUsaStock(token: string, code: string): Promise<UsaStockQuote> {
+  const res = await fetch(`${BASE}/api/v1/usa-stocks/custom`, {
+    method: 'POST',
+    headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to add stock')
+  }
+  return res.json()
+}
+
+export async function removeUsaStock(token: string, code: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/v1/usa-stocks/custom/${encodeURIComponent(code)}`, {
+    method: 'DELETE',
+    headers: authHeaders(token),
+  })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to remove stock')
+  }
 }
 
 export type NgGlobalSymbolRow = {

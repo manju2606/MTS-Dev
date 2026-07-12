@@ -147,6 +147,19 @@ async def _cache_set(key: str, value: CachePayload, ttl: int) -> None:
         log.warning("crypto.cache.write_failed", key=key, error=str(exc))
 
 
+async def _cache_delete(key: str) -> None:
+    """Invalidates a cache entry outright, rather than waiting for its TTL
+    -- used when a write elsewhere (e.g. usa_stocks_service.add_custom_stock)
+    makes the cached value stale immediately, instead of up to `ttl`
+    seconds later."""
+    try:
+        r = _redis()
+        await r.delete(f"{_REDIS_PREFIX}{key}")
+        await r.aclose()
+    except Exception as exc:
+        log.warning("crypto.cache.delete_failed", key=key, error=str(exc))
+
+
 async def _coingecko_pace() -> None:
     """Blocks (if needed) until it's safe to make another CoinGecko call,
     enforced via Redis so the wait applies across both worker processes,

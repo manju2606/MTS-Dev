@@ -834,7 +834,7 @@ async def _run_usa_stocks_prediction_prewarm() -> None:
 
         await usa_stocks_service.get_quotes()
         warmed = 0
-        for code in usa_stocks_service.TRACKED_STOCKS:
+        for code in await usa_stocks_service.get_tracked_codes():
             for period in RANKED_PERIODS:
                 try:
                     await usa_stocks_service.get_klines(code, period)

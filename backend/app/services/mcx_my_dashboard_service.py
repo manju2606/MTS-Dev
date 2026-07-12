@@ -9,7 +9,7 @@ score (candles + yfinance correlation + news) for 24 contracts x 2
 directions on every page load/poll would take 30-90s+ and hammer the
 Kite/yfinance APIs for no benefit over a 5-min-old rank.
 
-Predicted prices (1m/15m/30m/1h) are likewise read from whatever the 5-min
+Predicted prices (1m/5m/15m/30m/1h) are likewise read from whatever the 5-min
 mcx_prediction_check / mcx_metals_prediction_check jobs already generated
 (McxPredictionRepository.get_soonest_pending), not recomputed live --
 get_prediction()/get_metal_prediction() each do a live Kite historical-
@@ -33,7 +33,7 @@ from app.infra.db.repositories.mcx_score_cache_repo import McxScoreCacheReposito
 from app.services.mcx_metals_service import TRACKED_MCX_METALS_CONTRACTS, get_metal_quote
 from app.services.mcx_service import TRACKED_MCX_CONTRACTS, get_quote, ist_now
 
-PREDICTION_PERIODS = ("1m", "15m", "30m", "1h")
+PREDICTION_PERIODS = ("1m", "5m", "15m", "30m", "1h")
 
 _DISPLAY_NAMES: dict[str, str] = {
     "NG": "Natural Gas", "NGMINI": "Natural Gas Mini",

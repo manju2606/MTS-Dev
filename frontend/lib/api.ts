@@ -1504,7 +1504,10 @@ export type McxDashboardRow = {
   direction: 'BUY' | 'SELL'
   verdict: 'TRADE' | 'WATCHLIST' | 'NO_TRADE'
   score_updated_at: string
-  predicted: { '1m': number | null; '15m': number | null; '30m': number | null; '1h': number | null }
+  predicted: {
+    '1m': number | null; '5m': number | null; '15m': number | null
+    '30m': number | null; '1h': number | null
+  }
 }
 export type McxRankedDashboard = {
   generated_at: string

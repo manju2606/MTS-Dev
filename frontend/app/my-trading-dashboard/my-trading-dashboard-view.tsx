@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NavBar } from '@/components/nav-bar'
 import { getMyTradingDashboard } from '@/lib/api'
 import type { McxDashboardRow, McxRankedDashboard } from '@/lib/api'
@@ -66,8 +66,24 @@ function HeatTile({ row, rank }: { row: McxDashboardRow; rank: number }) {
   )
 }
 
+function PredictedCell({ predicted, ltp }: { predicted: number | null; ltp: number | null }) {
+  if (predicted === null) return <span style={{ color: '#94a3b8' }}>—</span>
+  const pct = ltp ? ((predicted - ltp) / ltp) * 100 : null
+  return (
+    <span style={{ color: '#94a3b8' }}>
+      {fmtPrice(predicted)}
+      {pct !== null && (
+        <span style={{ color: pct >= 0 ? '#22c55e' : '#ef4444' }}>
+          {' '}({pct >= 0 ? '+' : ''}{pct.toFixed(2)}%)
+        </span>
+      )}
+    </span>
+  )
+}
+
 const PRED_COLS: { key: keyof McxDashboardRow['predicted']; label: string }[] = [
   { key: '1m', label: '1m' },
+  { key: '5m', label: '5m' },
   { key: '15m', label: '15m' },
   { key: '30m', label: '30m' },
   { key: '1h', label: '1H' },
@@ -88,18 +104,36 @@ function RankRow({ row, rank }: { row: McxDashboardRow; rank: number }) {
         {signal}
       </td>
       {PRED_COLS.map(c => (
-        <td key={c.key} className="px-2 py-2 text-center" style={{ color: '#94a3b8' }}>
-          {fmtPrice(row.predicted[c.key])}
+        <td key={c.key} className="whitespace-nowrap px-2 py-2 text-center">
+          <PredictedCell predicted={row.predicted[c.key]} ltp={row.ltp} />
         </td>
       ))}
     </tr>
   )
 }
 
+type SortKey = 'name' | 'ltp' | 'change_pct'
+const SORT_COLUMNS: { key: SortKey; label: string }[] = [
+  { key: 'name', label: 'Commodity' },
+  { key: 'ltp', label: 'LTP' },
+  { key: 'change_pct', label: 'Chg%' },
+]
+
 export default function MyTradingDashboardView() {
   const [data, setData] = useState<McxRankedDashboard | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [sortKey, setSortKey] = useState<SortKey | null>(null)
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const tokenRef = useRef('')
+
+  function toggleSort(key: SortKey) {
+    if (key === sortKey) {
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(key)
+      setSortDir('desc')
+    }
+  }
 
   const load = useCallback(async () => {
     const token = tokenRef.current
@@ -118,7 +152,24 @@ export default function MyTradingDashboardView() {
     return () => clearInterval(id)
   }, [load])
 
-  const ranked = data?.ranked ?? []
+  const ranked = useMemo(() => data?.ranked ?? [], [data])
+
+  // Pairs each row with its original AI-Strength rank (used for the medal/
+  // number in the Rank column and the heat map) so sorting by another
+  // column reorders the table without relabeling that rank.
+  const withRank = useMemo(() => ranked.map((row, i) => ({ row, rank: i })), [ranked])
+
+  const sortedRows = useMemo(() => {
+    if (!sortKey) return withRank
+    const sorted = [...withRank].sort((a, b) => {
+      if (sortKey === 'name') return a.row.name.localeCompare(b.row.name)
+      const av = a.row[sortKey] ?? -Infinity
+      const bv = b.row[sortKey] ?? -Infinity
+      return av - bv
+    })
+    if (sortDir === 'desc') sorted.reverse()
+    return sorted
+  }, [withRank, sortKey, sortDir])
 
   return (
     <div className="min-h-screen" style={{ background: '#0b1220', color: '#eef2ff' }}>
@@ -175,19 +226,32 @@ export default function MyTradingDashboardView() {
               <table className="w-full text-xs">
                 <thead>
                   <tr style={{ background: '#1e3a8a' }}>
-                    {['Rank', 'Commodity', 'LTP', 'Chg%', 'AI Score', 'Signal', '1m', '15m', '30m', '1H'].map(h => (
+                    <th className="whitespace-nowrap px-2 py-2 text-center font-semibold">Rank</th>
+                    {SORT_COLUMNS.map(({ key, label }) => (
+                      <th
+                        key={key}
+                        onClick={() => toggleSort(key)}
+                        className="cursor-pointer select-none whitespace-nowrap px-2 py-2 text-center font-semibold hover:opacity-80"
+                      >
+                        {label}
+                        <span className="ml-1 inline-block w-2.5 text-[9px]" style={{ opacity: sortKey === key ? 1 : 0.35 }}>
+                          {sortKey === key && sortDir === 'asc' ? '▲' : '▼'}
+                        </span>
+                      </th>
+                    ))}
+                    {['AI Score', 'Signal', '1m', '5m', '15m', '30m', '1H'].map(h => (
                       <th key={h} className="whitespace-nowrap px-2 py-2 text-center font-semibold">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {ranked.map((row, i) => <RankRow key={row.contract} row={row} rank={i} />)}
+                  {sortedRows.map(({ row, rank }) => <RankRow key={row.contract} row={row} rank={rank} />)}
                 </tbody>
               </table>
             </div>
 
             <p className="mt-4 text-xs" style={{ color: '#64748b' }}>
-              Predicted prices (1m/15m/30m/1H) are the NG-AI Pro / Metals-AI Pro local heuristic
+              Predicted prices (1m/5m/15m/30m/1H) are the NG-AI Pro / Metals-AI Pro local heuristic
               (EMA slope + ROC momentum + ATR cone, not a trained model) — see the{' '}
               <a href="/mcx" className="font-medium text-indigo-400 hover:underline">Natural Gas</a>{' '}
               or{' '}

@@ -20,3 +20,7 @@ resources:
   - frontend/deployment.yaml
   - frontend/service.yaml
   - ingress.yaml
+  - monitoring/kube-state-metrics/rbac.yaml
+  - monitoring/kube-state-metrics/deployment.yaml
+  - monitoring/kube-state-metrics/service.yaml
+  - monitoring/node-exporter/daemonset.yaml

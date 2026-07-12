@@ -86,7 +86,17 @@ class StockOfDayRepository:
         since Stock of the Day generates a single pick per date."""
         cursor = self._col.find(
             {"date": {"$gte": start_date, "$lte": end_date}, "outcome": {"$ne": None}},
-            {"symbol": 1, "name": 1, "date": 1, "pnl_pct": 1},
+            {
+                "symbol": 1,
+                "name": 1,
+                "date": 1,
+                "pnl_pct": 1,
+                "generated_at": 1,
+                "entry_price": 1,
+                "exit_price": 1,
+                "forecast_direction": 1,
+                "composite_score": 1,
+            },
         )
         return [
             {
@@ -94,6 +104,11 @@ class StockOfDayRepository:
                 "name": doc.get("name", doc["symbol"]),
                 "scan_date": doc["date"],
                 "pct_change": doc["pnl_pct"],
+                "selected_at": doc.get("generated_at", doc["date"]),
+                "entry_price": doc.get("entry_price"),
+                "current_price": doc.get("exit_price"),
+                "forecast": doc.get("forecast_direction", "N/A"),
+                "ai_score": doc.get("composite_score", 0),
             }
             async for doc in cursor
         ]

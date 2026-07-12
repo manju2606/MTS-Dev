@@ -33,6 +33,10 @@ services:
     restart: unless-stopped
 
   # ── Observability (step 2): metrics + dashboards ────────────────────────────
+  # "kind" is the Docker network the local kind cluster's node containers run
+  # on (created by `kind create cluster`, external to this compose project).
+  # Prometheus joins it too so it can reach kube-state-metrics/node-exporter
+  # inside the cluster by node container name (step 4: cluster monitoring).
   prometheus:
     image: prom/prometheus:latest
     ports:
@@ -45,6 +49,9 @@ services:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
       - "--storage.tsdb.retention.time=15d"
+    networks:
+      - default
+      - kind
     depends_on:
       - alertmanager
     restart: unless-stopped
@@ -131,3 +138,7 @@ volumes:
   prometheus_data:
   grafana_data:
   alertmanager_data:
+
+networks:
+  kind:
+    external: true

@@ -68,3 +68,21 @@ groups:
         annotations:
           summary: "High Postgres connection count"
           description: "Postgres has {{ $value }} active connections, sustained for 5 minutes."
+
+      - alert: PodCrashLoopingFrequently
+        expr: increase(kube_pod_container_status_restarts_total{namespace="mts"}[1h]) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.pod }} is restarting frequently"
+          description: "{{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.container }}) has restarted {{ $value | printf \"%.0f\" }} times in the last hour."
+
+      - alert: PodNotReady
+        expr: kube_pod_status_phase{namespace="mts", phase=~"Pending|Failed|Unknown"} > 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.pod }} is not Running"
+          description: "{{ $labels.namespace }}/{{ $labels.pod }} has been in phase {{ $labels.phase }} for over 10 minutes."

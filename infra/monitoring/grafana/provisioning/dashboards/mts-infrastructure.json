@@ -1,0 +1,211 @@
+{
+  "id": null,
+  "uid": "mts-infrastructure",
+  "title": "MTS Infrastructure",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "",
+      "type": "text",
+      "gridPos": { "h": 2, "w": 24, "x": 0, "y": 0 },
+      "options": { "mode": "markdown", "content": "## Kubernetes Cluster (kind: mts-dev)" }
+    },
+    {
+      "id": 2,
+      "title": "Node Ready Status",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 2 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "Not Ready", "color": "red" }, "1": { "text": "Ready", "color": "green" } } }
+          ]
+        }
+      },
+      "targets": [
+        { "expr": "kube_node_status_condition{condition=\"Ready\", status=\"true\"}", "legendFormat": "{{node}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Pod Status (mts namespace)",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 16, "x": 8, "y": 2 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "kube_pod_status_phase{namespace=\"mts\"} == 1", "legendFormat": "{{pod}}", "instant": true, "format": "table", "refId": "A" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Pod Container Restarts (last 1h)",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 10 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "increase(kube_pod_container_status_restarts_total{namespace=\"mts\"}[1h]) > 0", "legendFormat": "{{pod}}/{{container}}", "instant": true, "format": "table", "refId": "A" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Deployment Replica Health",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 18 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "kube_deployment_status_replicas_available{namespace=\"mts\"}", "legendFormat": "{{deployment}} available", "refId": "A" },
+        { "expr": "kube_deployment_spec_replicas{namespace=\"mts\"}", "legendFormat": "{{deployment}} desired", "refId": "B" }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "K8s Node CPU Usage",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 18 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "targets": [
+        { "expr": "1 - avg(rate(node_cpu_seconds_total{job=\"k8s-nodes\", mode=\"idle\"}[5m])) by (instance)", "legendFormat": "{{instance}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "K8s Node Memory Usage",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 26 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "targets": [
+        { "expr": "1 - (node_memory_MemAvailable_bytes{job=\"k8s-nodes\"} / node_memory_MemTotal_bytes{job=\"k8s-nodes\"})", "legendFormat": "{{instance}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "K8s Node Disk Usage (/var)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 26 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "1 - (node_filesystem_avail_bytes{job=\"k8s-nodes\", mountpoint=\"/var\"} / node_filesystem_size_bytes{job=\"k8s-nodes\", mountpoint=\"/var\"})",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "",
+      "type": "text",
+      "gridPos": { "h": 2, "w": 24, "x": 0, "y": 34 },
+      "options": { "mode": "markdown", "content": "## Docker Containers & Host" }
+    },
+    {
+      "id": 10,
+      "title": "Container CPU Usage (Compose stack)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 36 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "targets": [
+        { "expr": "sum(rate(container_cpu_usage_seconds_total{name=~\"mts-.*\"}[5m])) by (name)", "legendFormat": "{{name}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Container Memory Usage (Compose stack)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 36 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "targets": [
+        { "expr": "container_memory_usage_bytes{name=~\"mts-.*\"}", "legendFormat": "{{name}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Docker Host CPU Usage",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 44 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "targets": [
+        { "expr": "1 - avg(rate(node_cpu_seconds_total{job=\"node\", mode=\"idle\"}[5m])) by (instance)", "legendFormat": "{{instance}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 13,
+      "title": "Docker Host Memory Usage",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 44 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "targets": [
+        { "expr": "1 - (node_memory_MemAvailable_bytes{job=\"node\"} / node_memory_MemTotal_bytes{job=\"node\"})", "legendFormat": "{{instance}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 14,
+      "title": "Docker Host Disk Usage",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 52 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "1 - (node_filesystem_avail_bytes{job=\"node\", mountpoint=~\"^/$|^/var/lib$\"} / node_filesystem_size_bytes{job=\"node\", mountpoint=~\"^/$|^/var/lib$\"})",
+          "legendFormat": "{{instance}} {{mountpoint}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "title": "",
+      "type": "text",
+      "gridPos": { "h": 2, "w": 24, "x": 0, "y": 60 },
+      "options": { "mode": "markdown", "content": "## Databases" }
+    },
+    {
+      "id": 16,
+      "title": "Datastore Health",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 62 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "min": 0, "max": 1 }, "overrides": [] },
+      "targets": [
+        { "expr": "pg_up", "legendFormat": "postgres", "refId": "A" },
+        { "expr": "redis_up", "legendFormat": "redis", "refId": "B" },
+        { "expr": "mongodb_up", "legendFormat": "mongodb", "refId": "C" }
+      ]
+    },
+    {
+      "id": 17,
+      "title": "Postgres Active Connections",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 62 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum(pg_stat_activity_count)", "legendFormat": "active connections", "refId": "A" }
+      ]
+    },
+    {
+      "id": 18,
+      "title": "Redis Memory Used",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 70 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "targets": [
+        { "expr": "redis_memory_used_bytes", "legendFormat": "used memory", "refId": "A" }
+      ]
+    }
+  ]
+}

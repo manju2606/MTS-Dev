@@ -369,6 +369,70 @@ async def _run_mcx_prediction_check() -> None:
         log.error("scheduler.mcx_prediction.error", error=str(exc))
 
 
+async def _run_mcx_candle_collect() -> None:
+    """Every 5 min, 09:00-23:30 IST weekdays: persist closed 5-minute OHLCV
+    candles for every tracked NG + Metals contract to Mongo (mcx_candles).
+
+    mcx_service.get_history()/mcx_metals_service.get_metal_history() already
+    fetch this from Kite on every call but never store it -- the prediction
+    heuristic re-fetches and discards the same window each time, so there is
+    currently no accumulated price history anywhere to eventually train a
+    real model against. This job is the minimal fix: fetch once, upsert.
+
+    Candle data is contract-level, not user-level, so unlike the trend/
+    prediction checks above this only needs *one* connected user's broker
+    session to fetch it -- looping over every connected user would just
+    fetch and upsert the identical candles N times for no benefit."""
+    try:
+        from app.infra.brokers import session_store
+        from app.infra.db.repositories.mcx_candle_repo import McxCandleRepository
+        from app.services.mcx_metals_service import (
+            TRACKED_MCX_METALS_CONTRACTS,
+            get_metal_history,
+        )
+        from app.services.mcx_service import TRACKED_MCX_CONTRACTS, get_history
+
+        user_ids = await session_store.list_connected_user_ids()
+        if not user_ids:
+            log.info("scheduler.mcx_candle_collect.skipped", reason="no_connected_users")
+            return
+        user_id = user_ids[0]
+
+        repo = McxCandleRepository()
+        await repo.ensure_indexes()
+
+        fetched, written = 0, 0
+        for contract in TRACKED_MCX_CONTRACTS:
+            try:
+                candles = await get_history(user_id, "5m", contract)
+                written += await repo.upsert_many(contract, "5minute", candles)
+                fetched += len(candles)
+            except Exception as exc:
+                log.warning(
+                    "scheduler.mcx_candle_collect.ng_error", contract=contract, error=str(exc)
+                )
+            await asyncio.sleep(0)
+
+        for contract in TRACKED_MCX_METALS_CONTRACTS:
+            try:
+                candles = await get_metal_history(user_id, "5m", contract)
+                written += await repo.upsert_many(contract, "5minute", candles)
+                fetched += len(candles)
+            except Exception as exc:
+                log.warning(
+                    "scheduler.mcx_candle_collect.metals_error",
+                    contract=contract,
+                    error=str(exc),
+                )
+            await asyncio.sleep(0)
+
+        log.info(
+            "scheduler.mcx_candle_collect.done", user_id=user_id, fetched=fetched, written=written
+        )
+    except Exception as exc:
+        log.error("scheduler.mcx_candle_collect.error", error=str(exc))
+
+
 async def _run_mcx_calendar_prediction_check() -> None:
     """Once daily: generate/resolve NG/NGMini week and month predictions
     (see mcx_prediction_service.py's CALENDAR_PERIODS). Kept separate from
@@ -1116,6 +1180,22 @@ def start_scheduler() -> None:
         ),
         id="mcx_prediction_check",
         name="MCX — Prediction Generation + Accuracy Resolution",
+        max_instances=1,
+        misfire_grace_time=180,
+    )
+
+    # MCX candle history collection every 5 min, 09:00-23:45 IST weekdays --
+    # persists the OHLCV window mcx_service.get_history()/get_metal_history()
+    # already fetch from Kite on every prediction call but never store, so a
+    # future ML model has actual accumulated price history to train against.
+    _scheduler.add_job(
+        _run_mcx_candle_collect,
+        CronTrigger(
+            day_of_week="mon-fri", hour="9-23", minute="*/5", second=20,
+            timezone="Asia/Kolkata",
+        ),
+        id="mcx_candle_collect",
+        name="MCX — Candle History Collection",
         max_instances=1,
         misfire_grace_time=180,
     )

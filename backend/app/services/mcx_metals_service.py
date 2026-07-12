@@ -60,7 +60,7 @@ MCX_METALS_CONTRACTS: dict[str, str] = {
     "SILVER": "SILVER",
     "SILVERMINI": "SILVERM",
     "SILVERMICRO": "SILVERMIC",
-    "SILVER100": "SILVER1000",
+    "SILVER100": "SILVER100",
 }
 
 # All 17 variants -- tracked by the background scheduler at the same

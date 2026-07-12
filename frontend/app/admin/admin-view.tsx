@@ -875,6 +875,12 @@ function MonitoringPanel() {
           accent="bg-orange-400"
         />
         <MonitoringCard
+          title="MTS Infra"
+          desc="Kubernetes cluster (kind: mts-dev) pod/node health, Docker container & host resource usage, database status — everything infra in one place."
+          href={`${GRAFANA_URL}/d/mts-infrastructure/mts-infrastructure`}
+          accent="bg-cyan-400"
+        />
+        <MonitoringCard
           title="Prometheus"
           desc="Raw metrics and alert rule status. Bound to localhost only — not reachable from other devices."
           href={`${GRAFANA_URL.replace(':3001', ':9090')}`}

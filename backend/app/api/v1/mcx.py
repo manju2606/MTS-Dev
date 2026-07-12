@@ -201,6 +201,20 @@ async def ng_signals(
     return await list_signals_with_accuracy(str(current_user.id), contract, limit, repo)
 
 
+@router.get("/backtest", dependencies=[Depends(require_role(UserRole.ADMIN))])
+async def mcx_backtest(current_user: CurrentUser) -> dict:
+    """AI signal-scorer backtest across trailing 1m/3m/6m/12m/1y/3y/5y
+    windows, split into NG vs Metals -- evaluates the rule-based scorer's
+    own logged outcomes (see app/services/mcx_backtest_service.py) across
+    every user's signals, not just the caller's. Admin-only since it's a
+    model-evaluation report, not personal trading data."""
+    from app.infra.db.repositories.mcx_signal_repo import McxSignalRepository
+    from app.services.mcx_backtest_service import get_backtest_report
+
+    repo = McxSignalRepository()
+    return await get_backtest_report(repo)
+
+
 @router.get("/ng/range-stats")
 async def ng_range_stats(current_user: CurrentUser, contract: McxContract = "NG") -> dict:
     """Day/week/month high-low for the front-month contract -- powers the

@@ -85,3 +85,10 @@ class McxSignalRepository:
             .limit(limit)
         )
         return [d async for d in cursor]
+
+    async def list_closed_signals_since(self, since: datetime) -> list[dict]:
+        """Every CLOSED signal (WIN/LOSS/EXPIRED) across all users, closed on
+        or after `since` -- for backtest reporting, which evaluates the
+        AI scorer itself rather than one user's trading activity."""
+        cursor = self._col.find({"status": "CLOSED", "closed_at": {"$gte": since}})
+        return [d async for d in cursor]

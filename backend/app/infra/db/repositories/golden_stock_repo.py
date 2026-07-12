@@ -135,29 +135,56 @@ class GoldenStockRepository:
         )
 
     async def get_resolved_picks_between(self, start_date: str, end_date: str) -> list[dict]:
-        """Flat list of resolved picks in a date range, for cross-engine
-        report comparisons (see dsws_service.get_report)."""
+        """Flat list of picks *resolved* within a date range, for cross-engine
+        report comparisons (see dsws_service.get_report).
+
+        Filtered by resolved_at, not scan_date: picks are resolved the next
+        trading day (see resolve_btst_outcomes), so a "today" report filtered
+        by scan_date would always show zero — a pick scanned today has no
+        outcome yet, and yesterday's pick (which resolved today) falls
+        outside a scan_date-based window. Looks back a few extra days on the
+        query since a Friday scan can resolve the following Monday.
+        """
+        from datetime import datetime, timedelta
+
+        lookback = (datetime.strptime(start_date, "%Y-%m-%d") - timedelta(days=5)).strftime(
+            "%Y-%m-%d"
+        )
         cursor = self._col.find(
-            {"scan_date": {"$gte": start_date, "$lte": end_date}},
+            {"scan_date": {"$gte": lookback, "$lte": end_date}},
             {
                 "scan_date": 1,
+                "scan_time": 1,
                 "picks.symbol": 1,
                 "picks.name": 1,
                 "picks.outcome": 1,
                 "picks.actual_pct": 1,
+                "picks.resolved_at": 1,
+                "picks.entry_price": 1,
+                "picks.actual_close": 1,
+                "picks.confidence_score": 1,
             },
         )
         entries: list[dict] = []
         async for doc in cursor:
             for pick in doc.get("picks", []):
-                if pick.get("outcome") is None:
+                resolved_at = pick.get("resolved_at")
+                if pick.get("outcome") is None or not resolved_at:
+                    continue
+                resolved_date = resolved_at[:10]
+                if not (start_date <= resolved_date <= end_date):
                     continue
                 entries.append(
                     {
                         "symbol": pick["symbol"],
                         "name": pick.get("name", pick["symbol"]),
-                        "scan_date": doc["scan_date"],
+                        "scan_date": resolved_date,
                         "pct_change": pick["actual_pct"],
+                        "selected_at": doc.get("scan_time", doc["scan_date"]),
+                        "entry_price": pick.get("entry_price"),
+                        "current_price": pick.get("actual_close"),
+                        "forecast": "UP",  # Golden Stock is a long-only breakout scanner
+                        "ai_score": pick.get("confidence_score", 0),
                     }
                 )
         return entries

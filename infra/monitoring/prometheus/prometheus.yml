@@ -39,3 +39,17 @@ scrape_configs:
   - job_name: node
     static_configs:
       - targets: ["node-exporter:9100"]
+
+  # ── Kubernetes cluster (local kind cluster "mts-dev") ───────────────────────
+  # Prometheus is attached to the "kind" Docker network (see
+  # docker-compose.prod.yml) so it can reach these by node container name.
+  - job_name: kube-state-metrics
+    static_configs:
+      - targets: ["mts-dev-control-plane:30080"]
+
+  - job_name: k8s-nodes
+    static_configs:
+      - targets:
+          - "mts-dev-control-plane:9100"
+          - "mts-dev-worker:9100"
+          - "mts-dev-worker2:9100"

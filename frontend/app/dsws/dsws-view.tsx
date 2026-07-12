@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
 import { NavBar } from '@/components/nav-bar'
 import {
   getDswsToday,
@@ -8,7 +9,9 @@ import {
   triggerDswsGenerate,
   triggerDswsTrack,
 } from '@/lib/api'
-import type { DswsBucket, DswsEngine, DswsScan, DswsPick, DswsReport, DswsReportEntry } from '@/lib/api'
+import type {
+  DswsBucket, DswsEngine, DswsScan, DswsPick, DswsReport, DswsReportEntry, DswsBucketStats,
+} from '@/lib/api'
 
 const BUCKETS: DswsBucket[] = ['STRONG_BUY', 'BUY', 'SELL', 'STRONG_SELL']
 
@@ -52,15 +55,66 @@ function PctBadge({ pct }: { pct: number | null | undefined }) {
   )
 }
 
+function ForecastBadge({ forecast }: { forecast: string }) {
+  const styles: Record<string, string> = {
+    UP: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400',
+    DOWN: 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400',
+    FLAT: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400',
+    'N/A': 'bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500',
+  }
+  return (
+    <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${styles[forecast] ?? styles['N/A']}`}>
+      {forecast === 'UP' ? '▲ UP' : forecast === 'DOWN' ? '▼ DOWN' : forecast}
+    </span>
+  )
+}
+
+function cleanSymbol(symbol: string) {
+  return symbol.replace('.NS', '').replace('.BO', '')
+}
+
+function SymbolLink({ symbol, className }: { symbol: string; className?: string }) {
+  return (
+    <Link
+      href={`/trade?symbol=${encodeURIComponent(symbol)}`}
+      className={className ?? 'hover:underline'}
+      onClick={e => e.stopPropagation()}
+    >
+      {cleanSymbol(symbol)}
+    </Link>
+  )
+}
+
+function Sparkline({ points }: { points: number[] }) {
+  if (points.length < 2) return null
+  const w = 100
+  const h = 28
+  const min = Math.min(...points)
+  const max = Math.max(...points)
+  const range = max - min || 1
+  const step = w / (points.length - 1)
+  const coords = points.map((v, i) => [i * step, h - ((v - min) / range) * h] as const)
+  const path = coords.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ')
+  const last = points[points.length - 1]
+  const stroke = last >= points[0] ? '#059669' : '#ef4444'
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className="h-7 w-full" preserveAspectRatio="none">
+      <path d={path} fill="none" stroke={stroke} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 function PickCard({ pick }: { pick: DswsPick }) {
-  const sym = pick.symbol.replace('.NS', '').replace('.BO', '')
   const latestPct = pick.close_pct ?? pick.checkpoints[pick.checkpoints.length - 1]?.pct_change ?? null
+  const sparkPoints = [0, ...pick.checkpoints.map(cp => cp.pct_change)]
 
   return (
     <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       <div className="mb-3 flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-base font-bold text-zinc-900 dark:text-zinc-50">{sym}</p>
+          <p className="text-base font-bold text-zinc-900 dark:text-zinc-50">
+            <SymbolLink symbol={pick.symbol} className="hover:text-indigo-600 hover:underline dark:hover:text-indigo-400" />
+          </p>
           <p className="truncate text-xs text-zinc-500">{pick.name}</p>
         </div>
         <div className="shrink-0 text-right">
@@ -68,6 +122,12 @@ function PickCard({ pick }: { pick: DswsPick }) {
           <PctBadge pct={latestPct} />
         </div>
       </div>
+
+      {sparkPoints.length > 1 && (
+        <div className="mb-3">
+          <Sparkline points={sparkPoints} />
+        </div>
+      )}
 
       <div className="mb-3 grid grid-cols-3 gap-2 text-sm">
         <div className="rounded-lg bg-zinc-50 p-2 dark:bg-zinc-800">
@@ -110,22 +170,45 @@ function PickCard({ pick }: { pick: DswsPick }) {
   )
 }
 
-function BucketColumn({ bucket, picks }: { bucket: DswsBucket; picks: DswsPick[] }) {
+function BucketSection({
+  bucket, picks, expanded, onToggle,
+}: {
+  bucket: DswsBucket
+  picks: DswsPick[]
+  expanded: boolean
+  onToggle: () => void
+}) {
   const meta = BUCKET_META[bucket]
+  const withPct = picks
+    .map(p => p.close_pct ?? p.checkpoints[p.checkpoints.length - 1]?.pct_change ?? null)
+    .filter((v): v is number => v != null)
+  const avgPct = withPct.length > 0 ? withPct.reduce((a, b) => a + b, 0) / withPct.length : null
+
   return (
-    <div>
-      <div className="mb-3 flex items-center gap-2">
-        <span className={`h-2.5 w-2.5 rounded-full ${meta.accent}`} />
-        <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">{meta.label}</h2>
-        <span className="text-xs text-zinc-400">({picks.length})</span>
-      </div>
-      {picks.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 px-4 py-8 text-center text-xs text-zinc-400 dark:border-zinc-700 dark:bg-zinc-900">
-          No picks in this bucket today
+    <div className="rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+      <button
+        onClick={onToggle}
+        className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left"
+      >
+        <div className="flex items-center gap-2">
+          <span className="w-3 shrink-0 text-[10px] text-zinc-400">{expanded ? '▾' : '▸'}</span>
+          <span className={`h-2.5 w-2.5 rounded-full ${meta.accent}`} />
+          <h2 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">{meta.label}</h2>
+          <span className="text-xs text-zinc-400">({picks.length})</span>
         </div>
-      ) : (
-        <div className="space-y-3">
-          {picks.map(pick => <PickCard key={pick.symbol} pick={pick} />)}
+        {avgPct !== null && <PctBadge pct={avgPct} />}
+      </button>
+      {expanded && (
+        <div className="border-t border-zinc-100 px-5 py-4 dark:border-zinc-800">
+          {picks.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 px-4 py-8 text-center text-xs text-zinc-400 dark:border-zinc-700 dark:bg-zinc-900">
+              No picks in this bucket today
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {picks.map(pick => <PickCard key={pick.symbol} pick={pick} />)}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -145,7 +228,7 @@ function ReportEntryCard({ label, entry }: { label: string; entry: DswsReportEnt
       {entry ? (
         <>
           <p className="mt-1 text-lg font-bold text-zinc-900 dark:text-zinc-50">
-            {entry.symbol.replace('.NS', '').replace('.BO', '')}
+            <SymbolLink symbol={entry.symbol} className="hover:text-indigo-600 hover:underline dark:hover:text-indigo-400" />
           </p>
           <p className="text-xs text-zinc-500">{entry.name} &middot; {entry.scan_date}</p>
           <div className="mt-1"><PctBadge pct={entry.pct_change} /></div>
@@ -157,6 +240,158 @@ function ReportEntryCard({ label, entry }: { label: string; entry: DswsReportEnt
   )
 }
 
+type SortKey = 'selected_at' | 'entry_price' | 'current_price' | 'pct_change' | 'ai_score'
+
+const SORT_COLUMNS: { key: SortKey; label: string }[] = [
+  { key: 'selected_at', label: 'Selected' },
+  { key: 'entry_price', label: 'Entry' },
+  { key: 'current_price', label: 'Current' },
+  { key: 'pct_change', label: 'Change' },
+  { key: 'ai_score', label: 'AI Score' },
+]
+
+const FORECAST_FILTERS: { label: string; value: 'ALL' | 'UP' | 'DOWN' }[] = [
+  { label: 'All', value: 'ALL' },
+  { label: 'Up', value: 'UP' },
+  { label: 'Down', value: 'DOWN' },
+]
+
+function ReportRow({
+  rowKey, label, textClass, stats, expanded, onToggle,
+}: {
+  rowKey: string
+  label: string
+  textClass: string
+  stats: DswsBucketStats
+  expanded: boolean
+  onToggle: () => void
+}) {
+  const [sortKey, setSortKey] = useState<SortKey>('pct_change')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [forecastFilter, setForecastFilter] = useState<'ALL' | 'UP' | 'DOWN'>('ALL')
+
+  const visibleEntries = useMemo(() => {
+    const filtered = forecastFilter === 'ALL'
+      ? stats.entries
+      : stats.entries.filter(e => e.forecast === forecastFilter)
+    const sorted = [...filtered].sort((a, b) => {
+      const av = a[sortKey] ?? -Infinity
+      const bv = b[sortKey] ?? -Infinity
+      if (typeof av === 'string' || typeof bv === 'string') {
+        return String(av).localeCompare(String(bv))
+      }
+      return (av as number) - (bv as number)
+    })
+    if (sortDir === 'desc') sorted.reverse()
+    return sorted
+  }, [stats.entries, sortKey, sortDir, forecastFilter])
+
+  function toggleSort(key: SortKey) {
+    if (key === sortKey) {
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(key)
+      setSortDir('desc')
+    }
+  }
+
+  return (
+    <>
+      <tr
+        onClick={onToggle}
+        className="cursor-pointer border-b border-zinc-100 hover:bg-indigo-50/60 dark:border-zinc-800 dark:hover:bg-indigo-950/30"
+      >
+        <td className={`px-3 py-2 font-semibold ${textClass}`}>
+          <span className="mr-1 inline-block text-[10px] text-zinc-400">{expanded ? '▾' : '▸'}</span>
+          {label}
+        </td>
+        <td className="px-3 py-2 text-zinc-600 dark:text-zinc-300">{stats.count}</td>
+        <td className="px-3 py-2"><PctBadge pct={stats.count > 0 ? stats.avg_return_pct : null} /></td>
+        <td className="px-3 py-2 text-zinc-600 dark:text-zinc-300">
+          {stats.count > 0 ? `${stats.win_rate_pct.toFixed(0)}%` : '—'}
+        </td>
+        <td className="px-3 py-2 text-zinc-600 dark:text-zinc-300">
+          {stats.best ? <SymbolLink symbol={stats.best.symbol} className="hover:text-indigo-600 hover:underline dark:hover:text-indigo-400" /> : '—'}
+        </td>
+      </tr>
+      {expanded && (
+        <tr key={`${rowKey}-expanded`} className="border-b border-zinc-100 dark:border-zinc-800">
+          <td colSpan={5} className="bg-zinc-50 px-3 py-3 dark:bg-zinc-950/40">
+            {stats.entries.length === 0 ? (
+              <p className="text-xs text-zinc-400">No stocks in this period.</p>
+            ) : (
+              <>
+                <div className="mb-2 flex items-center gap-1">
+                  <span className="mr-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Forecast</span>
+                  {FORECAST_FILTERS.map(f => (
+                    <button
+                      key={f.value}
+                      onClick={e => { e.stopPropagation(); setForecastFilter(f.value) }}
+                      className={`rounded px-2 py-0.5 text-[10px] font-semibold transition-colors ${
+                        forecastFilter === f.value
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-zinc-200 text-zinc-500 hover:bg-zinc-300 dark:bg-zinc-800 dark:text-zinc-400'
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+                {visibleEntries.length === 0 ? (
+                  <p className="text-xs text-zinc-400">No stocks match this filter.</p>
+                ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-zinc-400">
+                        <th className="px-2 py-1 text-left font-medium">Stock</th>
+                        <th className="px-2 py-1 text-left font-medium">Name</th>
+                        {SORT_COLUMNS.map(col => (
+                          <th key={col.key} className="px-2 py-1 text-left font-medium">
+                            <button
+                              onClick={e => { e.stopPropagation(); toggleSort(col.key) }}
+                              className="flex items-center gap-0.5 font-medium hover:text-zinc-700 dark:hover:text-zinc-200"
+                            >
+                              {col.label}
+                              {sortKey === col.key && <span>{sortDir === 'asc' ? '▲' : '▼'}</span>}
+                            </button>
+                          </th>
+                        ))}
+                        <th className="px-2 py-1 text-left font-medium">Forecast</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleEntries.map((e, i) => (
+                        <tr key={`${e.symbol}-${e.scan_date}-${i}`} className="border-t border-zinc-200 dark:border-zinc-800">
+                          <td className="px-2 py-1 font-semibold text-zinc-800 dark:text-zinc-200">
+                            <SymbolLink symbol={e.symbol} className="hover:text-indigo-600 hover:underline dark:hover:text-indigo-400" />
+                          </td>
+                          <td className="px-2 py-1 text-zinc-500">{e.name}</td>
+                          <td className="px-2 py-1 text-zinc-500 whitespace-nowrap">{fmtTime(e.selected_at)}</td>
+                          <td className="px-2 py-1 text-zinc-600 dark:text-zinc-300">
+                            {e.entry_price != null ? `₹${fmt(e.entry_price)}` : '—'}
+                          </td>
+                          <td className="px-2 py-1 text-zinc-600 dark:text-zinc-300">
+                            {e.current_price != null ? `₹${fmt(e.current_price)}` : '—'}
+                          </td>
+                          <td className="px-2 py-1"><PctBadge pct={e.pct_change} /></td>
+                          <td className="px-2 py-1 text-zinc-600 dark:text-zinc-300">{e.ai_score}</td>
+                          <td className="px-2 py-1"><ForecastBadge forecast={e.forecast} /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                )}
+              </>
+            )}
+          </td>
+        </tr>
+      )}
+    </>
+  )
+}
+
 function ReportPanel({
   report, period, onPeriodChange, loading,
 }: {
@@ -165,6 +400,7 @@ function ReportPanel({
   onPeriodChange: (p: 'day' | 'week' | 'month') => void
   loading: boolean
 }) {
+  const [expandedRow, setExpandedRow] = useState<string | null>(null)
   return (
     <div className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -212,20 +448,17 @@ function ReportPanel({
               </thead>
               <tbody>
                 {BUCKETS.map(bucket => {
-                  const stats = report.buckets[bucket]
-                  const meta = BUCKET_META[bucket]
+                  const rowKey = `bucket:${bucket}`
                   return (
-                    <tr key={bucket} className="border-b border-zinc-100 dark:border-zinc-800">
-                      <td className={`px-3 py-2 font-semibold ${meta.text}`}>{meta.label}</td>
-                      <td className="px-3 py-2 text-zinc-600 dark:text-zinc-300">{stats.count}</td>
-                      <td className="px-3 py-2"><PctBadge pct={stats.count > 0 ? stats.avg_return_pct : null} /></td>
-                      <td className="px-3 py-2 text-zinc-600 dark:text-zinc-300">
-                        {stats.count > 0 ? `${stats.win_rate_pct.toFixed(0)}%` : '—'}
-                      </td>
-                      <td className="px-3 py-2 text-zinc-600 dark:text-zinc-300">
-                        {stats.best ? stats.best.symbol.replace('.NS', '').replace('.BO', '') : '—'}
-                      </td>
-                    </tr>
+                    <ReportRow
+                      key={rowKey}
+                      rowKey={rowKey}
+                      label={BUCKET_META[bucket].label}
+                      textClass={BUCKET_META[bucket].text}
+                      stats={report.buckets[bucket]}
+                      expanded={expandedRow === rowKey}
+                      onToggle={() => setExpandedRow(expandedRow === rowKey ? null : rowKey)}
+                    />
                   )
                 })}
                 <tr>
@@ -234,20 +467,17 @@ function ReportPanel({
                   </td>
                 </tr>
                 {ENGINES.map(engine => {
-                  const stats = report.engines[engine]
-                  const meta = ENGINE_META[engine]
+                  const rowKey = `engine:${engine}`
                   return (
-                    <tr key={engine} className="border-b border-zinc-100 dark:border-zinc-800">
-                      <td className={`px-3 py-2 font-semibold ${meta.text}`}>{meta.label}</td>
-                      <td className="px-3 py-2 text-zinc-600 dark:text-zinc-300">{stats.count}</td>
-                      <td className="px-3 py-2"><PctBadge pct={stats.count > 0 ? stats.avg_return_pct : null} /></td>
-                      <td className="px-3 py-2 text-zinc-600 dark:text-zinc-300">
-                        {stats.count > 0 ? `${stats.win_rate_pct.toFixed(0)}%` : '—'}
-                      </td>
-                      <td className="px-3 py-2 text-zinc-600 dark:text-zinc-300">
-                        {stats.best ? stats.best.symbol.replace('.NS', '').replace('.BO', '') : '—'}
-                      </td>
-                    </tr>
+                    <ReportRow
+                      key={rowKey}
+                      rowKey={rowKey}
+                      label={ENGINE_META[engine].label}
+                      textClass={ENGINE_META[engine].text}
+                      stats={report.engines[engine]}
+                      expanded={expandedRow === rowKey}
+                      onToggle={() => setExpandedRow(expandedRow === rowKey ? null : rowKey)}
+                    />
                   )
                 })}
               </tbody>
@@ -259,17 +489,35 @@ function ReportPanel({
   )
 }
 
+const DSWS_PERIOD_KEY = 'mts_dsws_period'
+
+function loadStoredPeriod(): 'day' | 'week' | 'month' {
+  if (typeof window === 'undefined') return 'day'
+  const stored = window.localStorage.getItem(DSWS_PERIOD_KEY)
+  return stored === 'day' || stored === 'week' || stored === 'month' ? stored : 'day'
+}
+
 export function DswsView() {
   const [scan, setScan] = useState<DswsScan | null>(null)
   const [report, setReport] = useState<DswsReport | null>(null)
-  const [period, setPeriod] = useState<'day' | 'week' | 'month'>('day')
+  const [period, setPeriod] = useState<'day' | 'week' | 'month'>(loadStoredPeriod)
   const [loading, setLoading] = useState(true)
   const [reportLoading, setReportLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [tracking, setTracking] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [userRole, setUserRole] = useState<string>('')
+  const [expandedBuckets, setExpandedBuckets] = useState<Set<DswsBucket>>(new Set())
   const tokenRef = useRef('')
+
+  function toggleBucket(bucket: DswsBucket) {
+    setExpandedBuckets(prev => {
+      const next = new Set(prev)
+      if (next.has(bucket)) next.delete(bucket)
+      else next.add(bucket)
+      return next
+    })
+  }
 
   async function loadScan() {
     const token = tokenRef.current
@@ -337,7 +585,8 @@ export function DswsView() {
       setUserRole('')
     }
     loadScan()
-    loadReport('day')
+    loadReport(period)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const isAdmin = userRole === 'admin'
@@ -413,9 +662,15 @@ export function DswsView() {
               {scan.closed_out ? ' · day closed out' : ''}
             </p>
 
-            <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="space-y-3">
               {BUCKETS.map(bucket => (
-                <BucketColumn key={bucket} bucket={bucket} picks={scan.buckets[bucket]} />
+                <BucketSection
+                  key={bucket}
+                  bucket={bucket}
+                  picks={scan.buckets[bucket]}
+                  expanded={expandedBuckets.has(bucket)}
+                  onToggle={() => toggleBucket(bucket)}
+                />
               ))}
             </div>
 
@@ -423,7 +678,11 @@ export function DswsView() {
               report={report}
               period={period}
               loading={reportLoading}
-              onPeriodChange={p => { setPeriod(p); loadReport(p) }}
+              onPeriodChange={p => {
+                setPeriod(p)
+                window.localStorage.setItem(DSWS_PERIOD_KEY, p)
+                loadReport(p)
+              }}
             />
           </div>
         )}

@@ -14,6 +14,7 @@ real Kite-sourced price instead of a real order going to the exchange.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from datetime import date, datetime, timedelta
 from uuid import UUID
@@ -73,6 +74,13 @@ TRACKED_MCX_CONTRACTS: list[str] = [
 # (monthly) -- cache it for a day instead of re-downloading on every quote.
 _INSTRUMENTS_CACHE: dict[str, tuple[float, list[dict]]] = {}
 _INSTRUMENTS_TTL = 24 * 3600
+# Guards the check-then-fetch below against a cache stampede -- without it,
+# N concurrent callers on a cold/expired cache (e.g. My Trading Dashboard
+# fetching quotes for ~10 contracts at once) each independently re-fetch
+# the full MCX instrument dump instead of one fetch + N cache hits. Every
+# other caller in this codebase loops contracts sequentially, so this never
+# surfaced until a genuinely concurrent caller existed.
+_INSTRUMENTS_LOCK = asyncio.Lock()
 
 
 class McxNotConnectedError(Exception):
@@ -139,13 +147,18 @@ async def get_zerodha_broker(user_id: str) -> ZerodhaBroker:
 
 
 async def _get_mcx_instruments(broker: ZerodhaBroker) -> list[dict]:
-    now = time.monotonic()
     cached = _INSTRUMENTS_CACHE.get("MCX")
-    if cached and (now - cached[0]) < _INSTRUMENTS_TTL:
+    if cached and (time.monotonic() - cached[0]) < _INSTRUMENTS_TTL:
         return cached[1]
-    instruments = await broker.get_instruments("MCX")
-    _INSTRUMENTS_CACHE["MCX"] = (now, instruments)
-    return instruments
+    async with _INSTRUMENTS_LOCK:
+        # Re-check inside the lock -- another concurrent caller may have
+        # already refreshed the cache while this one was waiting for it.
+        cached = _INSTRUMENTS_CACHE.get("MCX")
+        if cached and (time.monotonic() - cached[0]) < _INSTRUMENTS_TTL:
+            return cached[1]
+        instruments = await broker.get_instruments("MCX")
+        _INSTRUMENTS_CACHE["MCX"] = (time.monotonic(), instruments)
+        return instruments
 
 
 async def resolve_contract(

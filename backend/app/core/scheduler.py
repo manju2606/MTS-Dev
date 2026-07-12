@@ -529,15 +529,21 @@ async def _run_mcx_signal_check() -> None:
     verdict=TRADE (if none is already open for that direction), and check
     every already-open signal against the live price for a target/stop-loss
     hit or expiry (see mcx_signal_service.py). Independent of any paper
-    trade a user may or may not have placed off the same signal."""
+    trade a user may or may not have placed off the same signal.
+
+    Also persists each computed score to McxScoreCacheRepository -- see its
+    own docstring on why (My Trading Dashboard reads this cache instead of
+    recomputing the full score live for every contract on every poll)."""
     try:
         from app.infra.brokers import session_store
+        from app.infra.db.repositories.mcx_score_cache_repo import McxScoreCacheRepository
         from app.infra.db.repositories.mcx_signal_repo import McxSignalRepository
         from app.services.mcx_ai_score_service import compute_ng_ai_score
         from app.services.mcx_service import TRACKED_MCX_CONTRACTS
         from app.services.mcx_signal_service import check_and_log_signal, resolve_open_signals
 
         repo = McxSignalRepository()
+        score_cache = McxScoreCacheRepository()
         user_ids = await session_store.list_connected_user_ids()
         logged, closed = 0, 0
         for user_id in user_ids:
@@ -545,6 +551,7 @@ async def _run_mcx_signal_check() -> None:
                 try:
                     for direction in ("BUY", "SELL"):
                         score = await compute_ng_ai_score(user_id, direction, 100_000.0, contract)
+                        await score_cache.save_score(user_id, contract, direction, score)
                         if await check_and_log_signal(user_id, contract, direction, score, repo):
                             logged += 1
                     closed += await resolve_open_signals(user_id, contract, repo)
@@ -696,9 +703,11 @@ async def _run_mcx_metals_dashboard_snapshot() -> None:
 
 
 async def _run_mcx_metals_signal_check() -> None:
-    """Metals twin of _run_mcx_signal_check -- same 5-min cadence."""
+    """Metals twin of _run_mcx_signal_check -- same 5-min cadence, same
+    score-cache persistence (see McxScoreCacheRepository's docstring)."""
     try:
         from app.infra.brokers import session_store
+        from app.infra.db.repositories.mcx_score_cache_repo import McxScoreCacheRepository
         from app.infra.db.repositories.mcx_signal_repo import McxSignalRepository
         from app.services.mcx_metals_ai_score_service import compute_metal_ai_score
         from app.services.mcx_metals_service import TRACKED_MCX_METALS_CONTRACTS
@@ -708,6 +717,7 @@ async def _run_mcx_metals_signal_check() -> None:
         )
 
         repo = McxSignalRepository()
+        score_cache = McxScoreCacheRepository()
         user_ids = await session_store.list_connected_user_ids()
         logged, closed = 0, 0
         for user_id in user_ids:
@@ -717,6 +727,7 @@ async def _run_mcx_metals_signal_check() -> None:
                         score = await compute_metal_ai_score(
                             user_id, direction, 100_000.0, contract
                         )
+                        await score_cache.save_score(user_id, contract, direction, score)
                         if await check_and_log_signal(user_id, contract, direction, score, repo):
                             logged += 1
                     closed += await resolve_open_metal_signals(user_id, contract, repo)

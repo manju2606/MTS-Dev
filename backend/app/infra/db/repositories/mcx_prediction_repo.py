@@ -171,6 +171,23 @@ class McxPredictionRepository:
         docs.reverse()
         return docs
 
+    async def get_soonest_pending(self, user_id: str, contract: str, period: str) -> dict | None:
+        """Nearest still-unresolved predicted bucket for (contract, period) --
+        a plain read of whatever the 5-min mcx_prediction_check /
+        mcx_metals_prediction_check jobs already generated and saved, no live
+        Kite call. Used by My Trading Dashboard (mcx_my_dashboard_service.py)
+        instead of get_prediction()/get_metal_prediction(), which each do a
+        live historical-candle fetch per call -- fine for one contract's
+        Prediction tab, too slow against Kite's historical-data rate limit
+        once you're covering many contracts on one page."""
+        query = {
+            "user_id": user_id,
+            "contract": contract.upper(),
+            "period": period,
+            "resolved": False,
+        }
+        return await self._col.find_one(query, {"_id": 0}, sort=[("predicted_time", 1)])
+
     async def get_by_date_range(
         self, user_id: str, contract: str, period: str, start_epoch: int, end_epoch: int
     ) -> list[dict]:

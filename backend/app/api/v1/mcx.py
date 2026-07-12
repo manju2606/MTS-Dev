@@ -201,6 +201,17 @@ async def ng_signals(
     return await list_signals_with_accuracy(str(current_user.id), contract, limit, repo)
 
 
+@router.get("/my-dashboard")
+async def my_trading_dashboard(current_user: CurrentUser, limit: int = 10) -> dict:
+    """AI-Strength-ranked view across every tracked MCX contract (NG +
+    Metals combined) -- see app/services/mcx_my_dashboard_service.py. AI
+    score/verdict come from a 5-min-refreshed cache, not computed live, so
+    this is fast enough to poll."""
+    from app.services.mcx_my_dashboard_service import get_ranked_dashboard
+
+    return await get_ranked_dashboard(str(current_user.id), limit)
+
+
 @router.get("/backtest", dependencies=[Depends(require_role(UserRole.ADMIN))])
 async def mcx_backtest(current_user: CurrentUser) -> dict:
     """AI signal-scorer backtest across trailing 1m/3m/6m/12m/1y/3y/5y

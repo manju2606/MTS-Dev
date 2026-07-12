@@ -1492,6 +1492,36 @@ export async function getMcxBacktest(token: string): Promise<McxBacktestReport> 
   return res.json()
 }
 
+export type McxDashboardRow = {
+  contract: string
+  name: string
+  icon: string
+  market: 'ng' | 'metals'
+  tradingsymbol: string | null
+  ltp: number | null
+  change_pct: number | null
+  ai_score_pct: number
+  direction: 'BUY' | 'SELL'
+  verdict: 'TRADE' | 'WATCHLIST' | 'NO_TRADE'
+  score_updated_at: string
+  predicted: { '1m': number | null; '15m': number | null; '30m': number | null; '1h': number | null }
+}
+export type McxRankedDashboard = {
+  generated_at: string
+  ranked: McxDashboardRow[]
+  total_tracked: number
+  total_contracts: number
+}
+
+export async function getMyTradingDashboard(token: string, limit = 10): Promise<McxRankedDashboard> {
+  const res = await fetch(`${BASE}/api/v1/mcx/my-dashboard?limit=${limit}`, { headers: authHeaders(token) })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch My Trading Dashboard')
+  }
+  return res.json()
+}
+
 export type NgGlobalSymbolRow = {
   symbol: string
   display_symbol: string

@@ -11,6 +11,7 @@ from app.api.v1 import (
     broker,
     btst,
     calendar,
+    crypto,
     custom_screener,
     dashboard,
     discovery,
@@ -89,3 +90,4 @@ router.include_router(alerting.router)
 router.include_router(dsws.router)
 router.include_router(mcx.router)
 router.include_router(mcx_metals.router)
+router.include_router(crypto.router)

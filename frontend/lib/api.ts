@@ -1525,6 +1525,50 @@ export async function getMyTradingDashboard(token: string, limit = 10): Promise<
   return res.json()
 }
 
+// ── Crypto ────────────────────────────────────────────────────────────────────
+
+export type CryptoCoin = 'BTC' | 'ETH' | 'BNB' | 'SOL' | 'XRP' | 'ADA' | 'DOGE'
+
+export type CryptoQuote = {
+  code: CryptoCoin
+  name: string
+  image: string | null
+  price: number
+  change_24h: number | null
+  change_pct_24h: number | null
+  high_24h: number | null
+  low_24h: number | null
+  market_cap: number | null
+  market_cap_rank: number | null
+  volume_24h: number | null
+  last_updated: string | null
+}
+
+export type CryptoHistoryPoint = { time: number; price: number }
+
+export async function getCryptoQuotes(token: string): Promise<CryptoQuote[]> {
+  const res = await fetch(`${BASE}/api/v1/crypto/quotes`, { headers: authHeaders(token) })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch crypto quotes')
+  }
+  return res.json()
+}
+
+export async function getCryptoHistory(
+  token: string, coin: CryptoCoin, days: string = '1',
+): Promise<CryptoHistoryPoint[]> {
+  const res = await fetch(
+    `${BASE}/api/v1/crypto/history?coin=${coin}&days=${days}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch crypto history')
+  }
+  return res.json()
+}
+
 export type NgGlobalSymbolRow = {
   symbol: string
   display_symbol: string

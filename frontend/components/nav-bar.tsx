@@ -129,6 +129,12 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    label: 'Crypto',
+    icon:  'trendingUp',
+    href:  '/crypto',
+    roles: ['viewer', 'trader', 'admin'],
+  },
+  {
     label: 'Portfolio',
     icon:  'briefcase',
     roles: ['viewer', 'trader', 'admin'],

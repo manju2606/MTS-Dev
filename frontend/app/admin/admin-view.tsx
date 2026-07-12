@@ -7,11 +7,14 @@ import {
   getAdminStats, listAdminUsers, updateAdminUser, createAdminUser,
   listEmailRecipients, addEmailRecipient, removeEmailRecipient, toggleEmailRecipient,
   sendReportNow, getSotDSettings, updateSotDSettings,
-  listAllOrgs, adminSetOrgPlan, listAuditLog,
+  listAllOrgs, adminSetOrgPlan, listAuditLog, getMcxBacktest,
 } from '@/lib/api'
-import type { AdminStats, AdminUser, EmailRecipient, SotDSettings, OrgData, AuditEvent, AuditPage } from '@/lib/api'
+import type {
+  AdminStats, AdminUser, EmailRecipient, SotDSettings, OrgData, AuditEvent, AuditPage,
+  McxBacktestReport, McxBacktestStats,
+} from '@/lib/api'
 
-type Tab = 'users' | 'email-list' | 'trading-rules' | 'organizations' | 'audit' | 'monitoring'
+type Tab = 'users' | 'email-list' | 'trading-rules' | 'organizations' | 'audit' | 'monitoring' | 'mcx-backtest'
 
 function SendReportButton({ tokenRef }: { tokenRef: React.RefObject<string> }) {
   const [busy, setBusy] = useState(false)
@@ -633,6 +636,7 @@ export default function AdminView() {
             { key: 'organizations', label: 'Organizations' },
             { key: 'audit', label: 'Audit Log' },
             { key: 'monitoring', label: 'Monitoring' },
+            { key: 'mcx-backtest', label: 'MCX Backtest' },
           ] as { key: Tab; label: string }[]).map(({ key, label }) => (
             <button
               key={key}
@@ -723,6 +727,9 @@ export default function AdminView() {
 
         {/* Monitoring tab */}
         {tab === 'monitoring' && <MonitoringPanel />}
+
+        {/* MCX Backtest tab */}
+        {tab === 'mcx-backtest' && <McxBacktestPanel tokenRef={tokenRef} />}
       </main>
     </div>
   )
@@ -902,6 +909,104 @@ function MonitoringPanel() {
           <li>• <strong>Alertmanager</strong> — service-down, high error rate, high latency, disk/memory pressure, too many DB connections — routed straight into this app&apos;s notification bell</li>
         </ul>
       </div>
+    </div>
+  )
+}
+
+// ── MCX Backtest tab ──────────────────────────────────────────────────────────
+
+const MCX_BACKTEST_WINDOWS: { key: string; label: string }[] = [
+  { key: '1m', label: '1 Month' },
+  { key: '3m', label: '3 Months' },
+  { key: '6m', label: '6 Months' },
+  { key: '12m', label: '12 Months' },
+  { key: '1y', label: '1 Year' },
+  { key: '3y', label: '3 Years' },
+  { key: '5y', label: '5 Years' },
+]
+
+function pct(v: number | null): string {
+  return v === null ? '—' : `${v.toFixed(1)}%`
+}
+function num(v: number | null): string {
+  return v === null ? '—' : v.toFixed(2)
+}
+
+function BacktestTable({
+  title, report, group,
+}: { title: string; report: McxBacktestReport; group: 'overall' | 'ng' | 'metals' }) {
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+      <p className="px-5 pt-4 text-sm font-semibold text-zinc-900 dark:text-zinc-50">{title}</p>
+      <div className="overflow-x-auto p-5 pt-3">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-zinc-100 dark:border-zinc-800">
+              {['Window', 'Signals', 'Win Rate', 'Total PnL', 'Profit Factor', 'Avg Days to Close'].map(h => (
+                <th key={h} className="whitespace-nowrap px-3 py-2 text-left font-medium text-zinc-400">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {MCX_BACKTEST_WINDOWS.map(({ key, label }) => {
+              const stats: McxBacktestStats | undefined = report[key]?.[group]
+              return (
+                <tr key={key} className="border-b border-zinc-50 dark:border-zinc-800/50">
+                  <td className="px-3 py-2 font-semibold text-zinc-700 dark:text-zinc-200">{label}</td>
+                  <td className="px-3 py-2 text-zinc-600 dark:text-zinc-300">{stats?.total_signals ?? '—'}</td>
+                  <td className="px-3 py-2 text-zinc-600 dark:text-zinc-300">{pct(stats?.win_rate_pct ?? null)}</td>
+                  <td className="px-3 py-2 text-zinc-600 dark:text-zinc-300">{num(stats?.total_pnl ?? null)}</td>
+                  <td className="px-3 py-2 text-zinc-600 dark:text-zinc-300">{num(stats?.profit_factor ?? null)}</td>
+                  <td className="px-3 py-2 text-zinc-600 dark:text-zinc-300">{num(stats?.avg_days_to_close ?? null)}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function McxBacktestPanel({ tokenRef }: { tokenRef: React.RefObject<string> }) {
+  const [report, setReport] = useState<McxBacktestReport | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    try {
+      setReport(await getMcxBacktest(tokenRef.current))
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed to load backtest report')
+    }
+  }, [tokenRef])
+
+  useEffect(() => { load().catch(() => {}) }, [load])
+
+  return (
+    <div className="space-y-5">
+      <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-xs text-indigo-700 dark:border-indigo-900 dark:bg-indigo-950/30 dark:text-indigo-300">
+        Evaluates the NG-AI Pro / Metals AI signal scorer against its own logged TRADE-tier signal
+        outcomes (WIN/LOSS/EXPIRED), across every user — not one person&apos;s trading activity. Early
+        windows will look thin (or identical to each other) until more signals have resolved.
+      </div>
+
+      {err && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+          {err}
+        </div>
+      )}
+
+      {report === null && !err ? (
+        <div className="flex justify-center py-10">
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+        </div>
+      ) : report && (
+        <div className="space-y-5">
+          <BacktestTable title="Overall (NG + Metals)" report={report} group="overall" />
+          <BacktestTable title="NG / NGMini" report={report} group="ng" />
+          <BacktestTable title="Base & Precious Metals" report={report} group="metals" />
+        </div>
+      )}
     </div>
   )
 }

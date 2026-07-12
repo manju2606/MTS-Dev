@@ -1462,6 +1462,36 @@ export async function getNgSignals(
   return res.json()
 }
 
+export type McxBacktestStats = {
+  total_signals: number
+  resolved: number
+  wins: number
+  losses: number
+  expired: number
+  win_rate_pct: number | null
+  total_pnl: number | null
+  avg_pnl: number | null
+  profit_factor: number | null
+  avg_days_to_close: number | null
+}
+export type McxBacktestWindow = {
+  window_days: number
+  since: string
+  overall: McxBacktestStats
+  ng: McxBacktestStats
+  metals: McxBacktestStats
+}
+export type McxBacktestReport = Record<string, McxBacktestWindow>
+
+export async function getMcxBacktest(token: string): Promise<McxBacktestReport> {
+  const res = await fetch(`${BASE}/api/v1/mcx/backtest`, { headers: authHeaders(token) })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch MCX backtest report')
+  }
+  return res.json()
+}
+
 export type NgGlobalSymbolRow = {
   symbol: string
   display_symbol: string

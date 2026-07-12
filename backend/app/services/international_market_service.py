@@ -36,6 +36,20 @@ MIN_CANDLES = 20
 METHOD = "ema20-slope + roc-momentum + atr-conviction (local heuristic, not a trained model)"
 
 
+def _derive_signal(trend: str, ai_score: int) -> str:
+    """BUY/HOLD/SELL from Trend + AI Score -- same three-way verdict
+    convention MCX's My Trading Dashboard uses (signalOf() in
+    my-trading-dashboard-view.tsx), just driven by this page's simpler
+    heuristic instead of MCX's fuller technicals+news score. A high score
+    alone isn't enough to call BUY/SELL -- it also has to agree with the
+    trend direction, otherwise it's a HOLD."""
+    if trend == "Bullish" and ai_score >= 70:
+        return "BUY"
+    if trend == "Bearish" and ai_score >= 70:
+        return "SELL"
+    return "HOLD"
+
+
 def _derive_score(slope: float, momentum: float, conviction: float) -> tuple[str, int, int]:
     """(trend, ai_score 0-100, confidence_pct) from the heuristic's own
     outputs. `conviction` is a binary multiplier (1.15 when slope and
@@ -65,7 +79,11 @@ async def _score_one(code: str) -> dict | None:
         return None
     slope, momentum, _atr_val, conviction = _slope_momentum_atr(candles)
     trend, ai_score, confidence_pct = _derive_score(slope, momentum, conviction)
-    return {"code": code, "trend": trend, "ai_score": ai_score, "confidence_pct": confidence_pct}
+    signal = _derive_signal(trend, ai_score)
+    return {
+        "code": code, "trend": trend, "ai_score": ai_score,
+        "confidence_pct": confidence_pct, "signal": signal,
+    }
 
 
 async def get_dashboard() -> dict:
@@ -77,6 +95,14 @@ async def get_dashboard() -> dict:
             return await _score_one(code)
         except Exception:
             return None
+
+    # Live-metric fields passed straight through from the quote -- see
+    # usa_stocks_service._fetch_quote_sync (shared with USA Stocks) for
+    # how each is derived. None when a fresh quote wasn't available.
+    quote_fields = [
+        "price", "change", "change_pct", "open", "day_high", "day_low", "prev_close",
+        "year_high", "year_low", "volume", "market_cap", "gap", "gap_pct", "market_status",
+    ]
 
     scored = await asyncio.gather(*[_safe_score(c) for c in TRACKED_INDICES])
     rows = []
@@ -90,8 +116,8 @@ async def get_dashboard() -> dict:
                 **s,
                 "name": info["name"],
                 "region": info["region"],
-                "price": quote["price"] if quote else None,
-                "change_pct": quote["change_pct"] if quote else None,
+                "group": info["group"],
+                **{f: (quote.get(f) if quote else None) for f in quote_fields},
             }
         )
     rows.sort(key=lambda r: r["ai_score"], reverse=True)

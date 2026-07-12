@@ -5,13 +5,22 @@ Reuses usa_stocks_service's generic fetch helpers (_fetch_quote_sync/
 _fetch_klines_sync take any ticker string, not just US equities) and
 crypto_service's Redis cache helpers, rather than duplicating either.
 
-Fixed, curated list of ~15 major indices -- no UI add/remove like USA
+Fixed, curated list of ~28 major indices -- no UI add/remove like USA
 Stocks' custom list (explicitly out of scope per user request; could be
 added the same way later if needed).
 
-Only 15 tickers, so no dedicated scheduler prewarm job like USA Stocks/
-Crypto have -- a cold fetch here is cheap enough (~15 concurrent yfinance
+Only ~28 tickers, so no dedicated scheduler prewarm job like USA Stocks/
+Crypto have -- a cold fetch here is cheap enough (~28 concurrent yfinance
 calls) to just pay on first request after each cache TTL expiry.
+
+Every ticker below was live-validated against yfinance (both fast_info
+quotes and 2y daily history) before being added. Explicitly NOT included,
+because no working free Yahoo Finance ticker could be found after several
+attempts each: TOPIX (only a JPY-denominated tracking ETF, "1306.T", was
+found -- wrong scale/units to show as the index level itself) and the
+Qatar Exchange, Abu Dhabi Securities Exchange, and Dubai Financial Market
+indices (Gulf exchanges generally aren't covered by Yahoo Finance's free
+tier at all; only Saudi Tadawul resolved, as "^TASI.SR").
 """
 
 from __future__ import annotations
@@ -25,25 +34,65 @@ from app.services.usa_stocks_service import PERIODS, _fetch_klines_sync, _fetch_
 
 log = structlog.get_logger()
 
-# display code -> {yfinance ticker, display name, region}. Yahoo Finance's
-# own index ticker convention (^ prefix, except Shanghai Composite which
-# uses the .SS suffix form).
+# display code -> {yfinance ticker, display name, region, group}. Yahoo
+# Finance's own index ticker convention (^ prefix, mostly, with a few
+# exchange-suffix exceptions like ".SS"/".SR"/".MI"). `region` is the
+# specific country shown under each index's name; `group` is the broader
+# America/Europe/Asia/India/Middle East/Other bucket the dashboard
+# sections by -- kept separate since e.g. "Germany" and "France" are both
+# `group` "Europe" but distinct `region` labels worth showing
+# individually. India gets its own `group` (split out of "Asia") to match
+# how it's referenced separately from the rest of Asia.
 TRACKED_INDICES: dict[str, dict[str, str]] = {
-    "SPX": {"ticker": "^GSPC", "name": "S&P 500", "region": "US"},
-    "IXIC": {"ticker": "^IXIC", "name": "Nasdaq Composite", "region": "US"},
-    "DJI": {"ticker": "^DJI", "name": "Dow Jones Industrial Average", "region": "US"},
-    "RUT": {"ticker": "^RUT", "name": "Russell 2000", "region": "US"},
-    "FTSE": {"ticker": "^FTSE", "name": "FTSE 100", "region": "UK"},
-    "GDAXI": {"ticker": "^GDAXI", "name": "DAX", "region": "Germany"},
-    "FCHI": {"ticker": "^FCHI", "name": "CAC 40", "region": "France"},
-    "STOXX50E": {"ticker": "^STOXX50E", "name": "Euro Stoxx 50", "region": "Europe"},
-    "N225": {"ticker": "^N225", "name": "Nikkei 225", "region": "Japan"},
-    "HSI": {"ticker": "^HSI", "name": "Hang Seng", "region": "Hong Kong"},
-    "SSEC": {"ticker": "000001.SS", "name": "Shanghai Composite", "region": "China"},
-    "KS11": {"ticker": "^KS11", "name": "KOSPI", "region": "South Korea"},
-    "BSESN": {"ticker": "^BSESN", "name": "Sensex", "region": "India"},
-    "NSEI": {"ticker": "^NSEI", "name": "Nifty 50", "region": "India"},
-    "AXJO": {"ticker": "^AXJO", "name": "ASX 200", "region": "Australia"},
+    # America
+    "DJI": {
+        "ticker": "^DJI", "name": "Dow Jones Industrial Average", "region": "US", "group": "America"
+    },
+    "SPX": {"ticker": "^GSPC", "name": "S&P 500", "region": "US", "group": "America"},
+    "NDX": {"ticker": "^NDX", "name": "Nasdaq 100", "region": "US", "group": "America"},
+    "RUT": {"ticker": "^RUT", "name": "Russell 2000", "region": "US", "group": "America"},
+    "VIX": {"ticker": "^VIX", "name": "VIX (Volatility Index)", "region": "US", "group": "America"},
+    # Europe
+    "FTSE": {"ticker": "^FTSE", "name": "FTSE 100", "region": "UK", "group": "Europe"},
+    "GDAXI": {"ticker": "^GDAXI", "name": "DAX", "region": "Germany", "group": "Europe"},
+    "FCHI": {"ticker": "^FCHI", "name": "CAC 40", "region": "France", "group": "Europe"},
+    "STOXX50E": {
+        "ticker": "^STOXX50E", "name": "Euro Stoxx 50", "region": "Europe", "group": "Europe"
+    },
+    "IBEX": {"ticker": "^IBEX", "name": "IBEX 35", "region": "Spain", "group": "Europe"},
+    "FTSEMIB": {"ticker": "FTSEMIB.MI", "name": "FTSE MIB", "region": "Italy", "group": "Europe"},
+    # Asia
+    "N225": {"ticker": "^N225", "name": "Nikkei 225", "region": "Japan", "group": "Asia"},
+    "HSI": {"ticker": "^HSI", "name": "Hang Seng", "region": "Hong Kong", "group": "Asia"},
+    "SSEC": {
+        "ticker": "000001.SS", "name": "Shanghai Composite", "region": "China", "group": "Asia"
+    },
+    "CSI300": {"ticker": "000300.SS", "name": "CSI 300", "region": "China", "group": "Asia"},
+    "KS11": {"ticker": "^KS11", "name": "KOSPI", "region": "South Korea", "group": "Asia"},
+    "TWII": {"ticker": "^TWII", "name": "Taiwan Weighted", "region": "Taiwan", "group": "Asia"},
+    "STI": {"ticker": "^STI", "name": "Straits Times", "region": "Singapore", "group": "Asia"},
+    # India (its own group, split out of Asia)
+    "NSEI": {"ticker": "^NSEI", "name": "Nifty 50", "region": "India", "group": "India"},
+    "NSEBANK": {"ticker": "^NSEBANK", "name": "Bank Nifty", "region": "India", "group": "India"},
+    "BSESN": {"ticker": "^BSESN", "name": "Sensex", "region": "India", "group": "India"},
+    "NSEMDCP50": {
+        "ticker": "^NSEMDCP50", "name": "Nifty Midcap 50", "region": "India", "group": "India"
+    },
+    "FINNIFTY": {
+        "ticker": "NIFTY_FIN_SERVICE.NS", "name": "Nifty Fin Service",
+        "region": "India", "group": "India",
+    },
+    # Middle East -- Qatar/Abu Dhabi/Dubai have no working free Yahoo
+    # Finance ticker (see module docstring); only Saudi Tadawul resolved.
+    "TASI": {
+        "ticker": "^TASI.SR", "name": "Tadawul All Share",
+        "region": "Saudi Arabia", "group": "Middle East",
+    },
+    # Other
+    "AXJO": {"ticker": "^AXJO", "name": "ASX 200", "region": "Australia", "group": "Other"},
+    "NZ50": {"ticker": "^NZ50", "name": "NZX 50", "region": "New Zealand", "group": "Other"},
+    "BVSP": {"ticker": "^BVSP", "name": "Bovespa", "region": "Brazil", "group": "Other"},
+    "MXX": {"ticker": "^MXX", "name": "IPC Mexico", "region": "Mexico", "group": "Other"},
 }
 
 _REDIS_KEY_PREFIX = "global_indices:"

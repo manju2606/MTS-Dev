@@ -29,6 +29,8 @@ from __future__ import annotations
 
 import asyncio
 import math
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import structlog
 import yfinance as yf
@@ -98,29 +100,73 @@ def _safe_float(val: object, default: float = 0.0) -> float:
     return default if math.isnan(f) else f
 
 
+def _market_status(timezone: str) -> str:
+    """Approximate open/closed status from the ticker's own exchange
+    timezone -- a blanket 09:15-16:00 local trading window, Mon-Fri (Sun-
+    Thu for Asia/Riyadh, matching Saudi Arabia's actual trading week,
+    which runs Sunday-Thursday not Monday-Friday). Doesn't account for
+    holidays or each exchange's exact hours (real hours vary by 30-90 min
+    either side of this window across different markets) -- a clearly-
+    labeled approximation, not a real trading-calendar lookup (this repo
+    has no trading-calendar dependency)."""
+    try:
+        now_local = datetime.now(ZoneInfo(timezone))
+    except Exception:
+        return "Unknown"
+    weekday = now_local.weekday()  # Mon=0 ... Sun=6
+    if timezone == "Asia/Riyadh":
+        is_trading_day = weekday in (6, 0, 1, 2, 3)  # Sun-Thu
+    else:
+        is_trading_day = weekday in (0, 1, 2, 3, 4)  # Mon-Fri
+    if not is_trading_day:
+        return "Closed"
+    minutes = now_local.hour * 60 + now_local.minute
+    open_minutes, close_minutes = 9 * 60 + 15, 16 * 60
+    return "Open" if open_minutes <= minutes <= close_minutes else "Closed"
+
+
 def _fetch_quote_sync(ticker: str) -> dict:
     """Blocking -- must run via loop.run_in_executor. fast_info is one
     lightweight call (~15 min delayed, same tradeoff yfinance_client.py's
     own fallback path accepts) rather than the full 1-minute-intraday-
     first approach that file uses for NSE/BSE -- US large-caps don't need
-    that extra precision for a heat-map tile."""
+    that extra precision for a heat-map tile.
+
+    market_cap is None for pure index tickers (e.g. ^GSPC) -- a market
+    cap doesn't apply to an index level itself, only to companies/funds --
+    but populated for individual stocks, so it's still meaningful for
+    USA Stocks even though global_indices_service will mostly show "—"
+    for it."""
     t = yf.Ticker(ticker)
     fi = t.fast_info
     price = _safe_float(fi.last_price)
     if price == 0.0:
         raise ValueError(f"No market data available for '{ticker}'")
     prev_close = _safe_float(fi.previous_close, price)
+    open_price = _safe_float(fi.open, price)
     change = round(price - prev_close, 2)
     change_pct = round(change / prev_close * 100, 4) if prev_close else 0.0
+    gap = round(open_price - prev_close, 2)
+    gap_pct = round(gap / prev_close * 100, 4) if prev_close else 0.0
+    year_high = getattr(fi, "year_high", None)
+    year_low = getattr(fi, "year_low", None)
+    market_cap = getattr(fi, "market_cap", None)
     return {
         "code": ticker,
         "price": round(price, 2),
         "change": change,
         "change_pct": change_pct,
+        "open": round(open_price, 2),
         "day_high": round(_safe_float(fi.day_high, price), 2),
         "day_low": round(_safe_float(fi.day_low, price), 2),
         "prev_close": round(prev_close, 2),
+        "year_high": round(float(year_high), 2) if year_high else None,
+        "year_low": round(float(year_low), 2) if year_low else None,
         "volume": int(_safe_float(fi.last_volume, 0.0)),
+        "market_cap": round(float(market_cap), 2) if market_cap else None,
+        "gap": gap,
+        "gap_pct": gap_pct,
+        "market_status": _market_status(fi.timezone),
     }
 
 

@@ -1754,14 +1754,29 @@ export async function removeUsaStock(token: string, code: string): Promise<void>
 // ── International Market (global indices) ───────────────────────────────────
 
 export type InternationalMarketTrend = 'Bullish' | 'Bearish' | 'Neutral'
+export type InternationalMarketSignal = 'BUY' | 'HOLD' | 'SELL'
 
 export type InternationalMarketRow = {
   code: string
   name: string
   region: string
+  group: string
   price: number | null
+  change: number | null
   change_pct: number | null
+  open: number | null
+  day_high: number | null
+  day_low: number | null
+  prev_close: number | null
+  year_high: number | null
+  year_low: number | null
+  volume: number | null
+  market_cap: number | null
+  gap: number | null
+  gap_pct: number | null
+  market_status: string | null
   trend: InternationalMarketTrend
+  signal: InternationalMarketSignal
   ai_score: number
   confidence_pct: number
 }

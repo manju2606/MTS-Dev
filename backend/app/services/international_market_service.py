@@ -1,24 +1,25 @@
-"""International Market dashboard (NASDAQ/NYSE) -- the "My Trading
-Dashboard" equivalent for USA Stocks: ranks every tracked stock (base 50
-+ custom additions, see usa_stocks_service.get_tracked_codes) by a
-derived Trend/AI Score/Confidence.
+"""International Market dashboard -- ranks major global market indices
+(S&P 500, Nasdaq, FTSE 100, Nikkei 225, etc. -- see
+global_indices_service.TRACKED_INDICES) by a derived Trend/AI
+Score/Confidence.
 
 All three are sourced from the same local heuristic (EMA20 slope + ROC
 momentum + ATR-based conviction) the USA Stocks price chart's AI
 Prediction band already uses -- see
 mcx_prediction_service._slope_momentum_atr, reused across MCX/Crypto/USA
-Stocks. This is explicitly NOT the fuller technicals + news-sentiment +
-cross-market-correlation AI Score MCX's own My Trading Dashboard computes
-(compute_ng_ai_score/compute_metal_ai_score) -- that pipeline is
-India-news- and Kite-specific; replicating it for US equities would need
-a whole new US news source and correlation model, out of scope here. The
-score below is a simpler, clearly-labeled derivation of the same slope/
-momentum signal already driving predictions elsewhere in this app.
+Stocks/Global Indices. This is explicitly NOT the fuller technicals +
+news-sentiment + cross-market-correlation AI Score MCX's own My Trading
+Dashboard computes (compute_ng_ai_score/compute_metal_ai_score) -- that
+pipeline is India-news- and Kite-specific; replicating it for global
+indices would need a whole new news source and correlation model per
+market, out of scope here. The score below is a simpler, clearly-labeled
+derivation of the same slope/momentum signal already driving predictions
+elsewhere in this app.
 
 Uses the "1D" period as the representative timeframe for Trend/AI Score/
-Confidence -- already kept warm by the existing USA Stocks prewarm job
-(usa_stocks_prediction_service.RANKED_PERIODS includes "1D"), so this
-dashboard doesn't need its own scheduler job.
+Confidence -- global_indices_service has no dedicated prewarm job (only
+15 tickers, cheap enough to fetch cold), so this dashboard's first load
+after a cache TTL expiry pays that cost directly.
 """
 
 from __future__ import annotations
@@ -26,8 +27,8 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 
+from app.services.global_indices_service import TRACKED_INDICES, get_klines, get_quotes
 from app.services.mcx_prediction_service import _slope_momentum_atr
-from app.services.usa_stocks_service import get_klines, get_quotes, get_tracked_codes
 
 TREND_PERIOD = "1D"
 MIN_CANDLES = 20
@@ -68,7 +69,6 @@ async def _score_one(code: str) -> dict | None:
 
 
 async def get_dashboard() -> dict:
-    codes = await get_tracked_codes()
     quotes = await get_quotes()
     quotes_by_code = {q["code"]: q for q in quotes}
 
@@ -78,15 +78,18 @@ async def get_dashboard() -> dict:
         except Exception:
             return None
 
-    scored = await asyncio.gather(*[_safe_score(c) for c in codes])
+    scored = await asyncio.gather(*[_safe_score(c) for c in TRACKED_INDICES])
     rows = []
     for s in scored:
         if s is None:
             continue
         quote = quotes_by_code.get(s["code"])
+        info = TRACKED_INDICES[s["code"]]
         rows.append(
             {
                 **s,
+                "name": info["name"],
+                "region": info["region"],
                 "price": quote["price"] if quote else None,
                 "change_pct": quote["change_pct"] if quote else None,
             }

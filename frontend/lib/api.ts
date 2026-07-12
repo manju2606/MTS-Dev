@@ -1751,12 +1751,14 @@ export async function removeUsaStock(token: string, code: string): Promise<void>
   }
 }
 
-// ── International Market (NASDAQ/NYSE) ──────────────────────────────────────
+// ── International Market (global indices) ───────────────────────────────────
 
 export type InternationalMarketTrend = 'Bullish' | 'Bearish' | 'Neutral'
 
 export type InternationalMarketRow = {
-  code: UsaStockCode
+  code: string
+  name: string
+  region: string
   price: number | null
   change_pct: number | null
   trend: InternationalMarketTrend

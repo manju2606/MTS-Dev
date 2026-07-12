@@ -27,7 +27,10 @@ const TREND_ARROW: Record<InternationalMarketTrend, string> = {
   Neutral: '—',
 }
 
-function fmtUsd(v: number | null): string {
+// Index levels aren't a single currency (FTSE is GBP-based, Nikkei
+// JPY-based, DAX EUR-based, etc.) -- shown as plain index points, no
+// currency symbol, unlike USA Stocks'/Crypto's $ prices.
+function fmtLevel(v: number | null): string {
   if (v === null) return '—'
   return v.toLocaleString('en-US', { maximumFractionDigits: 2 })
 }
@@ -57,8 +60,9 @@ function HeatTile({ row, rank }: { row: InternationalMarketRow; rank: number }) 
       style={{ background: tileColor(rank), color: '#eef2ff' }}
     >
       <div className="text-lg">{RANK_MEDALS[rank] ?? `#${rank + 1}`}</div>
-      <div className="mt-1 text-sm">{row.code}</div>
-      <p className="mt-1 text-xl font-extrabold">${fmtUsd(row.price)}</p>
+      <div className="mt-1 text-sm">{row.name}</div>
+      <p className="text-[10px] font-normal opacity-80">{row.region}</p>
+      <p className="mt-2 text-xl font-extrabold">{fmtLevel(row.price)}</p>
       <p className="mt-1 text-xs">
         <span style={{ color: TREND_COLOR[row.trend] }}>{TREND_ARROW[row.trend]} {row.trend}</span>
       </p>
@@ -67,10 +71,10 @@ function HeatTile({ row, rank }: { row: InternationalMarketRow; rank: number }) 
   )
 }
 
-type SortKey = 'code' | 'price' | 'change_pct' | 'ai_score'
+type SortKey = 'name' | 'price' | 'change_pct' | 'ai_score'
 const SORT_COLUMNS: { key: SortKey; label: string }[] = [
-  { key: 'code', label: 'Stock' },
-  { key: 'price', label: 'LTP ($)' },
+  { key: 'name', label: 'Index' },
+  { key: 'price', label: 'Level' },
   { key: 'change_pct', label: 'Chg%' },
   { key: 'ai_score', label: 'AI Score' },
 ]
@@ -79,8 +83,11 @@ function RankRow({ row, rank }: { row: InternationalMarketRow; rank: number }) {
   return (
     <tr style={{ borderBottom: '1px solid #24324d' }}>
       <td className="px-2 py-2 text-center">{RANK_MEDALS[rank] ?? rank + 1}</td>
-      <td className="px-2 py-2 text-center font-medium">{row.code}</td>
-      <td className="px-2 py-2 text-center">${fmtUsd(row.price)}</td>
+      <td className="px-2 py-2 text-left">
+        <span className="font-medium">{row.name}</span>
+        <span className="ml-1 text-[10px]" style={{ color: '#64748b' }}>{row.region}</span>
+      </td>
+      <td className="px-2 py-2 text-center">{fmtLevel(row.price)}</td>
       <td className="px-2 py-2 text-center"><PctChange pct={row.change_pct} /></td>
       <td className="px-2 py-2 text-center font-semibold">{row.ai_score}</td>
       <td className="px-2 py-2 text-center font-bold" style={{ color: TREND_COLOR[row.trend] }}>
@@ -140,7 +147,7 @@ export default function InternationalMarketView() {
     // coarse heuristic that saturates for strong moves).
     const dir = sortDir === 'asc' ? 1 : -1
     return [...withRank].sort((a, b) => {
-      if (sortKey === 'code') return dir * a.row.code.localeCompare(b.row.code)
+      if (sortKey === 'name') return dir * a.row.name.localeCompare(b.row.name)
       const av = a.row[sortKey] ?? -Infinity
       const bv = b.row[sortKey] ?? -Infinity
       return dir * (av - bv)
@@ -161,10 +168,11 @@ export default function InternationalMarketView() {
       <div className="mx-auto max-w-7xl px-4 py-6">
         <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
           <p className="text-sm" style={{ color: '#cbd5e1' }}>
-            Every tracked USA Stock (NASDAQ/NYSE), ranked by AI Score. Trend/AI Score/Confidence are derived from
-            the same local heuristic (EMA slope + ROC momentum + ATR conviction) the USA Stocks price chart&apos;s
-            AI Prediction uses on the daily timeframe &mdash; not a trained model, and not the fuller
-            technicals+news AI Score MCX&apos;s own dashboard computes.
+            Major global market indices (US, Europe, Asia &amp; Australia), ranked by AI Score. Trend/AI
+            Score/Confidence are derived from the same local heuristic (EMA slope + ROC momentum + ATR conviction)
+            used elsewhere in this app on the daily timeframe &mdash; not a trained model, and not the fuller
+            technicals+news AI Score MCX&apos;s own dashboard computes. Index levels are shown in each index&apos;s
+            own native units, not a single currency.
           </p>
           {data && (
             <div className="text-right text-xs" style={{ color: '#64748b' }}>
@@ -186,9 +194,7 @@ export default function InternationalMarketView() {
           </div>
         ) : rows.length === 0 ? (
           <div className="rounded-xl px-4 py-10 text-center text-sm" style={{ background: '#141d33', color: '#94a3b8' }}>
-            No scored stocks yet &mdash; visit the{' '}
-            <a href="/usa-stocks" className="font-medium text-indigo-400 hover:underline">USA Stocks</a>{' '}
-            page to warm up the candle cache, then check back shortly.
+            No scored indices yet &mdash; check back shortly.
           </div>
         ) : (
           <>

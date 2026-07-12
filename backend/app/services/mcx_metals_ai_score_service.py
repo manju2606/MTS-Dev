@@ -28,6 +28,7 @@ from app.services.mcx_ai_score_service import (
     _check,
     _classify,
     _fetch_candles,
+    _mentions_geopolitical_risk,
     _score_momentum,
     _score_order_flow,
     _score_price_action,
@@ -148,12 +149,15 @@ def _score_metal_news(news_items: list[dict], direction: str) -> dict:
         "US Fed rate decisions",
         "Chinese demand/PMI data",
         "Mine supply disruptions / strikes",
-        "geopolitical events -- verify manually before trading",
     ]
     if not news_items:
         return _category(
-            "News Filter", 5, [],
-            ["Recent metals news sentiment (no articles fetched yet)", *excluded],
+            "News Filter", 10, [],
+            [
+                "Recent metals news sentiment (no articles fetched yet)",
+                "Geopolitical risk keywords (no articles fetched yet)",
+                *excluded,
+            ],
         )
 
     avg_sentiment = sum(n["sentiment_score"] for n in news_items) / len(news_items)
@@ -163,15 +167,33 @@ def _score_metal_news(news_items: list[dict], direction: str) -> dict:
         if bull
         else avg_sentiment > _NEWS_SENTIMENT_DEADBAND
     )
+
+    # Same keyword list/detector as NG (_mentions_geopolitical_risk) --
+    # geopolitical risk reliably drives safe-haven flows into Gold/Silver,
+    # which is the majority of contracts tracked here; for industrial
+    # metals (Copper/Aluminium/Lead/Nickel/Zinc) the same "detected -> BUY"
+    # bias is a blunter approximation (supply-shock fears vs. demand-
+    # destruction fears can cut either way), same coarse-heuristic caveat
+    # as the sentiment check above.
+    geo_hits = [n for n in news_items if _mentions_geopolitical_risk(n)]
+    geo_detected = len(geo_hits) > 0
+    geo_aligned = geo_detected if bull else not geo_detected
+    geo_note = (
+        f"{len(geo_hits)} article(s), e.g. \"{geo_hits[0]['title']}\""
+        if geo_hits
+        else "no geopolitical risk keywords in recent coverage"
+    )
+
     checks = [
         _check(
             f"Recent metals news sentiment ({avg_sentiment:+.2f})",
             not opposes,
             5.0,
             f"{len(news_items)} articles in the last {_NEWS_LOOKBACK_HOURS}h",
-        )
+        ),
+        _check("Geopolitical risk keywords", geo_aligned, 5.0, geo_note),
     ]
-    return _category("News Filter", 5, checks, excluded)
+    return _category("News Filter", 10, checks, excluded)
 
 
 async def compute_metal_ai_score(

@@ -34,6 +34,30 @@ _LOOKBACK_DAYS = {"1m": 2, "5m": 5, "15m": 10}
 _NEWS_LOOKBACK_HOURS = 48
 _NEWS_SENTIMENT_DEADBAND = 0.1
 
+# Supply-shock / conflict terms that the generic bullish/bearish sentiment
+# scorer routinely misses -- e.g. "More LNG Carriers Brave the Strait of
+# Hormuz Despite Renewed Hostilities" (an actual fetched article) scores
+# ~0 (neutral) under keyword-sentiment scoring despite being exactly the
+# kind of supply-risk headline that moves NG prices. Historically these
+# events are NG-bullish (LNG shipping-lane risk, production/pipeline
+# outages), so detection is scored as supporting BUY -- same "one input
+# among several, not a signal on its own" caveat as the sentiment check
+# above. Only scans articles already fetched by ng_news_fetcher.py, which
+# itself only keeps articles mentioning an NG-specific keyword -- a
+# geopolitical story that never mentions gas/energy won't reach this list.
+_GEOPOLITICAL_KEYWORDS = [
+    "iran", "israel", "houthi", "strait of hormuz", "red sea",
+    "hostilit", "military strike", "airstrike", "missile attack",
+    "war", "conflict escalat", "sanctions", "pipeline attack",
+    "naval blockade", "tanker attack", "gulf tension",
+    "middle east tension", "supply disruption", "opec+ cut",
+]
+
+
+def _mentions_geopolitical_risk(item: dict) -> bool:
+    text = f"{item.get('title', '')} {item.get('summary', '')}".lower()
+    return any(kw in text for kw in _GEOPOLITICAL_KEYWORDS)
+
 # yfinance tickers for the Correlation category.
 _CORRELATION_TICKERS = {
     "crude_oil": "CL=F",
@@ -292,17 +316,22 @@ def _score_correlation(corr: dict, direction: str) -> dict:
 
 def _score_news(news_items: list[dict], direction: str) -> dict:
     # Still no economic-calendar API -- these four remain genuinely
-    # unmeasured, unlike LNG/NG news sentiment below which is now real.
+    # unmeasured, unlike LNG/NG news sentiment and geopolitical-risk
+    # keywords below, which are now real.
     excluded = [
         "EIA inventory report",
         "OPEC meetings",
         "FOMC",
         "RBI",
-        "geopolitical events -- verify manually before trading",
     ]
     if not news_items:
         return _category(
-            "News Filter", 5, [], ["Recent NG news sentiment (no articles fetched yet)", *excluded]
+            "News Filter", 10, [],
+            [
+                "Recent NG news sentiment (no articles fetched yet)",
+                "Geopolitical risk keywords (no articles fetched yet)",
+                *excluded,
+            ],
         )
 
     avg_sentiment = sum(n["sentiment_score"] for n in news_items) / len(news_items)
@@ -312,15 +341,26 @@ def _score_news(news_items: list[dict], direction: str) -> dict:
         if bull
         else avg_sentiment > _NEWS_SENTIMENT_DEADBAND
     )
+
+    geo_hits = [n for n in news_items if _mentions_geopolitical_risk(n)]
+    geo_detected = len(geo_hits) > 0
+    geo_aligned = geo_detected if bull else not geo_detected
+    geo_note = (
+        f"{len(geo_hits)} article(s), e.g. \"{geo_hits[0]['title']}\""
+        if geo_hits
+        else "no geopolitical risk keywords in recent coverage"
+    )
+
     checks = [
         _check(
             f"Recent NG news sentiment ({avg_sentiment:+.2f})",
             not opposes,
             5.0,
             f"{len(news_items)} articles in the last {_NEWS_LOOKBACK_HOURS}h",
-        )
+        ),
+        _check("Geopolitical risk keywords", geo_aligned, 5.0, geo_note),
     ]
-    return _category("News Filter", 5, checks, excluded)
+    return _category("News Filter", 10, checks, excluded)
 
 
 def _classify(score_pct: float) -> str:

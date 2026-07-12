@@ -323,7 +323,7 @@ async def _run_mcx_trend_check() -> None:
         log.error("scheduler.mcx_trend.error", error=str(exc))
 
 
-_MCX_PREDICTION_PERIODS = ("1m", "5m", "15m", "30m", "1h")
+_MCX_PREDICTION_PERIODS = ("1m", "5m", "15m", "30m", "1h", "4h", "6h", "8h")
 _MCX_CALENDAR_PREDICTION_PERIODS = ("1Wk", "1Mo")
 
 

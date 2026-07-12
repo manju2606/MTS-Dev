@@ -167,6 +167,12 @@ _HISTORY_PERIOD_MAP: dict[str, tuple[str, int]] = {
     "30m": ("15minute", 30),
     "45m": ("60minute", 90),
     "1h": ("60minute", 90),
+    # Kite has no native multi-hour interval -- 4h/6h/8h reuse the same
+    # 60-minute candles as "1h"/"45m", bucketed wider by the prediction
+    # service (see mcx_prediction_service.PERIOD_BUCKET_SECONDS).
+    "4h": ("60minute", 90),
+    "6h": ("60minute", 90),
+    "8h": ("60minute", 90),
     "1D": ("day", 365),
     "5D": ("day", 365),
     "1W": ("day", 365 * 2),

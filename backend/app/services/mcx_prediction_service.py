@@ -44,6 +44,9 @@ PERIOD_BUCKET_SECONDS: dict[str, int] = {
     "30m": 1800,
     "45m": 3600,
     "1h": 3600,
+    "4h": 14400,
+    "6h": 21600,
+    "8h": 28800,
     "1D": 86400,
     "5D": 86400,
     "1W": 86400,
@@ -53,7 +56,7 @@ PERIOD_BUCKET_SECONDS: dict[str, int] = {
     "1Y": 86400,
 }
 
-# All intraday periods (1m/5m/15m/30m/45m/1h) share ONE trend/volatility
+# All intraday periods (1m/5m/15m/30m/45m/1h/4h/6h/8h) share ONE trend/volatility
 # read, calibrated from this reference timeframe, instead of each computing
 # its own independent EMA slope from its own candles. Without this, the
 # Minutes/15-Mins/1-Hr columns could -- and did -- predict wildly different
@@ -64,12 +67,12 @@ PERIOD_BUCKET_SECONDS: dict[str, int] = {
 # own appropriately-scaled slope.
 REFERENCE_PERIOD = "15m"
 
-# The four periods that actually get requested/displayed and share the
+# The periods that actually get requested/displayed and share the
 # REFERENCE_PERIOD machinery above -- used to fan a recalibration event out
 # to every OTHER period sharing one anchor snapshot (see
 # _sync_recalibrate_other_periods) so their pending buckets never drift
 # apart from independently recalibrating at different moments.
-INTRADAY_PERIODS = ("1m", "15m", "30m", "1h")
+INTRADAY_PERIODS = ("1m", "5m", "15m", "30m", "1h", "4h", "6h", "8h")
 
 # "1Wk"/"1Mo" are calendar-bucketed (ISO week / calendar month), not fixed-
 # second buckets like everything else -- Kite has no native weekly/monthly

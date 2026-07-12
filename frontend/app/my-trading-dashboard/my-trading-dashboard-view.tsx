@@ -66,11 +66,27 @@ function HeatTile({ row, rank }: { row: McxDashboardRow; rank: number }) {
   )
 }
 
+// Highlights a predicted move by magnitude (regardless of direction) so a
+// big swing stands out at a glance, on top of the existing green/red sign
+// coloring on the % text itself: 3-5% yellow, 5-10% light blue, >10% light
+// green -- bands don't overlap (3-5% wins over 5-10%'s lower edge, etc).
+function magnitudeHighlight(pct: number): string | null {
+  const abs = Math.abs(pct)
+  if (abs > 10) return 'rgba(74, 222, 128, 0.28)'   // light green
+  if (abs > 5) return 'rgba(56, 189, 248, 0.28)'    // light blue
+  if (abs > 3) return 'rgba(250, 204, 21, 0.28)'    // yellow
+  return null
+}
+
 function PredictedCell({ predicted, ltp }: { predicted: number | null; ltp: number | null }) {
   if (predicted === null) return <span style={{ color: '#94a3b8' }}>—</span>
   const pct = ltp ? ((predicted - ltp) / ltp) * 100 : null
+  const highlight = pct !== null ? magnitudeHighlight(pct) : null
   return (
-    <span style={{ color: '#94a3b8' }}>
+    <span
+      className="rounded px-1.5 py-0.5"
+      style={{ color: '#94a3b8', background: highlight ?? undefined }}
+    >
       {fmtPrice(predicted)}
       {pct !== null && (
         <span style={{ color: pct >= 0 ? '#22c55e' : '#ef4444' }}>
@@ -87,6 +103,9 @@ const PRED_COLS: { key: keyof McxDashboardRow['predicted']; label: string }[] = 
   { key: '15m', label: '15m' },
   { key: '30m', label: '30m' },
   { key: '1h', label: '1H' },
+  { key: '4h', label: '4H' },
+  { key: '6h', label: '6H' },
+  { key: '8h', label: '8H' },
 ]
 
 function RankRow({ row, rank }: { row: McxDashboardRow; rank: number }) {
@@ -239,7 +258,7 @@ export default function MyTradingDashboardView() {
                         </span>
                       </th>
                     ))}
-                    {['AI Score', 'Signal', '1m', '5m', '15m', '30m', '1H'].map(h => (
+                    {['AI Score', 'Signal', '1m', '5m', '15m', '30m', '1H', '4H', '6H', '8H'].map(h => (
                       <th key={h} className="whitespace-nowrap px-2 py-2 text-center font-semibold">{h}</th>
                     ))}
                   </tr>
@@ -251,7 +270,7 @@ export default function MyTradingDashboardView() {
             </div>
 
             <p className="mt-4 text-xs" style={{ color: '#64748b' }}>
-              Predicted prices (1m/5m/15m/30m/1H) are the NG-AI Pro / Metals-AI Pro local heuristic
+              Predicted prices (1m/5m/15m/30m/1H/4H/6H/8H) are the NG-AI Pro / Metals-AI Pro local heuristic
               (EMA slope + ROC momentum + ATR cone, not a trained model) — see the{' '}
               <a href="/mcx" className="font-medium text-indigo-400 hover:underline">Natural Gas</a>{' '}
               or{' '}

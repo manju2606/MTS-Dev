@@ -10,7 +10,10 @@ import type {
   CryptoQuote, CryptoCoin, CryptoOhlcPeriod, CryptoRankedPeriod, CryptoRankedRow, HistoryBar, ChartPeriod,
 } from '@/lib/api'
 import type { PredictionPoint } from '@/components/price-chart'
+import { readPageCache, writePageCache } from '@/lib/page-cache'
 
+const QUOTES_CACHE_KEY = 'crypto:quotes'
+const RANKED_CACHE_KEY = 'crypto:ranked'
 const QUOTES_POLL_MS = 30_000
 const RANK_MEDALS = ['🥇', '🥈', '🥉']
 
@@ -178,7 +181,9 @@ export default function CryptoView() {
     const token = tokenRef.current
     if (!token) return
     try {
-      setQuotes(await getCryptoQuotes(token))
+      const res = await getCryptoQuotes(token)
+      setQuotes(res)
+      writePageCache(QUOTES_CACHE_KEY, res)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to load crypto quotes')
     }
@@ -190,6 +195,7 @@ export default function CryptoView() {
     try {
       const res = await getCryptoRanked(token)
       setRanked(res.ranked)
+      writePageCache(RANKED_CACHE_KEY, res.ranked)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to load ranked predictions')
       // Without this, a failed request leaves `ranked` at its initial null
@@ -221,6 +227,19 @@ export default function CryptoView() {
 
   useEffect(() => {
     tokenRef.current = localStorage.getItem('mts_token') ?? ''
+    // Show the last-known quotes/ranked table instantly (from a previous
+    // visit) instead of a blank spinner, then loadQuotes/loadRanked below
+    // fetch fresh data in the background and overwrite both state and
+    // the cache. Deferred a microtask so the setState calls aren't
+    // synchronous within the effect body (react-hooks/set-state-in-effect).
+    const cachedQuotes = readPageCache<CryptoQuote[]>(QUOTES_CACHE_KEY)
+    const cachedRanked = readPageCache<CryptoRankedRow[]>(RANKED_CACHE_KEY)
+    if (cachedQuotes || cachedRanked) {
+      Promise.resolve().then(() => {
+        if (cachedQuotes) setQuotes(cachedQuotes)
+        if (cachedRanked) setRanked(cachedRanked)
+      })
+    }
     loadQuotes().catch(() => {})
     loadRanked().catch(() => {})
     const id = setInterval(() => {

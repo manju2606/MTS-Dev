@@ -2,11 +2,29 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NavBar } from '@/components/nav-bar'
-import { getInternationalMarketDashboard } from '@/lib/api'
-import type { InternationalMarketRow, InternationalMarketSignal, InternationalMarketTrend } from '@/lib/api'
+import { getInternationalMarketDashboard, getInternationalMarketPrediction } from '@/lib/api'
+import type {
+  InternationalMarketDashboard, InternationalMarketPrediction, InternationalMarketPredictionPeriod,
+  InternationalMarketRow, InternationalMarketSignal, InternationalMarketTrend,
+} from '@/lib/api'
+import { readPageCache, writePageCache } from '@/lib/page-cache'
+
+const DASHBOARD_CACHE_KEY = 'international-market:dashboard'
+const PREDICTION_CACHE_KEY_PREFIX = 'international-market:prediction:'
+const SELECTED_CODE_CACHE_KEY = 'international-market:selected-code'
 
 const POLL_MS = 30_000
 const RANK_MEDALS = ['🥇', '🥈', '🥉']
+
+// The 9 timeframes AI Prediction covers, in display order -- matches
+// global_indices_prediction_service.PREDICTION_PERIODS' keys.
+const PREDICTION_PERIODS: InternationalMarketPredictionPeriod[] = [
+  '5m', '15m', '30m', '1h', '4h', '8h', '1D', '1W', '1M',
+]
+const PREDICTION_LABELS: Record<InternationalMarketPredictionPeriod, string> = {
+  '5m': '5m', '15m': '15m', '30m': '30m', '1h': '1H', '4h': '4H', '8h': '8H',
+  '1D': '1D', '1W': '1W', '1M': '1M',
+}
 
 // Broad region buckets the dashboard sections by -- matches
 // global_indices_service.TRACKED_INDICES' `group` field. Display order,
@@ -234,12 +252,104 @@ function LiveMetricsPanel({ row }: { row: InternationalMarketRow }) {
   )
 }
 
+// Magnitude highlight (independent of sign): >3-5% yellow, >5-10% light
+// blue, >10% light green -- same bands as My Trading Dashboard/Crypto/USA
+// Stocks' predicted-price cells.
+function magnitudeHighlight(pct: number): string | null {
+  const abs = Math.abs(pct)
+  if (abs > 10) return '#4ade80'
+  if (abs > 5) return '#38bdf8'
+  if (abs > 3) return '#facc15'
+  return null
+}
+
+function PredictionCard({ period, point }: { period: InternationalMarketPredictionPeriod; point: InternationalMarketPrediction['predicted'][InternationalMarketPredictionPeriod] }) {
+  if (!point) {
+    return (
+      <div className="rounded-lg px-3 py-2 text-center" style={{ background: '#0f1830' }}>
+        <p className="text-[10px] uppercase tracking-wide" style={{ color: '#64748b' }}>{PREDICTION_LABELS[period]}</p>
+        <p className="mt-1 text-xs" style={{ color: '#64748b' }}>—</p>
+      </div>
+    )
+  }
+  const highlight = magnitudeHighlight(point.pct_change)
+  return (
+    <div
+      className="rounded-lg px-3 py-2 text-center"
+      style={{ background: highlight ?? '#0f1830', color: highlight ? '#0b1220' : undefined }}
+    >
+      <p
+        className="text-[10px] uppercase tracking-wide"
+        style={{ color: highlight ? '#0b1220' : '#64748b', opacity: highlight ? 0.7 : 1 }}
+      >
+        {PREDICTION_LABELS[period]}
+      </p>
+      <p className="mt-1 text-sm font-bold">{fmtLevel(point.predicted_close)}</p>
+      <p
+        className="text-xs font-semibold"
+        style={{ color: highlight ? '#0b1220' : (point.pct_change >= 0 ? '#22c55e' : '#ef4444') }}
+      >
+        {point.pct_change >= 0 ? '+' : ''}{point.pct_change.toFixed(2)}%
+      </p>
+    </div>
+  )
+}
+
+function AIPredictionPanel({
+  name, region, prediction, loading, error,
+}: { name: string; region: string; prediction: InternationalMarketPrediction | null; loading: boolean; error: string | null }) {
+  return (
+    <div className="mb-8 rounded-xl p-4" style={{ background: '#141d33' }}>
+      <h3 className="mb-3 text-base font-bold">
+        🤖 AI Prediction &mdash; {name} <span className="font-normal" style={{ color: '#64748b' }}>({region})</span>
+      </h3>
+      {error && (
+        <div className="mb-3 rounded-lg px-3 py-2 text-xs" style={{ background: '#450a0a', color: '#fca5a5' }}>{error}</div>
+      )}
+      {loading && !prediction ? (
+        <div className="flex justify-center py-6">
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
+        </div>
+      ) : prediction ? (
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-9">
+          {PREDICTION_PERIODS.map(period => (
+            <PredictionCard key={period} period={period} point={prediction.predicted[period]} />
+          ))}
+        </div>
+      ) : null}
+      <p className="mt-3 text-[10px]" style={{ color: '#475569' }}>
+        Same local heuristic as Trend/AI Score (EMA slope + ROC momentum + ATR cone), not a trained model. 4H/8H
+        have no native candle source -- extrapolated from 1H candles instead of MCX-style real resampling (MCX
+        itself doesn&apos;t truly resample for these periods either, just spaces predictions further apart).
+      </p>
+    </div>
+  )
+}
+
 export default function InternationalMarketView() {
   const [data, setData] = useState<{ generated_at: string; period: string; method: string } | null>(null)
   const [ranked, setRanked] = useState<InternationalMarketRow[] | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [selectedCode, setSelectedCode] = useState<string | null>(null)
+  const [prediction, setPrediction] = useState<InternationalMarketPrediction | null>(null)
+  const [predictionLoading, setPredictionLoading] = useState(false)
+  const [predictionErr, setPredictionErr] = useState<string | null>(null)
   const tokenRef = useRef('')
+
+  // Prefers whatever's already selected, then the last selection cached
+  // from a previous visit (as long as it's still in this dashboard's
+  // rows), then falls back to the top-ranked row.
+  const defaultSelectedCode = useCallback((prev: string | null, rows: InternationalMarketRow[]) => {
+    if (prev) return prev
+    const cachedCode = readPageCache<string>(SELECTED_CODE_CACHE_KEY)
+    if (cachedCode && rows.some(r => r.code === cachedCode)) return cachedCode
+    return rows[0]?.code ?? null
+  }, [])
+
+  const selectCode = useCallback((code: string) => {
+    setSelectedCode(code)
+    writePageCache(SELECTED_CODE_CACHE_KEY, code)
+  }, [])
 
   const load = useCallback(async () => {
     const token = tokenRef.current
@@ -248,19 +358,52 @@ export default function InternationalMarketView() {
       const res = await getInternationalMarketDashboard(token)
       setData({ generated_at: res.generated_at, period: res.period, method: res.method })
       setRanked(res.ranked)
-      setSelectedCode(prev => prev ?? res.ranked[0]?.code ?? null)
+      setSelectedCode(prev => defaultSelectedCode(prev, res.ranked))
+      writePageCache(DASHBOARD_CACHE_KEY, res)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to load International Market dashboard')
       setRanked(prev => prev ?? [])
     }
-  }, [])
+  }, [defaultSelectedCode])
 
   useEffect(() => {
     tokenRef.current = localStorage.getItem('mts_token') ?? ''
+    // Show the last-known dashboard instantly (from a previous visit)
+    // instead of a blank spinner, then load() below fetches fresh data
+    // in the background and overwrites both state and the cache. The
+    // setState calls are deferred a microtask so they're not synchronous
+    // within the effect body (react-hooks/set-state-in-effect).
+    const cached = readPageCache<InternationalMarketDashboard>(DASHBOARD_CACHE_KEY)
+    if (cached) {
+      Promise.resolve().then(() => {
+        setData({ generated_at: cached.generated_at, period: cached.period, method: cached.method })
+        setRanked(cached.ranked)
+        setSelectedCode(prev => defaultSelectedCode(prev, cached.ranked))
+      })
+    }
     load().catch(() => {})
     const id = setInterval(() => { load().catch(() => {}) }, POLL_MS)
     return () => clearInterval(id)
-  }, [load])
+  }, [load, defaultSelectedCode])
+
+  useEffect(() => {
+    const token = tokenRef.current
+    if (!token || !selectedCode) return
+    // Show the last-known prediction for this index instantly (from a
+    // previous visit) instead of a blank spinner, then the fetch below
+    // refreshes it in the background and overwrites both state and the
+    // cache. Deferred a microtask so the cache-read setState isn't
+    // synchronous within the effect body (react-hooks/set-state-in-effect).
+    const cacheKey = `${PREDICTION_CACHE_KEY_PREFIX}${selectedCode}`
+    const cached = readPageCache<InternationalMarketPrediction>(cacheKey)
+    if (cached) Promise.resolve().then(() => setPrediction(cached))
+    setPredictionLoading(true)
+    setPredictionErr(null)
+    getInternationalMarketPrediction(token, selectedCode)
+      .then(res => { setPrediction(res); writePageCache(cacheKey, res) })
+      .catch(e => setPredictionErr(e instanceof Error ? e.message : 'Failed to load AI Prediction'))
+      .finally(() => setPredictionLoading(false))
+  }, [selectedCode])
 
   const rows = useMemo(() => ranked ?? [], [ranked])
   const selectedRow = useMemo(() => rows.find(r => r.code === selectedCode) ?? null, [rows, selectedCode])
@@ -289,7 +432,7 @@ export default function InternationalMarketView() {
 
   return (
     <div className="min-h-screen" style={{ background: '#0b1220', color: '#eef2ff' }}>
-      <NavBar active="International Market" />
+      <NavBar active="Global Indices" />
 
       <div
         className="px-4 py-4 text-center text-xl font-bold sm:text-2xl"
@@ -341,11 +484,17 @@ export default function InternationalMarketView() {
         ) : (
           <>
             {selectedRow && <LiveMetricsPanel row={selectedRow} />}
+            {selectedRow && (
+              <AIPredictionPanel
+                name={selectedRow.name} region={selectedRow.region}
+                prediction={prediction} loading={predictionLoading} error={predictionErr}
+              />
+            )}
 
             {grouped.map(({ group, rows: groupRows }) => (
               <RegionSection
                 key={group} group={group} rows={groupRows}
-                selectedCode={selectedCode} onSelect={setSelectedCode}
+                selectedCode={selectedCode} onSelect={selectCode}
               />
             ))}
 

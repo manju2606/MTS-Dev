@@ -11,7 +11,10 @@ import type {
 } from '@/lib/api'
 import type { PredictionPoint } from '@/components/price-chart'
 import { USA_STOCK_DIRECTORY } from '@/lib/usa-stock-directory'
+import { readPageCache, writePageCache } from '@/lib/page-cache'
 
+const QUOTES_CACHE_KEY = 'usa-stocks:quotes'
+const RANKED_CACHE_KEY = 'usa-stocks:ranked'
 const QUOTES_POLL_MS = 30_000
 const RANK_MEDALS = ['🥇', '🥈', '🥉']
 
@@ -206,7 +209,9 @@ export default function UsaStocksView() {
     const token = tokenRef.current
     if (!token) return
     try {
-      setQuotes(await getUsaStockQuotes(token))
+      const res = await getUsaStockQuotes(token)
+      setQuotes(res)
+      writePageCache(QUOTES_CACHE_KEY, res)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to load USA stock quotes')
     }
@@ -218,6 +223,7 @@ export default function UsaStocksView() {
     try {
       const res = await getUsaStockRanked(token)
       setRanked(res.ranked)
+      writePageCache(RANKED_CACHE_KEY, res.ranked)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to load ranked predictions')
       setRanked(prev => prev ?? [])
@@ -246,6 +252,19 @@ export default function UsaStocksView() {
 
   useEffect(() => {
     tokenRef.current = localStorage.getItem('mts_token') ?? ''
+    // Show the last-known quotes/ranked table instantly (from a previous
+    // visit) instead of a blank spinner, then loadQuotes/loadRanked below
+    // fetch fresh data in the background and overwrite both state and
+    // the cache. Deferred a microtask so the setState calls aren't
+    // synchronous within the effect body (react-hooks/set-state-in-effect).
+    const cachedQuotes = readPageCache<UsaStockQuote[]>(QUOTES_CACHE_KEY)
+    const cachedRanked = readPageCache<UsaStockRankedRow[]>(RANKED_CACHE_KEY)
+    if (cachedQuotes || cachedRanked) {
+      Promise.resolve().then(() => {
+        if (cachedQuotes) setQuotes(cachedQuotes)
+        if (cachedRanked) setRanked(cachedRanked)
+      })
+    }
     loadQuotes().catch(() => {})
     loadRanked().catch(() => {})
     const id = setInterval(() => {

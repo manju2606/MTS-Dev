@@ -4,7 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NavBar } from '@/components/nav-bar'
 import { getMyTradingDashboard } from '@/lib/api'
 import type { McxDashboardRow, McxRankedDashboard } from '@/lib/api'
+import { readPageCache, writePageCache } from '@/lib/page-cache'
 
+const DASHBOARD_CACHE_KEY = 'my-trading-dashboard:data'
 const POLL_MS = 20_000
 const RANK_MEDALS = ['🥇', '🥈', '🥉']
 
@@ -160,7 +162,9 @@ export default function MyTradingDashboardView() {
     const token = tokenRef.current
     if (!token) return
     try {
-      setData(await getMyTradingDashboard(token, 10))
+      const res = await getMyTradingDashboard(token, 10)
+      setData(res)
+      writePageCache(DASHBOARD_CACHE_KEY, res)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to load dashboard')
     }
@@ -168,6 +172,13 @@ export default function MyTradingDashboardView() {
 
   useEffect(() => {
     tokenRef.current = localStorage.getItem('mts_token') ?? ''
+    // Show the last-known dashboard instantly (from a previous visit)
+    // instead of a blank spinner, then load() below fetches fresh data
+    // in the background and overwrites both state and the cache.
+    // Deferred a microtask so the setState call isn't synchronous within
+    // the effect body (react-hooks/set-state-in-effect).
+    const cached = readPageCache<McxRankedDashboard>(DASHBOARD_CACHE_KEY)
+    if (cached) Promise.resolve().then(() => setData(cached))
     load().catch(() => {})
     const id = setInterval(() => { load().catch(() => {}) }, POLL_MS)
     return () => clearInterval(id)

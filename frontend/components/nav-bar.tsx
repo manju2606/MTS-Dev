@@ -130,22 +130,14 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    label: 'USA Stocks',
-    icon:  'barChart',
-    href:  '/usa-stocks',
-    roles: ['viewer', 'trader', 'admin'],
-  },
-  {
-    label: 'Crypto',
-    icon:  'trendingUp',
-    href:  '/crypto',
-    roles: ['viewer', 'trader', 'admin'],
-  },
-  {
     label: 'International Market',
     icon:  'globe',
-    href:  '/international-market',
     roles: ['viewer', 'trader', 'admin'],
+    items: [
+      { href: '/international-market', label: 'Global Indices', icon: 'globe', desc: '28 major world indices · heat map, AI Score/Trend/Signal, Live Metrics, AI Prediction' },
+      { href: '/usa-stocks', label: 'USA Stocks', icon: 'barChart', desc: 'Top 50 US stocks (NASDAQ/NYSE) · quotes, chart, AI prediction' },
+      { href: '/crypto', label: 'Crypto', icon: 'trendingUp', desc: 'Live crypto prices (₹ & $) · heat map, AI prediction' },
+    ],
   },
   {
     label: 'Portfolio',

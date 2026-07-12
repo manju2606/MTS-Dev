@@ -100,15 +100,22 @@ def _safe_float(val: object, default: float = 0.0) -> float:
     return default if math.isnan(f) else f
 
 
-def _market_status(timezone: str) -> str:
+def _market_status(
+    timezone: str, open_minutes: int = 9 * 60 + 30, close_minutes: int = 16 * 60
+) -> str:
     """Approximate open/closed status from the ticker's own exchange
-    timezone -- a blanket 09:15-16:00 local trading window, Mon-Fri (Sun-
-    Thu for Asia/Riyadh, matching Saudi Arabia's actual trading week,
-    which runs Sunday-Thursday not Monday-Friday). Doesn't account for
-    holidays or each exchange's exact hours (real hours vary by 30-90 min
-    either side of this window across different markets) -- a clearly-
-    labeled approximation, not a real trading-calendar lookup (this repo
-    has no trading-calendar dependency)."""
+    timezone -- a local trading window (09:30-16:00 by default, matching
+    NYSE/NASDAQ regular hours; callers with a different exchange pass
+    their own open_minutes/close_minutes -- see
+    global_indices_service._MARKET_HOURS, which overrides this per region
+    since a single blanket window is wrong for most non-US markets: LSE
+    opens ~08:00, Tokyo closes ~15:00, etc.), Mon-Fri (Sun-Thu for
+    Asia/Riyadh, matching Saudi Arabia's actual trading week, which runs
+    Sunday-Thursday not Monday-Friday). Doesn't account for holidays or
+    each exchange's exact hours (real hours can vary by up to ~30 min
+    either side of the configured window) -- a clearly-labeled
+    approximation, not a real trading-calendar lookup (this repo has no
+    trading-calendar dependency)."""
     try:
         now_local = datetime.now(ZoneInfo(timezone))
     except Exception:
@@ -121,11 +128,12 @@ def _market_status(timezone: str) -> str:
     if not is_trading_day:
         return "Closed"
     minutes = now_local.hour * 60 + now_local.minute
-    open_minutes, close_minutes = 9 * 60 + 15, 16 * 60
     return "Open" if open_minutes <= minutes <= close_minutes else "Closed"
 
 
-def _fetch_quote_sync(ticker: str) -> dict:
+def _fetch_quote_sync(
+    ticker: str, market_open_minutes: int = 9 * 60 + 30, market_close_minutes: int = 16 * 60
+) -> dict:
     """Blocking -- must run via loop.run_in_executor. fast_info is one
     lightweight call (~15 min delayed, same tradeoff yfinance_client.py's
     own fallback path accepts) rather than the full 1-minute-intraday-
@@ -136,7 +144,12 @@ def _fetch_quote_sync(ticker: str) -> dict:
     cap doesn't apply to an index level itself, only to companies/funds --
     but populated for individual stocks, so it's still meaningful for
     USA Stocks even though global_indices_service will mostly show "—"
-    for it."""
+    for it.
+
+    market_open_minutes/market_close_minutes default to NYSE/NASDAQ hours
+    -- global_indices_service passes each index's own region-specific
+    hours instead (see its _MARKET_HOURS table), since a single blanket
+    window is wrong for most non-US markets."""
     t = yf.Ticker(ticker)
     fi = t.fast_info
     price = _safe_float(fi.last_price)
@@ -166,7 +179,7 @@ def _fetch_quote_sync(ticker: str) -> dict:
         "market_cap": round(float(market_cap), 2) if market_cap else None,
         "gap": gap,
         "gap_pct": gap_pct,
-        "market_status": _market_status(fi.timezone),
+        "market_status": _market_status(fi.timezone, market_open_minutes, market_close_minutes),
     }
 
 

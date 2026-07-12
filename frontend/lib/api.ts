@@ -1797,6 +1797,37 @@ export async function getInternationalMarketDashboard(token: string): Promise<In
   return res.json()
 }
 
+// The 9 timeframes AI Prediction covers -- 4h/8h have no native yfinance
+// interval, extrapolated from 1h candles instead (see
+// global_indices_prediction_service.py).
+export type InternationalMarketPredictionPeriod = '5m' | '15m' | '30m' | '1h' | '4h' | '8h' | '1D' | '1W' | '1M'
+
+export type InternationalMarketPredictedPoint = {
+  predicted_close: number
+  upper: number
+  lower: number
+  pct_change: number
+}
+
+export type InternationalMarketPrediction = {
+  code: string
+  generated_at: string
+  method: string
+  predicted: Record<InternationalMarketPredictionPeriod, InternationalMarketPredictedPoint | null>
+}
+
+export async function getInternationalMarketPrediction(token: string, code: string): Promise<InternationalMarketPrediction> {
+  const res = await fetch(
+    `${BASE}/api/v1/international-market/predict?code=${encodeURIComponent(code)}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch International Market prediction')
+  }
+  return res.json()
+}
+
 export type NgGlobalSymbolRow = {
   symbol: string
   display_symbol: string

@@ -22,3 +22,16 @@ async def international_market_dashboard(current_user: CurrentUser) -> dict:
             status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"International Market dashboard unavailable: {exc}",
         ) from exc
+
+
+@router.get("/predict")
+async def international_market_predict(current_user: CurrentUser, code: str) -> dict:
+    from app.services.global_indices_prediction_service import get_all_predictions
+
+    try:
+        return await get_all_predictions(code)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"International Market prediction unavailable: {exc}",
+        ) from exc

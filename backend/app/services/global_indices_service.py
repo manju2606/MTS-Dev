@@ -95,6 +95,36 @@ TRACKED_INDICES: dict[str, dict[str, str]] = {
     "MXX": {"ticker": "^MXX", "name": "IPC Mexico", "region": "Mexico", "group": "Other"},
 }
 
+# region -> (open_minutes, close_minutes) local trading-day window --
+# passed to usa_stocks_service._fetch_quote_sync/_market_status per index
+# instead of that function's own NYSE-shaped default, since a single
+# blanket window is wrong for most non-US markets (e.g. LSE opens
+# ~08:00, Tokyo closes ~15:00, Taiwan closes ~13:30). Same caveats as
+# _market_status's own docstring: approximate, no holiday calendar,
+# real hours can vary ~30 min either side of these.
+_MARKET_HOURS: dict[str, tuple[int, int]] = {
+    "US": (9 * 60 + 30, 16 * 60),
+    "UK": (8 * 60, 16 * 60 + 30),
+    "Germany": (9 * 60, 17 * 60 + 30),
+    "France": (9 * 60, 17 * 60 + 30),
+    "Europe": (9 * 60, 17 * 60 + 30),
+    "Spain": (9 * 60, 17 * 60 + 30),
+    "Italy": (9 * 60, 17 * 60 + 30),
+    "Japan": (9 * 60, 15 * 60),
+    "Hong Kong": (9 * 60 + 30, 16 * 60),
+    "China": (9 * 60 + 30, 15 * 60),
+    "South Korea": (9 * 60, 15 * 60 + 30),
+    "Taiwan": (9 * 60, 13 * 60 + 30),
+    "Singapore": (9 * 60, 17 * 60),
+    "India": (9 * 60 + 15, 15 * 60 + 30),
+    "Saudi Arabia": (10 * 60, 15 * 60),
+    "Australia": (10 * 60, 16 * 60),
+    "New Zealand": (10 * 60, 16 * 60 + 45),
+    "Brazil": (10 * 60, 17 * 60),
+    "Mexico": (8 * 60 + 30, 15 * 60),
+}
+_DEFAULT_MARKET_HOURS = (9 * 60 + 15, 16 * 60)
+
 _REDIS_KEY_PREFIX = "global_indices:"
 _QUOTES_TTL = 30
 TREND_PERIOD = "1D"
@@ -115,7 +145,10 @@ async def get_quotes() -> list[dict]:
 
         async def _safe_fetch(code: str, info: dict[str, str]) -> dict | None:
             try:
-                quote = await loop.run_in_executor(None, _fetch_quote_sync, info["ticker"])
+                open_m, close_m = _MARKET_HOURS.get(info["region"], _DEFAULT_MARKET_HOURS)
+                quote = await loop.run_in_executor(
+                    None, _fetch_quote_sync, info["ticker"], open_m, close_m
+                )
                 quote["code"] = code
                 quote["name"] = info["name"]
                 quote["region"] = info["region"]

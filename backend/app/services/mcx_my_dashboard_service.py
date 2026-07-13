@@ -31,7 +31,7 @@ import asyncio
 from app.infra.db.repositories.mcx_prediction_repo import McxPredictionRepository
 from app.infra.db.repositories.mcx_score_cache_repo import McxScoreCacheRepository
 from app.services.mcx_metals_service import TRACKED_MCX_METALS_CONTRACTS, get_metal_quote
-from app.services.mcx_service import get_quote, get_tracked_mcx_contracts, ist_now
+from app.services.mcx_service import get_quote, ist_now
 
 PREDICTION_PERIODS = ("1m", "5m", "15m", "30m", "1h", "4h", "6h", "8h")
 
@@ -111,7 +111,12 @@ async def get_ranked_dashboard(user_id: str, limit: int = 10) -> dict:
         if c not in best_by_contract or row["score_pct"] > best_by_contract[c]["score_pct"]:
             best_by_contract[c] = row
 
-    is_metal_by_contract = {c: False for c in get_tracked_mcx_contracts()}
+    # Only the evergreen front-month "NG"/"NGMINI" -- NOT get_tracked_mcx_contracts()'s
+    # specific NG_<MON> variants (JUL/AUG/etc, tracked in the background for the
+    # /mcx page's month picker). This dashboard shows one row per commodity,
+    # same as metals (never "Gold (Aug)"); including every tracked NG month
+    # here would show up to 6 near-duplicate Natural Gas rows instead of one.
+    is_metal_by_contract = {c: False for c in ("NG", "NGMINI")}
     is_metal_by_contract.update({c: True for c in TRACKED_MCX_METALS_CONTRACTS})
 
     # Only fetch a live quote for contracts that already have a cached

@@ -18,6 +18,9 @@ import type {
   StockSearchResult, AssistantPeriodSummary, SummaryPeriod, OhlcRow,
 } from '@/lib/api'
 import { AddToWatchlistBtn } from '@/components/add-to-watchlist-btn'
+import { readPageCache, writePageCache } from '@/lib/page-cache'
+
+const ANALYSIS_CACHE_KEY = 'portfolio-assistant:analysis'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -1994,6 +1997,7 @@ export default function AssistantView() {
     setLoading(true)
     const d = await getAssistantAnalysis(token, portfolioId).catch(() => null)
     setData(d)
+    if (d) writePageCache(ANALYSIS_CACHE_KEY, d)
     setLoading(false)
   }
 
@@ -2001,6 +2005,13 @@ export default function AssistantView() {
     const t = localStorage.getItem('mts_token')
     if (!t) { router.replace('/login'); return }
     tokenRef.current = t
+    // Show the last-known portfolio overview instantly (from a previous
+    // visit, possibly a different portfolio -- corrected once the real
+    // active portfolio loads below) instead of a blank spinner. Deferred
+    // a microtask so the setState isn't synchronous within the effect
+    // body (react-hooks/set-state-in-effect).
+    const cached = readPageCache<AssistantAnalysis>(ANALYSIS_CACHE_KEY)
+    if (cached) Promise.resolve().then(() => { setData(cached); setLoading(false) })
     listWatchlists(t).then(setWatchlists).catch(() => {})
     loadPortfolios(t).then(ps => {
       const pid = ps.length > 0 ? ps[0].portfolio_id : 'default'

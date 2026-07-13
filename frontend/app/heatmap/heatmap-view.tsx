@@ -5,6 +5,9 @@ import { useRouter } from 'next/navigation'
 import { NavBar } from '@/components/nav-bar'
 import { getTopPicks } from '@/lib/api'
 import type { StockScore } from '@/lib/api'
+import { readPageCache, writePageCache } from '@/lib/page-cache'
+
+const PICKS_CACHE_KEY = 'heatmap:picks'
 
 // ── Squarified treemap ────────────────────────────────────────────────────────
 
@@ -288,8 +291,15 @@ export function HeatmapView() {
   useEffect(() => {
     const token = localStorage.getItem('mts_token')
     if (!token) { router.replace('/login'); return }
+    // Show the last-known heat map instantly (from a previous visit)
+    // instead of a blank spinner, then the fetch below refreshes it in
+    // the background and overwrites both state and the cache. Deferred
+    // a microtask so the setState isn't synchronous within the effect
+    // body (react-hooks/set-state-in-effect).
+    const cached = readPageCache<StockScore[]>(PICKS_CACHE_KEY)
+    if (cached) Promise.resolve().then(() => setPicks(cached))
     getTopPicks(token, 50, undefined, 0)
-      .then(setPicks)
+      .then(res => { setPicks(res); writePageCache(PICKS_CACHE_KEY, res) })
       .catch(() => router.replace('/login'))
   }, [router])
 

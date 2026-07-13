@@ -8,6 +8,9 @@ import {
   toggleStrategy, backtestStrategy, searchStocks,
 } from '@/lib/api'
 import type { Strategy, StrategyCondition, StrategyBacktestResult, StrategyMeta, StockSearchResult } from '@/lib/api'
+import { readPageCache, writePageCache } from '@/lib/page-cache'
+
+const STRATEGIES_CACHE_KEY = 'strategy:list'
 
 // ── Condition row ──────────────────────────────────────────────────────────────
 
@@ -340,6 +343,7 @@ export default function StrategyView() {
   const load = useCallback(async (token: string) => {
     const [m, list] = await Promise.all([getStrategyMeta(token), listStrategies(token)])
     setMeta(m); setStrategies(list)
+    writePageCache(STRATEGIES_CACHE_KEY, list)
   }, [])
 
   useEffect(() => {
@@ -347,6 +351,13 @@ export default function StrategyView() {
     if (!t) { router.replace('/login'); return }
     tokenRef.current = t
     setAuthChecked(true)
+    // Show the last-known strategy list instantly (from a previous
+    // visit) instead of a blank spinner, then load() below fetches
+    // fresh data in the background and overwrites both state and the
+    // cache. Deferred a microtask so the setState isn't synchronous
+    // within the effect body (react-hooks/set-state-in-effect).
+    const cached = readPageCache<Strategy[]>(STRATEGIES_CACHE_KEY)
+    if (cached) Promise.resolve().then(() => setStrategies(cached))
     load(t).catch(() => {})
   }, [router, load])
 

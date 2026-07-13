@@ -5,6 +5,9 @@ import { useRouter } from 'next/navigation'
 import { NavBar } from '@/components/nav-bar'
 import { getCalendarEvents } from '@/lib/api'
 import type { CalendarEvent } from '@/lib/api'
+import { readPageCache, writePageCache } from '@/lib/page-cache'
+
+const EVENTS_CACHE_KEY = 'calendar:events'
 
 const TYPE_CONFIG: Record<string, { label: string; dot: string; badge: string }> = {
   fo_expiry:      { label: 'F&O Expiry',     dot: 'bg-red-500',     badge: 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300' },
@@ -76,6 +79,7 @@ export default function CalendarView() {
     try {
       const data = await getCalendarEvents(t, fromDate, toDate)
       setEvents(data)
+      writePageCache(EVENTS_CACHE_KEY, data)
     } catch { /* ignore */ }
     finally { setLoading(false) }
   }, [fromDate, toDate])
@@ -84,6 +88,13 @@ export default function CalendarView() {
     const t = localStorage.getItem('mts_token')
     if (!t) { router.replace('/login'); return }
     tokenRef.current = t
+    // Show the last-known events instantly (from a previous visit)
+    // instead of a blank spinner, then load() below fetches fresh data
+    // in the background and overwrites both state and the cache.
+    // Deferred a microtask so the setState isn't synchronous within the
+    // effect body (react-hooks/set-state-in-effect).
+    const cached = readPageCache<CalendarEvent[]>(EVENTS_CACHE_KEY)
+    if (cached) Promise.resolve().then(() => { setEvents(cached); setLoading(false) })
     setAuthChecked(true)
     load(t)
   }, [router, load])

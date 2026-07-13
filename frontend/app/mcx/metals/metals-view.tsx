@@ -12,6 +12,9 @@ import {
 import type {
   NgQuote, McxTrade, BrokerStatus, NgAiScore, HistoryBar, ChartPeriod, McxMetalsContract, NgTrendLadder, TrendTimeframe, NgRangeStats, NgPrediction, NgPredictionHistoryPoint, NgPredictionAccuracy, PredictionPeriod, NgDashboardSnapshot, NgSignalsResponse, NgSessionOpenReference, NgNewsResponse,
 } from '@/lib/api'
+import { readPageCache, writePageCache } from '@/lib/page-cache'
+
+const QUOTE_CACHE_KEY_PREFIX = 'mcx-metals:quote:'
 
 function cls(...args: (string | false | null | undefined)[]) { return args.filter(Boolean).join(' ') }
 function pnlColor(v: number) { return v > 0 ? 'text-emerald-600 dark:text-emerald-400' : v < 0 ? 'text-red-500 dark:text-red-400' : 'text-zinc-500' }
@@ -1827,7 +1830,10 @@ export default function McxMetalsView() {
     const t = tokenRef.current
     if (!t) return
     getMetalQuote(t, contract)
-      .then(q => { setQuote(q); setQuoteError(null); setQuoteLoading(false) })
+      .then(q => {
+        setQuote(q); setQuoteError(null); setQuoteLoading(false)
+        writePageCache(`${QUOTE_CACHE_KEY_PREFIX}${contract}`, q)
+      })
       .catch(err => { setQuoteError(err instanceof Error ? err.message : 'Failed to load MCX quote'); setQuoteLoading(false) })
   }, [contract])
 
@@ -1842,12 +1848,19 @@ export default function McxMetalsView() {
     const t = localStorage.getItem('mts_token')
     if (!t) { router.replace('/login'); return }
     tokenRef.current = t
+    // Show the last-known quote instantly (from a previous visit)
+    // instead of a blank spinner, then loadQuote() below fetches fresh
+    // data in the background and overwrites both state and the cache.
+    // Deferred a microtask so the setState isn't synchronous within the
+    // effect body (react-hooks/set-state-in-effect).
+    const cached = readPageCache<NgQuote>(`${QUOTE_CACHE_KEY_PREFIX}${contract}`)
+    if (cached) Promise.resolve().then(() => { setQuote(cached); setQuoteLoading(false) })
     getBrokerStatus(t).then(setBroker).catch(() => null)
     loadQuote()
     loadTrades()
     const id = setInterval(loadQuote, 5_000)
     return () => clearInterval(id)
-  }, [router, loadQuote, loadTrades])
+  }, [router, loadQuote, loadTrades, contract])
 
   useEffect(() => {
     const t = localStorage.getItem('mts_token')

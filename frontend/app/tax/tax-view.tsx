@@ -5,6 +5,9 @@ import { useRouter } from 'next/navigation'
 import { NavBar } from '@/components/nav-bar'
 import { getTaxReport, exportTaxCsv } from '@/lib/api'
 import type { TaxReport, TaxTrade } from '@/lib/api'
+import { readPageCache, writePageCache } from '@/lib/page-cache'
+
+const REPORT_CACHE_KEY_PREFIX = 'tax:report:'
 
 const CURRENT_FY = (() => {
   const now = new Date()
@@ -155,6 +158,7 @@ export default function TaxView() {
     try {
       const data = await getTaxReport(t, fyParam, modeParam)
       setReport(data)
+      writePageCache(`${REPORT_CACHE_KEY_PREFIX}${fyParam}:${modeParam}`, data)
     } catch (e) {
       console.error(e)
     } finally {
@@ -167,6 +171,13 @@ export default function TaxView() {
     if (!t) { router.replace('/login'); return }
     tokenRef.current = t
     setAuthChecked(true)
+    // Show the last-known report for this FY/mode instantly (from a
+    // previous visit) instead of a blank spinner, then load() below
+    // fetches fresh data in the background and overwrites both state
+    // and the cache. Deferred a microtask so the setState isn't
+    // synchronous within the effect body (react-hooks/set-state-in-effect).
+    const cached = readPageCache<TaxReport>(`${REPORT_CACHE_KEY_PREFIX}${fy}:${mode}`)
+    if (cached) Promise.resolve().then(() => setReport(cached))
     load(t, fy, mode)
   }, [router, load, fy, mode])
 

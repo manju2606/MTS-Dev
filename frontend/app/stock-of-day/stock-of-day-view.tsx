@@ -9,6 +9,9 @@ import {
 } from '@/lib/api'
 import type { SotDJournalEntry, StockOfDay, Watchlist } from '@/lib/api'
 import { AddToWatchlistBtn } from '@/components/add-to-watchlist-btn'
+import { readPageCache, writePageCache } from '@/lib/page-cache'
+
+const TODAY_CACHE_KEY = 'stock-of-day:today'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -438,6 +441,7 @@ export function StockOfDayView() {
         getSotDHistory(token, 30),
       ])
       setToday(todayRes.data)
+      writePageCache(TODAY_CACHE_KEY, todayRes.data)
       setHistory(histRes)
 
       if (todayRes.data) {
@@ -477,6 +481,13 @@ export function StockOfDayView() {
     const t = localStorage.getItem('mts_token') ?? ''
     tokenRef.current = t
     listWatchlists(t).then(setWatchlists).catch(() => {})
+    // Show the last-known pick instantly (from a previous visit) instead
+    // of a blank spinner, then load() below fetches fresh data in the
+    // background and overwrites both state and the cache. Deferred a
+    // microtask so the setState isn't synchronous within the effect body
+    // (react-hooks/set-state-in-effect).
+    const cached = readPageCache<StockOfDay>(TODAY_CACHE_KEY)
+    if (cached) Promise.resolve().then(() => setToday(cached))
     load()
   }, [])
 

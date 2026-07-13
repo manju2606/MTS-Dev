@@ -8,6 +8,9 @@ import {
   generateSentimentForecast, triggerSentimentSnapshot,
 } from '@/lib/api'
 import type { WeeklySentimentForecast } from '@/lib/api'
+import { readPageCache, writePageCache } from '@/lib/page-cache'
+
+const FORECAST_CACHE_KEY = 'sentiment-forecast:forecast'
 
 const LABEL_STYLES: Record<string, string> = {
   Bullish:              'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300',
@@ -169,6 +172,7 @@ export function SentimentForecastView() {
         getSentimentForecastHistory(token, 12),
       ])
       setForecast(f)
+      if (f) writePageCache(FORECAST_CACHE_KEY, f)
       setHistory(h)
       if (!f) setError('No forecast generated for this week yet.')
     } catch (e) {
@@ -188,6 +192,13 @@ export function SentimentForecastView() {
     } catch {
       setUserRole('')
     }
+    // Show the last-known forecast instantly (from a previous visit)
+    // instead of a blank spinner, then load() below fetches fresh data
+    // in the background and overwrites both state and the cache.
+    // Deferred a microtask so the setState isn't synchronous within the
+    // effect body (react-hooks/set-state-in-effect).
+    const cached = readPageCache<WeeklySentimentForecast>(FORECAST_CACHE_KEY)
+    if (cached) Promise.resolve().then(() => { setForecast(cached); setLoading(false) })
     load(token)
   }, [router])
 

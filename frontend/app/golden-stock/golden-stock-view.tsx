@@ -12,6 +12,9 @@ import {
   listWatchlists,
 } from '@/lib/api'
 import type { IntradayCandidate, GoldenStockScan, GoldenStockHistoryItem, Watchlist } from '@/lib/api'
+import { readPageCache, writePageCache } from '@/lib/page-cache'
+
+const SCAN_CACHE_KEY = 'golden-stock:scan'
 
 function fmt(n: number) {
   return n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -312,7 +315,7 @@ export function GoldenStockView() {
         getGoldenStockHistory(token, historyLimit),
         listWatchlists(token),
       ])
-      if (latestResult.status === 'fulfilled') setScan(latestResult.value)
+      if (latestResult.status === 'fulfilled') { setScan(latestResult.value); writePageCache(SCAN_CACHE_KEY, latestResult.value) }
       if (histResult.status === 'fulfilled') setHistory(histResult.value)
       if (wlResult.status === 'fulfilled') setWatchlists(wlResult.value)
     } catch (e) {
@@ -384,6 +387,13 @@ export function GoldenStockView() {
     } catch {
       setUserRole('')
     }
+    // Show the last-known scan instantly (from a previous visit) instead
+    // of a blank spinner, then load() below fetches fresh data in the
+    // background and overwrites both state and the cache. Deferred a
+    // microtask so the setState isn't synchronous within the effect body
+    // (react-hooks/set-state-in-effect).
+    const cached = readPageCache<GoldenStockScan>(SCAN_CACHE_KEY)
+    if (cached) Promise.resolve().then(() => { setScan(cached); setLoading(false) })
     load()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 

@@ -171,6 +171,42 @@ async def ng_global_symbols(current_user: CurrentUser) -> list[dict]:
     return await get_global_symbols(str(current_user.id))
 
 
+@router.get("/ng/global-history")
+async def ng_global_history(current_user: CurrentUser) -> list[dict]:
+    """Raw daily OHLCV candles for Henry Hub (NYMEX, via yfinance) -- powers
+    the "NG Global" chart tab, which (unlike ng/global-symbols) needs the
+    full candle series to draw, not a last-bar snapshot."""
+    from app.services.mcx_global_symbols_service import get_henry_hub_candles
+
+    try:
+        return await get_henry_hub_candles()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Global NG history unavailable: {exc}",
+        ) from exc
+
+
+@router.get("/ng/global-prediction")
+async def ng_global_prediction(current_user: CurrentUser) -> dict:
+    """Daily-only short-horizon forecast for Henry Hub -- same heuristic as
+    ng/predict, scoped down for a daily-only, non-Kite candle series (see
+    mcx_prediction_service.get_global_prediction)."""
+    from app.infra.db.repositories.mcx_prediction_repo import McxPredictionRepository
+    from app.services.mcx_global_symbols_service import get_henry_hub_candles
+    from app.services.mcx_prediction_service import get_global_prediction
+
+    try:
+        candles = await get_henry_hub_candles()
+        repo = McxPredictionRepository()
+        return await get_global_prediction(candles, repo)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Global NG prediction unavailable: {exc}",
+        ) from exc
+
+
 @router.get("/ng/news")
 async def ng_news(current_user: CurrentUser, limit: int = 20) -> dict:
     """Recent international NG/energy news (OilPrice.com, Investing.com
@@ -224,6 +260,18 @@ async def mcx_backtest(current_user: CurrentUser) -> dict:
 
     repo = McxSignalRepository()
     return await get_backtest_report(repo)
+
+
+@router.get("/ng/trend-history")
+async def ng_trend_history(
+    current_user: CurrentUser, contract: McxContract = "NG", limit: int = 50
+) -> list[dict]:
+    """Past trend-change alert emails actually sent for this contract (see
+    mcx_trend_service.get_trend_change_history) -- lets the Trend tab show
+    what fired, not just the live ladder."""
+    from app.services.mcx_trend_service import get_trend_change_history
+
+    return await get_trend_change_history(str(current_user.id), contract, limit)
 
 
 @router.get("/ng/range-stats")

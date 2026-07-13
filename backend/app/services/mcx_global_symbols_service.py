@@ -30,6 +30,7 @@ next-event is left blank rather than guessed.
 from __future__ import annotations
 
 import asyncio
+import math
 from datetime import datetime, timedelta
 from functools import partial
 from zoneinfo import ZoneInfo
@@ -74,16 +75,29 @@ def _fetch_yf_daily_sync(ticker: str) -> list[dict]:
 
     hist = yf.Ticker(ticker).history(period="6mo", interval="1d", auto_adjust=True)
     out = []
-    for _idx, row in hist.iterrows():
+    for idx, row in hist.iterrows():
         out.append(
             {
+                "time": int(idx.timestamp()),
                 "open": float(row["Open"]),
                 "high": float(row["High"]),
                 "low": float(row["Low"]),
                 "close": float(row["Close"]),
+                "volume": int(row["Volume"]) if not math.isnan(row["Volume"]) else 0,
             }
         )
     return out
+
+
+async def get_henry_hub_candles() -> list[dict]:
+    """Raw daily OHLCV candles for Henry Hub (NYMEX, via yfinance "NG=F") --
+    the same fetch _global_ticker_row already does for its snapshot row, just
+    returning the full series instead of collapsing it to a last-bar summary.
+    Powers the "NG Global" chart tab (frontend/components/ng-global-chart.tsx),
+    which needs actual candles to draw rather than a single quote."""
+    loop = asyncio.get_event_loop()
+    ticker = _GLOBAL_TICKERS["henry_hub"]["ticker"]
+    return await loop.run_in_executor(None, partial(_fetch_yf_daily_sync, ticker))
 
 
 async def _global_ticker_row(key: str, cfg: dict[str, str]) -> dict:

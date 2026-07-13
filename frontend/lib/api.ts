@@ -1427,6 +1427,15 @@ export async function getNgGlobalSymbolsHistory(
   return res.json()
 }
 
+export async function getNgGlobalHistory(token: string): Promise<HistoryBar[]> {
+  const res = await fetch(`${BASE}/api/v1/mcx/ng/global-history`, { headers: authHeaders(token) })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch global NG history')
+  }
+  return res.json()
+}
+
 export type NgTradeSignal = {
   direction: 'BUY' | 'SELL'
   tradingsymbol: string | null
@@ -1932,6 +1941,15 @@ export async function getNgPrediction(
   return res.json()
 }
 
+export async function getNgGlobalPrediction(token: string): Promise<NgPrediction> {
+  const res = await fetch(`${BASE}/api/v1/mcx/ng/global-prediction`, { headers: authHeaders(token) })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch global NG prediction')
+  }
+  return res.json()
+}
+
 export type NgPredictionArchive = {
   contract: string
   period: string
@@ -1976,6 +1994,39 @@ export async function getNgTrend(token: string, contract: McxContract = 'NG'): P
   if (!res.ok) {
     const b = await res.json().catch(() => ({}))
     throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch MCX trend')
+  }
+  return res.json()
+}
+
+// One trend-change alert email actually sent (see mcx_trend_service.py's
+// McxTrendHistoryRepository) -- `changes` only ever contains JUST_CHANGED
+// entries, since WEAKENING triggers an in-app notification but not an email.
+export type NgTrendChangeEntry = {
+  contract: string
+  tradingsymbol: string
+  changes: {
+    timeframe: string
+    state: string
+    direction: string
+    strength: number
+    previous_direction: string | null
+  }[]
+  subject: string
+  sent_at: string
+}
+
+export async function getNgTrendHistory(
+  token: string,
+  contract: McxContract = 'NG',
+  limit = 50,
+): Promise<NgTrendChangeEntry[]> {
+  const res = await fetch(
+    `${BASE}/api/v1/mcx/ng/trend-history?contract=${contract}&limit=${limit}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch trend change history')
   }
   return res.json()
 }

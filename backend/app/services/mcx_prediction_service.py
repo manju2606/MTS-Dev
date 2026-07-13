@@ -516,6 +516,87 @@ def _serialize_history(docs: list[dict]) -> list[dict]:
     ]
 
 
+GLOBAL_PREDICTION_HORIZON_DAYS = 10
+MIN_CANDLES_GLOBAL = 25
+# Henry Hub (and any future global-symbol) predictions are stored under this
+# fixed pseudo-user -- unlike MCX contracts, this data isn't tied to any
+# user's own Kite session (it's the same public yfinance series for
+# everyone), so sharing one prediction/accuracy trail across all users avoids
+# redundant duplicate computation and gives the accuracy stat a larger
+# sample faster than partitioning it per-user would.
+GLOBAL_PREDICTION_USER = "global"
+
+
+async def get_global_prediction(
+    candles: list[dict], repo: McxPredictionRepository, key: str = "NG_GLOBAL"
+) -> dict:
+    """Daily-only short-horizon forecast for a non-MCX candle series (e.g.
+    yfinance Henry Hub) -- the same EMA-slope + ROC-momentum + ATR-cone
+    heuristic as get_prediction, but without that function's MCX-specific
+    machinery: no Kite live-quote anchor (global data updates once a day, not
+    tick-by-tick), no intraday session-grid bucketing, no cross-period
+    recalibration sync (there's only ever one period here, "1D"). `key`
+    namespaces the prediction/accuracy trail in Mongo (reuses the same
+    McxPredictionRepository -- it's keyed on (user_id, contract, period) as
+    plain strings, so a distinct `key` here can't collide with any real MCX
+    contract's own predictions).
+    """
+    period = "1D"
+    await repo.resolve_pending(GLOBAL_PREDICTION_USER, key, period, candles)
+    accuracy = await repo.get_accuracy_stats(GLOBAL_PREDICTION_USER, key, period)
+
+    if len(candles) < MIN_CANDLES_GLOBAL:
+        return {
+            "contract": key,
+            "period": period,
+            "predicted": [],
+            "history": _serialize_history(
+                await repo.get_recent(GLOBAL_PREDICTION_USER, key, period)
+            ),
+            "accuracy": accuracy,
+            "method": "ema20-slope + roc-momentum + atr-cone (local heuristic, not TimesFM)",
+            "note": (
+                f"Need at least {MIN_CANDLES_GLOBAL} daily candles for a forecast "
+                f"(have {len(candles)})."
+            ),
+        }
+
+    last_time = int(candles[-1]["time"])
+    last_close = float(candles[-1]["close"])
+    slope, _momentum, atr_val, conviction = _slope_momentum_atr(candles)
+
+    predicted = []
+    day_seconds = 86400
+    for i in range(1, GLOBAL_PREDICTION_HORIZON_DAYS + 1):
+        proj_close = last_close + slope * i * conviction
+        band = atr_val * (i**0.5)
+        predicted.append(
+            {
+                "time": last_time + i * day_seconds,
+                "predicted_close": round(proj_close, 2),
+                "upper": round(proj_close + band, 2),
+                "lower": round(proj_close - band, 2),
+            }
+        )
+
+    await repo.save_predictions(GLOBAL_PREDICTION_USER, key, period, predicted)
+    history = _serialize_history(
+        await repo.get_recent(GLOBAL_PREDICTION_USER, key, period, limit=200)
+    )
+
+    return {
+        "contract": key,
+        "period": period,
+        "generated_at": datetime.utcnow().isoformat(),
+        "last_actual_time": last_time,
+        "last_actual_close": round(last_close, 2),
+        "predicted": predicted,
+        "history": history,
+        "accuracy": accuracy,
+        "method": "ema20-slope + roc-momentum + atr-cone (local heuristic, not TimesFM)",
+    }
+
+
 async def get_archived_day(
     user_id: str, contract: str, period: str, date_str: str, repo: McxPredictionRepository
 ) -> dict:

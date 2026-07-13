@@ -5,12 +5,13 @@ import type { ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { NavBar } from '@/components/nav-bar'
 import { PriceChart } from '@/components/price-chart'
+import { NgGlobalChart } from '@/components/ng-global-chart'
 import type { AILevels, RefLine, PredictionPoint } from '@/components/price-chart'
 import {
-  getNgQuote, listNgTrades, placeNgTrade, closeNgTrade, cancelNgTrade, getBrokerStatus, getNgAiScore, getNgHistory, getNgTrend, getNgRangeStats, getNgPrediction, getNgPredictionArchive, getNgDashboardHistory, getNgSignals, getNgGlobalSymbols, getNgGlobalSymbolsHistory, getNgNews, getMe, ApiError,
+  getNgQuote, listNgTrades, placeNgTrade, closeNgTrade, cancelNgTrade, getBrokerStatus, getNgAiScore, getNgHistory, getNgTrend, getNgTrendHistory, getNgRangeStats, getNgPrediction, getNgPredictionArchive, getNgDashboardHistory, getNgSignals, getNgGlobalSymbols, getNgGlobalSymbolsHistory, getNgNews, getMe, ApiError,
 } from '@/lib/api'
 import type {
-  NgQuote, McxTrade, BrokerStatus, NgAiScore, HistoryBar, ChartPeriod, McxContract, NgTrendLadder, TrendTimeframe, NgRangeStats, NgPrediction, NgPredictionHistoryPoint, NgPredictionAccuracy, PredictionPeriod, NgDashboardSnapshot, NgSignalsResponse, NgGlobalSymbolRow, NgGlobalSymbolSnapshot, NgSessionOpenReference, NgNewsResponse,
+  NgQuote, McxTrade, BrokerStatus, NgAiScore, HistoryBar, ChartPeriod, McxContract, NgTrendLadder, TrendTimeframe, NgTrendChangeEntry, NgRangeStats, NgPrediction, NgPredictionHistoryPoint, NgPredictionAccuracy, PredictionPeriod, NgDashboardSnapshot, NgSignalsResponse, NgGlobalSymbolRow, NgGlobalSymbolSnapshot, NgSessionOpenReference, NgNewsResponse,
 } from '@/lib/api'
 import { readPageCache, writePageCache } from '@/lib/page-cache'
 
@@ -23,7 +24,7 @@ function pnlColor(v: number) { return v > 0 ? 'text-emerald-600 dark:text-emeral
 // highlighted for any NG expiry, not just the exact front-month value.
 function isNgProduct(c: McxContract) { return c === 'NG' || c.startsWith('NG_') }
 
-type Tab = 'dashboard' | 'chart' | 'trend' | 'ai' | 'trade' | 'portfolio'
+type Tab = 'dashboard' | 'chart' | 'ng-global' | 'trend' | 'ai' | 'trade' | 'portfolio'
 
 const CONTRACTS: { id: McxContract; label: string }[] = [
   { id: 'NG', label: 'Natural Gas' },
@@ -1776,6 +1777,88 @@ function TrendRow({ timeframe, data }: { timeframe: string; data: TrendTimeframe
   )
 }
 
+// Past trend-change alert emails actually sent (see mcx_trend_service.py's
+// McxTrendHistoryRepository) -- only JUST_CHANGED flips ever appear here,
+// since WEAKENING only fires an in-app notification, not an email.
+function TrendChangeHistory({ contract }: { contract: McxContract }) {
+  const [entries, setEntries] = useState<NgTrendChangeEntry[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  function load() {
+    const t = localStorage.getItem('mts_token') ?? ''
+    if (!t) return
+    setLoading(true); setError(null)
+    getNgTrendHistory(t, contract)
+      .then(setEntries)
+      .catch(err => setError(err instanceof Error ? err.message : 'Failed to load trend history'))
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contract])
+
+  return (
+    <CollapsibleCard
+      title="Trend Change Email History"
+      defaultOpen={false}
+      subtitle={
+        <button onClick={load} className="text-xs font-semibold text-indigo-600 hover:underline dark:text-indigo-400">
+          Refresh
+        </button>
+      }
+    >
+      {loading && entries.length === 0 ? (
+        <div className="h-24 animate-pulse bg-zinc-50 dark:bg-zinc-800/40" />
+      ) : error ? (
+        <p className="px-4 py-6 text-center text-sm text-amber-700 dark:text-amber-400">{error}</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/60">
+                {['Sent At', 'Timeframe', 'Change', 'Strength', 'Subject'].map(h => (
+                  <th key={h} className="px-3 py-2 text-left font-medium text-zinc-500">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800">
+              {entries.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-3 py-8 text-center text-zinc-400">
+                    No trend-change emails sent yet — one goes out the next time a timeframe's trend actually
+                    flips (checked every 15 minutes during market hours).
+                  </td>
+                </tr>
+              ) : (
+                entries.flatMap(entry =>
+                  entry.changes.map((c, i) => (
+                    <tr key={`${entry.sent_at}-${c.timeframe}`} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
+                      <td className="px-3 py-2.5 font-mono text-zinc-500">
+                        {i === 0
+                          ? new Date(entry.sent_at + 'Z').toLocaleString('en-IN', {
+                              timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+                            })
+                          : ''}
+                      </td>
+                      <td className="px-3 py-2.5 font-semibold text-zinc-900 dark:text-zinc-50">{c.timeframe}</td>
+                      <td className="px-3 py-2.5">{c.previous_direction ?? '—'} &rarr; <strong>{c.direction}</strong></td>
+                      <td className="px-3 py-2.5 font-mono">{c.strength}</td>
+                      <td className="px-3 py-2.5 text-zinc-500">{i === 0 ? entry.subject : ''}</td>
+                    </tr>
+                  )),
+                )
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </CollapsibleCard>
+  )
+}
+
 function TrendPanel({ contract }: { contract: McxContract }) {
   const [ladder, setLadder] = useState<NgTrendLadder | null>(null)
   const [loading, setLoading] = useState(true)
@@ -1802,8 +1885,9 @@ function TrendPanel({ contract }: { contract: McxContract }) {
     <div className="space-y-4">
       <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 px-4 py-3 text-xs text-indigo-700 dark:border-indigo-900 dark:bg-indigo-950/10 dark:text-indigo-300">
         Rule-based trend classification (EMA20/50 alignment + ADX + MACD histogram) across every timeframe.
-        A background job also checks this every 15 minutes during market hours and emails + notifies you when
-        a trend just flipped or is weakening — no need to keep this tab open.
+        A background job also checks this every 15 minutes during market hours and notifies you in-app when a
+        trend just flipped or is weakening — but only emails you when a trend has actually flipped within that
+        15-minute window (not just weakened). Every email sent is saved below.
       </div>
 
       {loading && !ladder ? (
@@ -1823,6 +1907,8 @@ function TrendPanel({ contract }: { contract: McxContract }) {
           ))}
         </div>
       ) : null}
+
+      <TrendChangeHistory contract={contract} />
     </div>
   )
 }
@@ -2084,6 +2170,7 @@ function NgPortfolio({ trades, loading, onClose, onCancel, closingId }: {
 const TABS: { id: Tab; label: string }[] = [
   { id: 'dashboard', label: 'NG Dashboard' },
   { id: 'chart', label: 'Chart' },
+  { id: 'ng-global', label: 'NG Global' },
   { id: 'trend', label: 'Trend' },
   { id: 'ai', label: 'AI Signal' },
   { id: 'trade', label: 'Trade' },
@@ -2282,6 +2369,7 @@ export default function McxView() {
           <NgDashboard quote={quote} score={score} buyScore={buyScore} sellScore={sellScore} contract={contract} loading={quoteLoading} error={quoteError} />
         )}
         {tab === 'chart' && <NgChartTab quote={quote} score={score} contract={contract} />}
+        {tab === 'ng-global' && <NgGlobalChart />}
         {tab === 'trend' && <TrendPanel contract={contract} />}
         {tab === 'ai' && (
           <div className="space-y-6">

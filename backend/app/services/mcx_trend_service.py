@@ -180,9 +180,13 @@ async def compute_and_store_snapshot(user_id: str, contract: str) -> dict:
 async def _send_trend_alert(
     user_id: str, contract: str, tradingsymbol: str, changes: list[dict]
 ) -> None:
-    """Email + in-app notification when a timeframe's trend just changed or
-    is weakening -- the two channels this app actually has (see
-    mcx_trend_report.py's docstring context: no SMS infra, scoped out)."""
+    """In-app notification for any regime signal (JUST_CHANGED or WEAKENING)
+    -- but email only for an actual JUST_CHANGED flip. WEAKENING is an early
+    warning the regime *might* be about to turn, not a confirmed change, so
+    emailing on it would mean emailing on every 15-min check that finds
+    fading conviction, not just on real changes; it stays in-app-only.
+    Every email actually sent is archived to mcx_trend_change_history (see
+    McxTrendHistoryRepository) so it can be reviewed later."""
     import structlog
 
     log = structlog.get_logger()
@@ -202,9 +206,14 @@ async def _send_trend_alert(
     except Exception as exc:
         log.warning("mcx.trend_alert.notif_failed", error=str(exc))
 
+    email_changes = [c for c in changes if c["state"] == "JUST_CHANGED"]
+    if not email_changes:
+        return
+
     try:
         from uuid import UUID
 
+        from app.infra.db.repositories.mcx_trend_history_repo import McxTrendHistoryRepository
         from app.infra.db.repositories.user_repo import SQLUserRepository
         from app.infra.db.session import AsyncSessionLocal
         from app.infra.email.client import send_email
@@ -215,9 +224,25 @@ async def _send_trend_alert(
         if user is None:
             return
 
-        html = mcx_trend_alert_html(contract, tradingsymbol, changes)
-        subject = f"MCX {contract} Trend Alert — {summary}"
+        email_summary = ", ".join(
+            f"{c['timeframe']} changed to {c['direction']}" for c in email_changes
+        )
+        html = mcx_trend_alert_html(contract, tradingsymbol, email_changes)
+        subject = f"MCX {contract} Trend Alert — {email_summary}"
         await send_email(to=user.email, subject=subject, html=html)
-        log.info("mcx.trend_alert.sent", user_id=user_id, contract=contract, changes=len(changes))
+        await McxTrendHistoryRepository().add_entry(
+            user_id, contract, tradingsymbol, email_changes, subject, html
+        )
+        log.info(
+            "mcx.trend_alert.sent", user_id=user_id, contract=contract, changes=len(email_changes)
+        )
     except Exception as exc:
         log.warning("mcx.trend_alert.email_failed", error=str(exc))
+
+
+async def get_trend_change_history(user_id: str, contract: str, limit: int = 50) -> list[dict]:
+    """Past trend-change alert emails actually sent for this contract --
+    powers the Trend tab's history view (see McxTrendHistoryRepository)."""
+    from app.infra.db.repositories.mcx_trend_history_repo import McxTrendHistoryRepository
+
+    return await McxTrendHistoryRepository().get_recent(user_id, contract, limit)

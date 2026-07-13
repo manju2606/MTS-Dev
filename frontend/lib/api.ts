@@ -1260,7 +1260,10 @@ export type NgQuote = {
 }
 
 export type McxTrade = Trade & { lots: number }
-export type McxContract = 'NG' | 'NGMINI' | 'NG_AUG' | 'NG_SEP' | 'NG_OCT' | 'NG_NOV' | 'NG_DEC'
+export type McxContract =
+  | 'NG' | 'NGMINI'
+  | 'NG_JAN' | 'NG_FEB' | 'NG_MAR' | 'NG_APR' | 'NG_MAY' | 'NG_JUN'
+  | 'NG_JUL' | 'NG_AUG' | 'NG_SEP' | 'NG_OCT' | 'NG_NOV' | 'NG_DEC'
 
 export type PlaceNgTradeBody = {
   signal: 'BUY' | 'SELL'
@@ -1530,6 +1533,77 @@ export async function getMyTradingDashboard(token: string, limit = 10): Promise<
   if (!res.ok) {
     const b = await res.json().catch(() => ({}))
     throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch My Trading Dashboard')
+  }
+  return res.json()
+}
+
+// Crisp end-of-day-style trading summary for one MCX contract -- see
+// mcx_day_summary_service.py (backend). `market` picks NG's vs Metals'
+// identical-shape route, so this one type/pair of functions covers every
+// contract on My Trading Dashboard (McxDashboardRow.market already tells the
+// caller which to use).
+export type McxDaySummary = {
+  contract: string
+  tradingsymbol: string
+  date: string
+  close: number
+  open: number
+  high: number
+  low: number
+  prev_close: number
+  change: number
+  change_pct: number
+  volume: number
+  oi: number
+  day_high: number
+  day_low: number
+  week_high: number
+  week_low: number
+  month_high: number
+  month_low: number
+  trend_direction: string | null
+  trend_strength: number | null
+  ai_lean: 'BUY' | 'SELL'
+  ai_score_pct: number
+  ai_verdict: string
+  gap_pct: number
+  new_extremes: string[]
+  narrative: string
+}
+
+function mcxDaySummaryBasePath(market: 'ng' | 'metals'): string {
+  return market === 'metals' ? '/api/v1/mcx/metals' : '/api/v1/mcx/ng'
+}
+
+export async function getMcxDaySummary(
+  token: string,
+  contract: string,
+  market: 'ng' | 'metals',
+): Promise<McxDaySummary> {
+  const res = await fetch(
+    `${BASE}${mcxDaySummaryBasePath(market)}/day-summary?contract=${contract}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch day summary')
+  }
+  return res.json()
+}
+
+export async function getMcxDaySummaryHistory(
+  token: string,
+  contract: string,
+  market: 'ng' | 'metals',
+  days = 30,
+): Promise<McxDaySummary[]> {
+  const res = await fetch(
+    `${BASE}${mcxDaySummaryBasePath(market)}/day-summary-history?contract=${contract}&days=${days}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch day summary history')
   }
   return res.json()
 }

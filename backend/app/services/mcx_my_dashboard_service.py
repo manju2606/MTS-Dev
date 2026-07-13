@@ -31,15 +31,15 @@ import asyncio
 from app.infra.db.repositories.mcx_prediction_repo import McxPredictionRepository
 from app.infra.db.repositories.mcx_score_cache_repo import McxScoreCacheRepository
 from app.services.mcx_metals_service import TRACKED_MCX_METALS_CONTRACTS, get_metal_quote
-from app.services.mcx_service import TRACKED_MCX_CONTRACTS, get_quote, ist_now
+from app.services.mcx_service import get_quote, get_tracked_mcx_contracts, ist_now
 
 PREDICTION_PERIODS = ("1m", "5m", "15m", "30m", "1h", "4h", "6h", "8h")
 
+_NG_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
 _DISPLAY_NAMES: dict[str, str] = {
     "NG": "Natural Gas", "NGMINI": "Natural Gas Mini",
-    "NG_AUG": "Natural Gas (Aug)", "NG_SEP": "Natural Gas (Sep)",
-    "NG_OCT": "Natural Gas (Oct)", "NG_NOV": "Natural Gas (Nov)",
-    "NG_DEC": "Natural Gas (Dec)",
+    **{f"NG_{m.upper()}": f"Natural Gas ({m})" for m in _NG_MONTHS},
     "ALUMINIUM": "Aluminium", "ALUMINI": "Aluminium Mini",
     "COPPER": "Copper",
     "LEAD": "Lead", "LEADMINI": "Lead Mini",
@@ -111,7 +111,7 @@ async def get_ranked_dashboard(user_id: str, limit: int = 10) -> dict:
         if c not in best_by_contract or row["score_pct"] > best_by_contract[c]["score_pct"]:
             best_by_contract[c] = row
 
-    is_metal_by_contract = {c: False for c in TRACKED_MCX_CONTRACTS}
+    is_metal_by_contract = {c: False for c in get_tracked_mcx_contracts()}
     is_metal_by_contract.update({c: True for c in TRACKED_MCX_METALS_CONTRACTS})
 
     # Only fetch a live quote for contracts that already have a cached

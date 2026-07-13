@@ -60,15 +60,28 @@ _MONTH_ABBR: dict[str, int] = {
     "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
 }
 
-# Specific-expiry NG codes tracked by the background scheduler alongside the
-# evergreen "NG" (front month) and "NGMINI" -- a plain list since which
-# months are worth tracking is a product decision, not something Kite's
-# instrument dump tells us. resolve_contract() already fails safely (a clear
-# ValueError, caught+logged per-iteration by every scheduler loop) for a
-# month MCX hasn't listed yet.
-TRACKED_MCX_CONTRACTS: list[str] = [
-    "NG", "NGMINI", "NG_AUG", "NG_SEP", "NG_OCT", "NG_NOV", "NG_DEC",
-]
+# How many months past the current one to track specific-expiry NG contracts
+# for -- a product decision (not something Kite's instrument dump tells us),
+# kept separate from the month list itself so it's obvious this is the only
+# tunable knob.
+TRACKED_MCX_MONTHS_AHEAD = 4
+
+
+def get_tracked_mcx_contracts(months_ahead: int = TRACKED_MCX_MONTHS_AHEAD) -> list[str]:
+    """Evergreen "NG" (front month) + "NGMINI", plus the current calendar
+    month's specific NG_<MON> contract and the next `months_ahead` months --
+    computed fresh from today's date (IST) on every call, not a hardcoded
+    list, so the background jobs that use this (trend-check, prediction,
+    candle collection, EOD snapshot, signal-check) always track the current
+    and near-term contracts without needing a code change at each month's
+    rollover. resolve_contract() already fails safely (a clear ValueError,
+    caught+logged per-iteration by every scheduler loop) for a month MCX
+    hasn't listed yet, so a generated month that isn't tradable yet is
+    harmless."""
+    month_names = list(_MONTH_ABBR)  # JAN..DEC, in calendar order
+    current = ist_now().month  # 1-12
+    months = [month_names[(current - 1 + i) % 12] for i in range(months_ahead + 1)]
+    return ["NG", "NGMINI"] + [f"NG_{m}" for m in months]
 
 # MCX's instrument dump is large and only changes when contracts roll
 # (monthly) -- cache it for a day instead of re-downloading on every quote.

@@ -194,6 +194,51 @@ async def metal_range_stats(
         ) from exc
 
 
+@router.get("/day-summary")
+async def metal_day_summary(
+    current_user: CurrentUser, contract: McxMetalsContract = "GOLD"
+) -> dict:
+    """On-demand crisp summary for right now -- metals twin of NG's
+    /mcx/ng/day-summary (see mcx_day_summary_service.build_day_summary).
+    Refreshes today's row in mcx_dashboard_snapshots (harmless, same as NG's
+    route) but does NOT write to mcx_day_summary_history -- only the
+    scheduled EOD job's run is saved there."""
+    from app.infra.db.repositories.mcx_dashboard_snapshot_repo import (
+        McxDashboardSnapshotRepository,
+    )
+    from app.infra.db.repositories.mcx_trend_repo import McxTrendRepository
+    from app.services.mcx_day_summary_service import build_day_summary
+    from app.services.mcx_metals_dashboard_snapshot_service import build_and_save_metal_snapshot
+    from app.services.mcx_metals_service import get_metal_range_stats
+    from app.services.mcx_service import McxNotConnectedError
+
+    try:
+        snapshot = await build_and_save_metal_snapshot(
+            str(current_user.id), contract, McxDashboardSnapshotRepository()
+        )
+        range_stats = await get_metal_range_stats(str(current_user.id), contract)
+        trend = await McxTrendRepository().get_latest(str(current_user.id), contract, "1D")
+        return build_day_summary(contract, snapshot["tradingsymbol"], snapshot, range_stats, trend)
+    except McxNotConnectedError as exc:
+        raise HTTPException(status_code=http_status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Day summary unavailable: {exc}",
+        ) from exc
+
+
+@router.get("/day-summary-history")
+async def metal_day_summary_history(
+    current_user: CurrentUser, contract: McxMetalsContract = "GOLD", days: int = 30
+) -> list[dict]:
+    """Past end-of-day summaries actually stored by the scheduled snapshot
+    job -- metals twin of NG's /mcx/ng/day-summary-history."""
+    from app.services.mcx_day_summary_service import get_day_summary_history
+
+    return await get_day_summary_history(str(current_user.id), contract, days)
+
+
 @router.get("/trend")
 async def metal_trend(current_user: CurrentUser, contract: McxMetalsContract = "GOLD") -> dict:
     """Multi-timeframe trend ladder (1m/5m/15m/1h/1D/1W) with regime-change

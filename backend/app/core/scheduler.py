@@ -296,13 +296,13 @@ async def _run_mcx_trend_check() -> None:
     weakening trend (see mcx_trend_service.py)."""
     try:
         from app.infra.brokers import session_store
-        from app.services.mcx_service import TRACKED_MCX_CONTRACTS
+        from app.services.mcx_service import get_tracked_mcx_contracts
         from app.services.mcx_trend_service import compute_and_store_snapshot
 
         user_ids = await session_store.list_connected_user_ids()
         checked, alerted = 0, 0
         for user_id in user_ids:
-            for contract in TRACKED_MCX_CONTRACTS:
+            for contract in get_tracked_mcx_contracts():
                 try:
                     result = await compute_and_store_snapshot(user_id, contract)
                     checked += 1
@@ -344,13 +344,13 @@ async def _run_mcx_prediction_check() -> None:
         from app.infra.brokers import session_store
         from app.infra.db.repositories.mcx_prediction_repo import McxPredictionRepository
         from app.services.mcx_prediction_service import get_prediction
-        from app.services.mcx_service import TRACKED_MCX_CONTRACTS
+        from app.services.mcx_service import get_tracked_mcx_contracts
 
         repo = McxPredictionRepository()
         user_ids = await session_store.list_connected_user_ids()
         checked = 0
         for user_id in user_ids:
-            for contract in TRACKED_MCX_CONTRACTS:
+            for contract in get_tracked_mcx_contracts():
                 for period in _MCX_PREDICTION_PERIODS:
                     try:
                         await get_prediction(user_id, contract, period, repo)
@@ -390,7 +390,7 @@ async def _run_mcx_candle_collect() -> None:
             TRACKED_MCX_METALS_CONTRACTS,
             get_metal_history,
         )
-        from app.services.mcx_service import TRACKED_MCX_CONTRACTS, get_history
+        from app.services.mcx_service import get_history, get_tracked_mcx_contracts
 
         user_ids = await session_store.list_connected_user_ids()
         if not user_ids:
@@ -402,7 +402,7 @@ async def _run_mcx_candle_collect() -> None:
         await repo.ensure_indexes()
 
         fetched, written = 0, 0
-        for contract in TRACKED_MCX_CONTRACTS:
+        for contract in get_tracked_mcx_contracts():
             try:
                 candles = await get_history(user_id, "5m", contract)
                 written += await repo.upsert_many(contract, "5minute", candles)
@@ -443,13 +443,13 @@ async def _run_mcx_calendar_prediction_check() -> None:
         from app.infra.brokers import session_store
         from app.infra.db.repositories.mcx_prediction_repo import McxPredictionRepository
         from app.services.mcx_prediction_service import get_prediction
-        from app.services.mcx_service import TRACKED_MCX_CONTRACTS
+        from app.services.mcx_service import get_tracked_mcx_contracts
 
         repo = McxPredictionRepository()
         user_ids = await session_store.list_connected_user_ids()
         checked = 0
         for user_id in user_ids:
-            for contract in TRACKED_MCX_CONTRACTS:
+            for contract in get_tracked_mcx_contracts():
                 for period in _MCX_CALENDAR_PREDICTION_PERIODS:
                     try:
                         await get_prediction(user_id, contract, period, repo)
@@ -487,19 +487,22 @@ async def _run_mcx_dashboard_snapshot() -> None:
             McxGlobalSymbolsSnapshotRepository,
         )
         from app.services.mcx_dashboard_snapshot_service import build_and_save_snapshot
+        from app.services.mcx_day_summary_service import build_and_store_day_summary
         from app.services.mcx_global_symbols_snapshot_service import (
             build_and_save_global_symbols_snapshot,
         )
-        from app.services.mcx_service import TRACKED_MCX_CONTRACTS
+        from app.services.mcx_service import get_range_stats, get_tracked_mcx_contracts
 
         repo = McxDashboardSnapshotRepository()
         global_repo = McxGlobalSymbolsSnapshotRepository()
         user_ids = await session_store.list_connected_user_ids()
         checked = 0
         for user_id in user_ids:
-            for contract in TRACKED_MCX_CONTRACTS:
+            for contract in get_tracked_mcx_contracts():
                 try:
-                    await build_and_save_snapshot(user_id, contract, repo)
+                    snapshot = await build_and_save_snapshot(user_id, contract, repo)
+                    range_stats = await get_range_stats(user_id, contract)
+                    await build_and_store_day_summary(user_id, contract, snapshot, range_stats)
                     checked += 1
                 except Exception as exc:
                     log.warning(
@@ -539,7 +542,7 @@ async def _run_mcx_signal_check() -> None:
         from app.infra.db.repositories.mcx_score_cache_repo import McxScoreCacheRepository
         from app.infra.db.repositories.mcx_signal_repo import McxSignalRepository
         from app.services.mcx_ai_score_service import compute_ng_ai_score
-        from app.services.mcx_service import TRACKED_MCX_CONTRACTS
+        from app.services.mcx_service import get_tracked_mcx_contracts
         from app.services.mcx_signal_service import check_and_log_signal, resolve_open_signals
 
         repo = McxSignalRepository()
@@ -547,7 +550,7 @@ async def _run_mcx_signal_check() -> None:
         user_ids = await session_store.list_connected_user_ids()
         logged, closed = 0, 0
         for user_id in user_ids:
-            for contract in TRACKED_MCX_CONTRACTS:
+            for contract in get_tracked_mcx_contracts():
                 try:
                     for direction in ("BUY", "SELL"):
                         score = await compute_ng_ai_score(user_id, direction, 100_000.0, contract)
@@ -674,10 +677,14 @@ async def _run_mcx_metals_dashboard_snapshot() -> None:
         from app.infra.db.repositories.mcx_dashboard_snapshot_repo import (
             McxDashboardSnapshotRepository,
         )
+        from app.services.mcx_day_summary_service import build_and_store_day_summary
         from app.services.mcx_metals_dashboard_snapshot_service import (
             build_and_save_metal_snapshot,
         )
-        from app.services.mcx_metals_service import TRACKED_MCX_METALS_CONTRACTS
+        from app.services.mcx_metals_service import (
+            TRACKED_MCX_METALS_CONTRACTS,
+            get_metal_range_stats,
+        )
 
         repo = McxDashboardSnapshotRepository()
         user_ids = await session_store.list_connected_user_ids()
@@ -685,7 +692,9 @@ async def _run_mcx_metals_dashboard_snapshot() -> None:
         for user_id in user_ids:
             for contract in TRACKED_MCX_METALS_CONTRACTS:
                 try:
-                    await build_and_save_metal_snapshot(user_id, contract, repo)
+                    snapshot = await build_and_save_metal_snapshot(user_id, contract, repo)
+                    range_stats = await get_metal_range_stats(user_id, contract)
+                    await build_and_store_day_summary(user_id, contract, snapshot, range_stats)
                     checked += 1
                 except Exception as exc:
                     log.warning(

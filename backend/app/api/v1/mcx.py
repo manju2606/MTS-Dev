@@ -20,7 +20,11 @@ _trader_or_admin = Depends(require_role(UserRole.ADMIN, UserRole.TRADER))
 
 router = APIRouter(prefix="/mcx", tags=["mcx"])
 
-McxContract = Literal["NG", "NGMINI", "NG_AUG", "NG_SEP", "NG_OCT", "NG_NOV", "NG_DEC"]
+McxContract = Literal[
+    "NG", "NGMINI",
+    "NG_JAN", "NG_FEB", "NG_MAR", "NG_APR", "NG_MAY", "NG_JUN",
+    "NG_JUL", "NG_AUG", "NG_SEP", "NG_OCT", "NG_NOV", "NG_DEC",
+]
 
 
 @router.get("/ng/quote")
@@ -272,6 +276,54 @@ async def ng_trend_history(
     from app.services.mcx_trend_service import get_trend_change_history
 
     return await get_trend_change_history(str(current_user.id), contract, limit)
+
+
+@router.get("/ng/day-summary")
+async def ng_day_summary(current_user: CurrentUser, contract: McxContract = "NG") -> dict:
+    """On-demand crisp summary for right now, not just after the ~23:50 IST
+    close -- builds from a live quote + range-stats + the last stored trend
+    read (see mcx_day_summary_service.build_day_summary). This refreshes
+    today's row in mcx_dashboard_snapshots (harmless -- that collection is
+    upserted by date and its high/low are already documented as "still
+    running" until the session closes, see get_range_stats), but does NOT
+    write to mcx_day_summary_history -- only the scheduled EOD job's run is
+    saved there, so checking this mid-session repeatedly doesn't create
+    duplicate/misleading "final" history entries for a day that hasn't
+    actually closed yet."""
+    from app.infra.db.repositories.mcx_trend_repo import McxTrendRepository
+    from app.services.mcx_dashboard_snapshot_service import build_and_save_snapshot
+    from app.services.mcx_day_summary_service import build_day_summary
+    from app.services.mcx_service import McxNotConnectedError, get_range_stats
+
+    try:
+        from app.infra.db.repositories.mcx_dashboard_snapshot_repo import (
+            McxDashboardSnapshotRepository,
+        )
+
+        snapshot = await build_and_save_snapshot(
+            str(current_user.id), contract, McxDashboardSnapshotRepository()
+        )
+        range_stats = await get_range_stats(str(current_user.id), contract)
+        trend = await McxTrendRepository().get_latest(str(current_user.id), contract, "1D")
+        return build_day_summary(contract, snapshot["tradingsymbol"], snapshot, range_stats, trend)
+    except McxNotConnectedError as exc:
+        raise HTTPException(status_code=http_status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Day summary unavailable: {exc}",
+        ) from exc
+
+
+@router.get("/ng/day-summary-history")
+async def ng_day_summary_history(
+    current_user: CurrentUser, contract: McxContract = "NG", days: int = 30
+) -> list[dict]:
+    """Past end-of-day summaries actually stored by the scheduled snapshot
+    job -- see mcx_day_summary_service.get_day_summary_history."""
+    from app.services.mcx_day_summary_service import get_day_summary_history
+
+    return await get_day_summary_history(str(current_user.id), contract, days)
 
 
 @router.get("/ng/range-stats")

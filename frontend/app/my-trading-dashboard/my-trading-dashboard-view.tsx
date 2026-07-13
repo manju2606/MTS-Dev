@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NavBar } from '@/components/nav-bar'
+import { McxDaySummaryPanel } from '@/components/mcx-day-summary-panel'
 import { getMyTradingDashboard } from '@/lib/api'
 import type { McxDashboardRow, McxRankedDashboard } from '@/lib/api'
 import { readPageCache, writePageCache } from '@/lib/page-cache'
@@ -112,26 +113,49 @@ const PRED_COLS: { key: keyof McxDashboardRow['predicted']; label: string }[] = 
   { key: '8h', label: '8H' },
 ]
 
-function RankRow({ row, rank }: { row: McxDashboardRow; rank: number }) {
+// Total column count of the ranked table (Rank + 3 sort columns + AI Score +
+// Signal + 8 prediction columns) -- used to span the expanded Day Summary
+// row underneath a clicked contract.
+const TABLE_COLUMN_COUNT = 1 + 3 + 1 + 1 + PRED_COLS.length
+
+function RankRow({ row, rank, expanded, onToggle }: {
+  row: McxDashboardRow
+  rank: number
+  expanded: boolean
+  onToggle: () => void
+}) {
   const signal = signalOf(row)
   return (
-    <tr style={{ borderBottom: '1px solid #24324d' }}>
-      <td className="px-2 py-2 text-center">{RANK_MEDALS[rank] ?? rank + 1}</td>
-      <td className="px-2 py-2 text-center">
-        <span className="mr-1">{row.icon}</span>{row.name}
-      </td>
-      <td className="px-2 py-2 text-center">{fmtPrice(row.ltp)}</td>
-      <td className="px-2 py-2 text-center"><PctChange pct={row.change_pct} /></td>
-      <td className="px-2 py-2 text-center font-semibold">{row.ai_score_pct.toFixed(1)}%</td>
-      <td className="px-2 py-2 text-center font-bold" style={{ color: SIGNAL_COLOR[signal] }}>
-        {signal}
-      </td>
-      {PRED_COLS.map(c => (
-        <td key={c.key} className="whitespace-nowrap px-2 py-2 text-center">
-          <PredictedCell predicted={row.predicted[c.key]} ltp={row.ltp} />
+    <>
+      <tr
+        style={{ borderBottom: expanded ? 'none' : '1px solid #24324d', cursor: 'pointer' }}
+        onClick={onToggle}
+      >
+        <td className="px-2 py-2 text-center">{RANK_MEDALS[rank] ?? rank + 1}</td>
+        <td className="px-2 py-2 text-center">
+          <span className="mr-1">{row.icon}</span>{row.name}
+          <span className="ml-1.5 inline-block text-[9px]" style={{ opacity: 0.5 }}>{expanded ? '▲' : '▼'}</span>
         </td>
-      ))}
-    </tr>
+        <td className="px-2 py-2 text-center">{fmtPrice(row.ltp)}</td>
+        <td className="px-2 py-2 text-center"><PctChange pct={row.change_pct} /></td>
+        <td className="px-2 py-2 text-center font-semibold">{row.ai_score_pct.toFixed(1)}%</td>
+        <td className="px-2 py-2 text-center font-bold" style={{ color: SIGNAL_COLOR[signal] }}>
+          {signal}
+        </td>
+        {PRED_COLS.map(c => (
+          <td key={c.key} className="whitespace-nowrap px-2 py-2 text-center">
+            <PredictedCell predicted={row.predicted[c.key]} ltp={row.ltp} />
+          </td>
+        ))}
+      </tr>
+      {expanded && (
+        <tr style={{ borderBottom: '1px solid #24324d' }}>
+          <td colSpan={TABLE_COLUMN_COUNT} className="px-2 pb-3 pt-0">
+            <McxDaySummaryPanel contract={row.contract} market={row.market} />
+          </td>
+        </tr>
+      )}
+    </>
   )
 }
 
@@ -147,6 +171,7 @@ export default function MyTradingDashboardView() {
   const [err, setErr] = useState<string | null>(null)
   const [sortKey, setSortKey] = useState<SortKey | null>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [expandedContract, setExpandedContract] = useState<string | null>(null)
   const tokenRef = useRef('')
 
   function toggleSort(key: SortKey) {
@@ -253,7 +278,11 @@ export default function MyTradingDashboardView() {
               {ranked.map((row, i) => <HeatTile key={row.contract} row={row} rank={i} />)}
             </div>
 
-            <h2 className="mb-3 text-base font-bold">📊 Ranked Commodity Dashboard</h2>
+            <h2 className="mb-1 text-base font-bold">📊 Ranked Commodity Dashboard</h2>
+            <p className="mb-3 text-xs" style={{ color: '#64748b' }}>
+              Click a row for a crisp day summary — previous close, high/low, week/month range, and AI lean —
+              plus its recent-days history, so you can compare today against how the last few days actually played out.
+            </p>
             <div className="overflow-x-auto rounded-xl" style={{ background: '#141d33' }}>
               <table className="w-full text-xs">
                 <thead>
@@ -277,7 +306,15 @@ export default function MyTradingDashboardView() {
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedRows.map(({ row, rank }) => <RankRow key={row.contract} row={row} rank={rank} />)}
+                  {sortedRows.map(({ row, rank }) => (
+                    <RankRow
+                      key={row.contract}
+                      row={row}
+                      rank={rank}
+                      expanded={expandedContract === row.contract}
+                      onToggle={() => setExpandedContract(c => (c === row.contract ? null : row.contract))}
+                    />
+                  ))}
                 </tbody>
               </table>
             </div>

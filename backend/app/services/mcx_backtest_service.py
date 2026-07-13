@@ -15,7 +15,6 @@ from datetime import datetime, timedelta
 
 from app.infra.db.repositories.mcx_signal_repo import McxSignalRepository
 from app.services.mcx_metals_service import TRACKED_MCX_METALS_CONTRACTS
-from app.services.mcx_service import TRACKED_MCX_CONTRACTS
 
 # label -> lookback days. 12m and 1y are intentionally both included (as
 # requested) even though they cover the same window -- kept as distinct
@@ -31,16 +30,22 @@ BACKTEST_WINDOWS: dict[str, int] = {
     "5y": 365 * 5,
 }
 
-_NG_SET = set(TRACKED_MCX_CONTRACTS)
 _METALS_SET = set(TRACKED_MCX_METALS_CONTRACTS)
 
 
 def _group(contract: str) -> str:
+    """"ng" for any NG-family code (front month, mini, or a specific
+    NG_<MON> expiry -- past, current, or future; which months are actively
+    *tracked* by the scheduler changes every month, see
+    get_tracked_mcx_contracts, but a backtest spans years of already-logged
+    signals, so classification here matches by shape, not by today's
+    tracked-months list), "metals" for a currently-tracked metals contract,
+    else "other"."""
     c = contract.upper()
-    if c in _NG_SET:
-        return "ng"
     if c in _METALS_SET:
         return "metals"
+    if c == "NG" or c == "NGMINI" or c.startswith("NG_"):
+        return "ng"
     return "other"
 
 

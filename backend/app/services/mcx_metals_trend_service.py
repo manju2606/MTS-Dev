@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from app.services.mcx_service import get_zerodha_broker, ist_now
 from app.services.mcx_trend_service import (
     TIMEFRAMES,
+    TREND_ALERT_EMAILS_ENABLED,
     _change_state,
     _resample_weekly,
     classify_trend,
@@ -106,8 +107,12 @@ async def compute_and_store_metal_snapshot(user_id: str, contract: str) -> dict:
 async def _send_metal_trend_alert(
     user_id: str, contract: str, tradingsymbol: str, changes: list[dict]
 ) -> None:
-    """Email + in-app notification when a timeframe's trend just changed or
-    is weakening -- same two channels as NG's trend alert."""
+    """In-app notification for any regime signal (JUST_CHANGED or WEAKENING);
+    email only for an actual JUST_CHANGED flip -- same rule as NG's trend
+    alert (see mcx_trend_service._send_trend_alert's docstring), and gated
+    by the same TREND_ALERT_EMAILS_ENABLED kill switch (metals has several
+    tracked contracts, so it was contributing to the same email-volume
+    complaint as NG)."""
     import structlog
 
     log = structlog.get_logger()
@@ -127,6 +132,10 @@ async def _send_metal_trend_alert(
     except Exception as exc:
         log.warning("mcx_metals.trend_alert.notif_failed", error=str(exc))
 
+    email_changes = [c for c in changes if c["state"] == "JUST_CHANGED"]
+    if not email_changes or not TREND_ALERT_EMAILS_ENABLED:
+        return
+
     try:
         from uuid import UUID
 
@@ -140,11 +149,17 @@ async def _send_metal_trend_alert(
         if user is None:
             return
 
-        html = mcx_trend_alert_html(contract, tradingsymbol, changes)
-        subject = f"MCX {contract} Trend Alert — {summary}"
+        email_summary = ", ".join(
+            f"{c['timeframe']} changed to {c['direction']}" for c in email_changes
+        )
+        html = mcx_trend_alert_html(contract, tradingsymbol, email_changes)
+        subject = f"MCX {contract} Trend Alert — {email_summary}"
         await send_email(to=user.email, subject=subject, html=html)
         log.info(
-            "mcx_metals.trend_alert.sent", user_id=user_id, contract=contract, changes=len(changes)
+            "mcx_metals.trend_alert.sent",
+            user_id=user_id,
+            contract=contract,
+            changes=len(email_changes),
         )
     except Exception as exc:
         log.warning("mcx_metals.trend_alert.email_failed", error=str(exc))

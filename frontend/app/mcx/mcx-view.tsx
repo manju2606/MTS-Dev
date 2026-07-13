@@ -31,14 +31,24 @@ const CONTRACTS: { id: McxContract; label: string }[] = [
   { id: 'NGMINI', label: 'Natural Gas Mini' },
 ]
 
-const EXPIRY_CHIPS: { id: McxContract; label: string }[] = [
-  { id: 'NG', label: 'Front Month' },
-  { id: 'NG_AUG', label: 'AUG' },
-  { id: 'NG_SEP', label: 'SEP' },
-  { id: 'NG_OCT', label: 'OCT' },
-  { id: 'NG_NOV', label: 'NOV' },
-  { id: 'NG_DEC', label: 'DEC' },
-]
+const MONTH_ABBR = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'] as const
+
+// Current month + next 4 -- mirrors the backend's get_tracked_mcx_contracts()
+// (mcx_service.py, TRACKED_MCX_MONTHS_AHEAD = 4), computed from today's date
+// instead of a hardcoded month list, so this always matches what the
+// background jobs actually track and advances automatically every month
+// (evaluated once per page load, which is enough -- nobody keeps this tab
+// open uninterrupted across an actual month boundary).
+function buildExpiryChips(): { id: McxContract; label: string }[] {
+  const currentMonth = new Date().getMonth() // 0-11
+  const months = Array.from({ length: 5 }, (_, i) => MONTH_ABBR[(currentMonth + i) % 12])
+  return [
+    { id: 'NG', label: 'Front Month' },
+    ...months.map(m => ({ id: `NG_${m}` as McxContract, label: m })),
+  ]
+}
+
+const EXPIRY_CHIPS = buildExpiryChips()
 
 type TradePrefill = { signal: 'BUY' | 'SELL'; lots: number; stopLoss: number; target: number }
 

@@ -27,6 +27,17 @@ _INTERVAL_MAP = {
 _LOOKBACK_DAYS = {"1m": 2, "5m": 5, "15m": 10, "1h": 30, "1D": 200, "1W": 500}
 TIMEFRAMES = ("1m", "5m", "15m", "1h", "1D", "1W")
 
+# Turned off 2026-07-13: with ~5-6 tracked contracts x 6 timeframes each, a
+# single 15-min check routinely found several genuine JUST_CHANGED flips at
+# once (1m/5m especially -- EMA20/50 alignment flips easily right around a
+# crossover), so real emails went out every ~5-10s in bursts, repeating every
+# 15 min -- overwhelming, even though each individual email was a real
+# change, not a bug. In-app notifications + mcx_trend_change_history keep
+# recording regardless of this flag; only the email send is gated. Flip back
+# on (or make timeframe-selective, e.g. 15m+ only) once there's a plan for
+# reducing volume.
+TREND_ALERT_EMAILS_ENABLED = False
+
 
 async def _fetch_candles(broker, instrument_token: int, timeframe: str) -> list[dict]:
     days = _LOOKBACK_DAYS[timeframe]
@@ -207,7 +218,7 @@ async def _send_trend_alert(
         log.warning("mcx.trend_alert.notif_failed", error=str(exc))
 
     email_changes = [c for c in changes if c["state"] == "JUST_CHANGED"]
-    if not email_changes:
+    if not email_changes or not TREND_ALERT_EMAILS_ENABLED:
         return
 
     try:

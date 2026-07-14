@@ -150,8 +150,20 @@ async def get_ranked_dashboard(user_id: str, limit: int = 10) -> dict:
             }
         )
 
-    rows.sort(key=lambda r: r["ai_score_pct"], reverse=True)
-    top = rows[:limit]
+    # Natural Gas is this app's primary/flagship product -- pin it (front
+    # month, then mini) to always show as the first rows regardless of AI
+    # score, rather than letting it silently drop off whenever enough metals
+    # contracts happen to score higher (which happens often -- metals scores
+    # run in a different range than NG's, see the score-cache values that
+    # motivated this). Everything else -- including any of NG's own
+    # specific-expiry siblings that separately made the cached-score list --
+    # still ranks purely by score for the remaining slots.
+    _PINNED_ORDER = ("NG", "NGMINI")
+    by_contract = {r["contract"]: r for r in rows}
+    pinned = [by_contract[c] for c in _PINNED_ORDER if c in by_contract]
+    others = [r for r in rows if r["contract"] not in _PINNED_ORDER]
+    others.sort(key=lambda r: r["ai_score_pct"], reverse=True)
+    top = pinned + others[: max(0, limit - len(pinned))]
 
     pred_repo = McxPredictionRepository()
     predictions = await asyncio.gather(

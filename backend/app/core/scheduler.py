@@ -323,6 +323,60 @@ async def _run_mcx_trend_check() -> None:
         log.error("scheduler.mcx_trend.error", error=str(exc))
 
 
+async def _run_mcx_extreme_alert_check() -> None:
+    """Every 15 min, 09:00-23:30 IST weekdays: check every tracked MCX
+    contract (NG + Metals) against its own day/week high-low, and email +
+    in-app notify when price comes within EXTREME_PROXIMITY_PCT of one (see
+    mcx_extreme_alert_service.py). Edge-triggered per (user, contract,
+    level) -- see McxExtremeAlertRepository -- so a price sitting near a
+    level doesn't re-email every check, only on each new approach."""
+    try:
+        from app.infra.brokers import session_store
+        from app.infra.db.repositories.mcx_extreme_alert_repo import McxExtremeAlertRepository
+        from app.services.mcx_extreme_alert_service import check_and_alert_extreme_proximity
+        from app.services.mcx_metals_service import TRACKED_MCX_METALS_CONTRACTS
+        from app.services.mcx_service import get_tracked_mcx_contracts
+
+        repo = McxExtremeAlertRepository()
+        user_ids = await session_store.list_connected_user_ids()
+        checked, alerted = 0, 0
+        for user_id in user_ids:
+            for contract in get_tracked_mcx_contracts():
+                try:
+                    if await check_and_alert_extreme_proximity(user_id, contract, "ng", repo):
+                        alerted += 1
+                    checked += 1
+                except Exception as exc:
+                    log.warning(
+                        "scheduler.mcx_extreme_alert.ng_error",
+                        user_id=user_id,
+                        contract=contract,
+                        error=str(exc),
+                    )
+                await asyncio.sleep(0)
+            for contract in TRACKED_MCX_METALS_CONTRACTS:
+                try:
+                    if await check_and_alert_extreme_proximity(user_id, contract, "metals", repo):
+                        alerted += 1
+                    checked += 1
+                except Exception as exc:
+                    log.warning(
+                        "scheduler.mcx_extreme_alert.metals_error",
+                        user_id=user_id,
+                        contract=contract,
+                        error=str(exc),
+                    )
+                await asyncio.sleep(0)
+        log.info(
+            "scheduler.mcx_extreme_alert.done",
+            users=len(user_ids),
+            checked=checked,
+            alerted=alerted,
+        )
+    except Exception as exc:
+        log.error("scheduler.mcx_extreme_alert.error", error=str(exc))
+
+
 _MCX_PREDICTION_PERIODS = ("1m", "5m", "15m", "30m", "1h", "4h", "6h", "8h")
 _MCX_CALENDAR_PREDICTION_PERIODS = ("1Wk", "1Mo")
 
@@ -1251,6 +1305,21 @@ def start_scheduler() -> None:
         ),
         id="mcx_trend_check",
         name="MCX — Trend Change Check + Alerts",
+        max_instances=1,
+        misfire_grace_time=300,
+    )
+
+    # MCX day/week high-low proximity check every 15 min, 09:00-23:30 IST
+    # weekdays -- separate from the trend-change job above (same cadence,
+    # different signal: "near a level" vs "regime changed").
+    _scheduler.add_job(
+        _run_mcx_extreme_alert_check,
+        CronTrigger(
+            day_of_week="mon-fri", hour="9-23", minute="0,15,30,45", second=10,
+            timezone="Asia/Kolkata",
+        ),
+        id="mcx_extreme_alert_check",
+        name="MCX — Day/Week Extreme Proximity Alerts",
         max_instances=1,
         misfire_grace_time=300,
     )

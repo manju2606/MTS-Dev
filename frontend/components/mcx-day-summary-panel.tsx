@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { getMcxDaySummary, getMcxDaySummaryHistory } from '@/lib/api'
 import type { McxDaySummary } from '@/lib/api'
+import { buildMonthSummaries, buildWeekSummaries } from '@/lib/mcx-day-summary-rollup'
 
 // Crisp end-of-day-style summary for one MCX contract, plus a short history
 // list -- one component reused for every contract (NG or Metals) on My
@@ -22,9 +23,13 @@ export function McxDaySummaryPanel({ contract, market }: { contract: string; mar
     // allSettled, not all -- an on-demand "today" build can fail on its own
     // (e.g. a broker hiccup) without history (already-stored EOD summaries)
     // being unavailable too; show whichever half actually came back.
+    // 90 days, not just the ~14 needed for "Previous Days" -- This Week/This
+    // Month roll these same stored entries up further (see
+    // mcx-day-summary-rollup.ts), and need enough history for a few past
+    // weeks/months once that much has actually accumulated.
     Promise.allSettled([
       getMcxDaySummary(t, contract, market),
-      getMcxDaySummaryHistory(t, contract, market, 14),
+      getMcxDaySummaryHistory(t, contract, market, 90),
     ]).then(([todayResult, historyResult]) => {
       if (todayResult.status === 'fulfilled') setToday(todayResult.value)
       else setTodayError(todayResult.reason instanceof Error ? todayResult.reason.message : 'Unavailable')
@@ -60,6 +65,13 @@ function renderPanel(today: McxDaySummary, history: McxDaySummary[], isFallback:
   // is the live on-demand summary above, not necessarily in that list yet).
   const pastDays = history.filter(h => h.date !== today.date).slice(0, 7)
 
+  // Roll the same stored daily entries up into This Week/This Month --
+  // include today's live build too (deduped by date) so the in-progress
+  // period reflects right-now, not just whatever the last EOD job stored.
+  const rollupInput = history.some(h => h.date === today.date) ? history : [...history, today]
+  const weekSummaries = buildWeekSummaries(rollupInput)
+  const monthSummaries = buildMonthSummaries(rollupInput)
+
   return (
     <div className="space-y-3 rounded-lg p-4 text-xs" style={{ background: 'rgba(15,23,42,0.6)', color: '#cbd5e1' }}>
       {isFallback && (
@@ -84,6 +96,38 @@ function renderPanel(today: McxDaySummary, history: McxDaySummary[], isFallback:
               <p key={h.date} className="flex items-baseline gap-2">
                 <span className="w-16 shrink-0 font-mono" style={{ opacity: 0.6 }}>{h.date.slice(5)}</span>
                 <span>{h.narrative}</span>
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {weekSummaries.length > 0 && (
+        <div>
+          <p className="mb-1 font-semibold uppercase tracking-wider" style={{ opacity: 0.6 }}>This Week / Recent Weeks</p>
+          <div className="space-y-1.5">
+            {weekSummaries.map(w => (
+              <p key={w.key}>
+                <span className="font-semibold" style={{ color: '#eef2ff' }}>
+                  {w.label}{w.inProgress ? ' (so far)' : ''}:
+                </span>{' '}
+                {w.narrative}
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {monthSummaries.length > 0 && (
+        <div>
+          <p className="mb-1 font-semibold uppercase tracking-wider" style={{ opacity: 0.6 }}>This Month / Recent Months</p>
+          <div className="space-y-1.5">
+            {monthSummaries.map(mo => (
+              <p key={mo.key}>
+                <span className="font-semibold" style={{ color: '#eef2ff' }}>
+                  {mo.label}{mo.inProgress ? ' (so far)' : ''}:
+                </span>{' '}
+                {mo.narrative}
               </p>
             ))}
           </div>

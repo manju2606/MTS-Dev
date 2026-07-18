@@ -4751,7 +4751,7 @@ export async function startRsiReversionRun(token: string, body: {
   from_date: string
   to_date: string
   capital: number
-  version: 'v1.0' | 'v2.0' | 'v2.1' | 'v2.2' | 'v3.0'
+  version: 'v1.0' | 'v2.0' | 'v2.1' | 'v2.2' | 'v3.0' | 'v4.0'
 }): Promise<{ run_id: string }> {
   const res = await fetch(`${BASE}/api/v1/strategy-lab/runs/rsi-reversion`, {
     method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },

@@ -286,7 +286,7 @@ export default function StrategyLabView() {
 
   const [mode, setMode] = useState<Mode>('generated')
   const [trendPullbackVersion, setTrendPullbackVersion] = useState<'v1.0' | 'v2.0'>('v2.0')
-  const [rsiReversionVersion, setRsiReversionVersion] = useState<'v1.0' | 'v2.0' | 'v2.1' | 'v2.2' | 'v3.0'>('v1.0')
+  const [rsiReversionVersion, setRsiReversionVersion] = useState<'v1.0' | 'v2.0' | 'v2.1' | 'v2.2' | 'v3.0' | 'v4.0'>('v1.0')
   const [exchange, setExchange] = useState('NSE')
   const [symbol, setSymbol] = useState('')
   const [symbolLabel, setSymbolLabel] = useState('')
@@ -640,6 +640,15 @@ export default function StrategyLabView() {
             </button>
             <button
               type="button"
+              onClick={() => handleModeChange('index_scan')}
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                mode === 'index_scan' ? 'bg-indigo-600 text-white' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400'
+              }`}
+            >
+              Index Scan
+            </button>
+            <button
+              type="button"
               onClick={() => handleModeChange('trend_pullback')}
               className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
                 mode === 'trend_pullback' ? 'bg-indigo-600 text-white' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400'
@@ -664,15 +673,6 @@ export default function StrategyLabView() {
               }`}
             >
               RSI Reversion (Backtest)
-            </button>
-            <button
-              type="button"
-              onClick={() => handleModeChange('index_scan')}
-              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
-                mode === 'index_scan' ? 'bg-indigo-600 text-white' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400'
-              }`}
-            >
-              Index Scan
             </button>
             <button
               type="button"
@@ -789,6 +789,15 @@ export default function StrategyLabView() {
                 >
                   v3.0 (+ Time &amp; Volatility filters — tested, underperforms v2.0)
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setRsiReversionVersion('v4.0')}
+                  className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                    rsiReversionVersion === 'v4.0' ? 'bg-zinc-700 text-white' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400'
+                  }`}
+                >
+                  v4.0 (+ partial profit-taking — promising, thin sample)
+                </button>
               </div>
               <p className="rounded-lg bg-indigo-50 px-3 py-2 text-[11px] text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
                 {rsiReversionVersion === 'v1.0' ? (
@@ -818,7 +827,7 @@ export default function StrategyLabView() {
                   consistency and sample size. <strong>This is the current live default</strong> for Natural Gas
                   Mini (see the MCX page&apos;s RSI Strategy tab) — new entries send an email/push alert, and a
                   held-back entry (regime filter active) sends a once-daily informational notice.</>
-                ) : (
+                ) : rsiReversionVersion === 'v3.0' ? (
                   <>Everything in v2.0 (long+short), plus two more rules. <strong>Time Filter:</strong> no new entries
                   30min before / 60min after the weekly EIA Natural Gas Storage Report (Thu 10:30 AM ET) — volatility
                   and slippage risk spikes around it; you get a notification when a signal is actually held back for
@@ -827,6 +836,16 @@ export default function StrategyLabView() {
                   backtest comparison found it underperforms v2.0 (lower net profit, no drawdown improvement to
                   justify the extra complexity), so v2.0 was kept live instead. Kept here for reference/comparison,
                   not recommended.</>
+                ) : (
+                  <>Same base as v2.2 (long+short + ADX&lt;30 regime filter), plus <strong>Partial Profit-Taking</strong>:
+                  instead of closing the whole position at the fixed target, 50% is closed there and the remainder
+                  runs with no fixed ceiling — only the stop/trailing-stop/RSI exit — so a trade that keeps extending
+                  captures more of the move. A real 180-day backtest showed every headline metric improve over v2.2
+                  (profit factor 2.99 vs 2.49, expectancy +18%, same 4.37% max drawdown, better Monte Carlo tail
+                  risk) — <strong>but only 3 of 24 trades ever triggered the mechanic</strong>, and the walk-forward
+                  test-period profit factor (3.99) exceeding train (2.51) is the same thin-sample shape that got
+                  v3.1 rejected earlier. Promising, not yet trusted — re-run this as more NGMINI history accumulates
+                  before considering it for live alerting.</>
                 )}
               </p>
             </div>

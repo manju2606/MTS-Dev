@@ -56,8 +56,10 @@ function timeAgo(iso: string): string {
 function HeatTile({ row, rank }: { row: McxDashboardRow; rank: number }) {
   const signal = signalOf(row)
   return (
-    <div
-      className="rounded-2xl p-4 text-center font-bold shadow-[0_8px_20px_rgba(0,0,0,0.35)]"
+    <a
+      href={chartHref(row)}
+      title={`Open ${row.name} chart`}
+      className="block rounded-2xl p-4 text-center font-bold no-underline shadow-[0_8px_20px_rgba(0,0,0,0.35)] transition-transform hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(0,0,0,0.45)]"
       style={{ background: tileColor(rank), color: '#eef2ff' }}
     >
       <div className="text-lg">{RANK_MEDALS[rank] ?? `#${rank + 1}`}</div>
@@ -65,7 +67,7 @@ function HeatTile({ row, rank }: { row: McxDashboardRow; rank: number }) {
       <p className="mt-1 truncate text-xs">{row.name}</p>
       <p className="mt-1 text-xl font-extrabold">{(row.ai_score_pct / 10).toFixed(1)}/10</p>
       <p className="mt-1 text-xs">{row.ai_score_pct.toFixed(0)}% &middot; {signal}</p>
-    </div>
+    </a>
   )
 }
 

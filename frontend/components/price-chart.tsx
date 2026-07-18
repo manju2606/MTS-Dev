@@ -19,6 +19,16 @@ export type AILevels = {
 
 export type RefLine = { price: number; label: string; color?: string }
 export type PredictionPoint = { time: number; predictedClose: number; upper: number; lower: number }
+// Oscillator-style indicator (RSI, ADX, …) rendered in its own sub-pane
+// below the price chart, sharing the same time axis. Kept generic (not
+// RSI-specific) so any caller can plot a 0-100-ish bounded series with its
+// own threshold lines (e.g. RSI's 20/80, ADX's regime-filter cutoff).
+export type IndicatorSeries = {
+  label: string
+  color: string
+  data: { time: number; value: number }[]
+  refLines?: { value: number; label: string; color?: string }[]
+}
 
 type LiveBar = { time: UTCTimestamp; open: number; high: number; low: number; close: number }
 
@@ -33,6 +43,10 @@ type PriceChartProps = {
   exchangeLabel?: string
   refLines?: RefLine[]
   prediction?: PredictionPoint[]
+  // Optional oscillator sub-pane(s) (e.g. RSI-14) rendered below the price
+  // pane on the same time axis. Omit entirely for callers that don't need
+  // it -- existing chart height/layout is unaffected unless this is set.
+  indicators?: IndicatorSeries[]
   // Overrides the period-selector button list -- e.g. Crypto has its own
   // full 1m-1M set (Binance klines), not the MCX/equity one. Defaults to
   // that full set when omitted, so every existing caller is unaffected.
@@ -92,7 +106,7 @@ function formatIstTickTime(time: number): string {
   })
 }
 
-export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLevels, currentPrice, exchangeLabel, refLines, prediction, periods, periodBucketSeconds, defaultVisibleBars, currencySymbol = '₹' }: PriceChartProps) {
+export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLevels, currentPrice, exchangeLabel, refLines, prediction, periods, periodBucketSeconds, defaultVisibleBars, currencySymbol = '₹', indicators }: PriceChartProps) {
   const bucketSecondsMap = useMemo(
     () => ({ ...PERIOD_BUCKET_SECONDS, ...periodBucketSeconds }),
     [periodBucketSeconds],
@@ -114,6 +128,8 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
   const [fullscreen, setFullscreen] = useState(false)
   const refLinesKey = JSON.stringify(refLines ?? [])
   const predictionKey = JSON.stringify(prediction ?? [])
+  const indicatorsKey = JSON.stringify(indicators ?? [])
+  const chartHeight = indicators && indicators.length > 0 ? 420 : 300
 
   // Shared by both the amber "actual price" ball (always at the current
   // bar's time) and the blue "predicted price" ball (at its own target
@@ -265,7 +281,7 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
             tickMarkFormatter: formatIstTickTime,
           },
           width: containerRef.current.clientWidth,
-          height: 300,
+          height: chartHeight,
         })
 
         chartRef.current = chart
@@ -381,6 +397,32 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
           })
         }
 
+        // Oscillator sub-pane(s) (e.g. RSI-14) — separate pane (index 1)
+        // below the price pane, sharing the same time axis so the indicator
+        // lines up with the candle that produced it. All indicators share
+        // one pane/price-scale since they're all roughly 0-100-bounded.
+        if (indicators && indicators.length > 0) {
+          for (const ind of indicators) {
+            const series = chart.addSeries(
+              LineSeries,
+              { color: ind.color, lineWidth: 2, priceScaleId: 'indicator', title: ind.label },
+              1,
+            )
+            series.setData(ind.data.map(p => ({ time: p.time as UTCTimestamp, value: p.value })))
+            for (const rl of ind.refLines ?? []) {
+              series.createPriceLine({
+                price: rl.value,
+                color: rl.color ?? refLineColor,
+                lineWidth: 1,
+                lineStyle: LineStyle.Dotted,
+                axisLabelVisible: true,
+                title: rl.label,
+              })
+            }
+          }
+          chart.panes()[1]?.setHeight(110)
+        }
+
         // AI price prediction — a distinct-colour line spanning the full
         // prediction trail (past predictions the caller merged in, plus the
         // current forward forecast), with a dotted upper/lower uncertainty
@@ -494,7 +536,7 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
       lastBarRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, aiLevels, refLinesKey, predictionKey, period, positionBall, positionPredBall])
+  }, [data, aiLevels, refLinesKey, predictionKey, indicatorsKey, period, positionBall, positionPredBall, chartHeight])
 
   // Live tick handling — nudges the LTP line, extends the in-progress last
   // candle (high/low/close) in place via .update() so the chart feels
@@ -599,7 +641,7 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
         </div>
       </div>
 
-      <div className={`relative ${fullscreen ? 'flex-1' : 'h-[320px]'}`}>
+      <div className={`relative ${fullscreen ? 'flex-1' : indicators && indicators.length > 0 ? 'h-[440px]' : 'h-[320px]'}`}>
         {loading && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70 dark:bg-zinc-900/70">
             <span className="text-sm text-zinc-400">Loading chart…</span>

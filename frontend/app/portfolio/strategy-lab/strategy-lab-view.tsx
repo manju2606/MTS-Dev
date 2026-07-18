@@ -724,7 +724,7 @@ export default function StrategyLabView() {
           )}
           {mode === 'rsi_reversion' && (
             <div className="mb-4">
-              <div className="mb-2 flex gap-2">
+              <div className="mb-2 flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={() => setRsiReversionVersion('v1.0')}

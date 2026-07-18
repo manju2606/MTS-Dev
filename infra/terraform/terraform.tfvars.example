@@ -1,0 +1,11 @@
+# Copy to terraform.tfvars and fill in — never commit terraform.tfvars itself
+# (it's gitignored, but double-check `git status` before committing anyway).
+
+tenancy_ocid      = "ocid1.tenancy.oc1..xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+user_ocid         = "ocid1.user.oc1..xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+fingerprint       = "xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx"
+private_key_path  = "~/.oci/oci_api_key.pem"
+region            = "us-ashburn-1"
+compartment_ocid  = "ocid1.tenancy.oc1..xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"  # tenancy OCID works as the default compartment
+
+ssh_public_key_path = "~/.ssh/id_rsa.pub"

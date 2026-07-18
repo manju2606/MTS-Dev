@@ -65,16 +65,19 @@ async def ng_ai_score(
     direction: TradeSignal = TradeSignal.BUY,
     capital: float = 100_000.0,
     contract: McxContract = "NG",
+    version: str = "v1.0",
 ) -> dict:
-    """NG-AI Pro v1 rule-based confidence score -- see
-    app/services/mcx_ai_score_service.py for the full category breakdown
-    and what's excluded (Volume Profile/Delta, bid/ask imbalance, news
-    filter -- all need data this app doesn't have yet)."""
+    """NG-AI Pro rule-based confidence score -- see
+    app/services/mcx_ai_score_service.py for the full category breakdown,
+    what's excluded (Volume Profile/Delta, bid/ask imbalance, news filter --
+    all need data this app doesn't have yet), and version="v1.0"|"v2.0"
+    (v2.0 tightens every numeric threshold, not yet empirically validated
+    the way RSI Reversion's v2.0 was -- see NG_AI_SCORE_VERSIONS)."""
     from app.services.mcx_ai_score_service import compute_ng_ai_score
     from app.services.mcx_service import McxNotConnectedError
 
     try:
-        return await compute_ng_ai_score(str(current_user.id), direction.value, capital, contract)
+        return await compute_ng_ai_score(str(current_user.id), direction.value, capital, contract, version)
     except McxNotConnectedError as exc:
         raise HTTPException(status_code=http_status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ValueError as exc:

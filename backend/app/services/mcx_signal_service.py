@@ -123,15 +123,24 @@ async def _send_signal_alert(user_id: str, contract: str, direction: str, score:
         log.warning("mcx.signal_alert.email_failed", error=str(exc))
 
 
-async def resolve_open_signals(user_id: str, contract: str, repo: McxSignalRepository) -> int:
+async def resolve_open_signals(
+    user_id: str, contract: str, repo: McxSignalRepository, quote_contract: str | None = None
+) -> int:
     """Checks every OPEN signal for this (user, contract) against the live
     LTP -- closes it WIN/LOSS if target/stop-loss was hit, or EXPIRED if
-    MCX_SIGNAL_EXPIRY_DAYS has passed with neither. Returns how many closed."""
+    MCX_SIGNAL_EXPIRY_DAYS has passed with neither. Returns how many closed.
+
+    `quote_contract` (defaults to `contract`) is the real MCX contract to
+    fetch a live quote for -- needed when `contract` is a synthetic tracking
+    key that isn't itself a resolvable contract, e.g. "NG_V2" (NG-AI Pro
+    v2.0's signals, tagged separately from v1.0's so their WIN/LOSS/accuracy
+    tracking doesn't mix, but "NG_V2" would otherwise be misparsed by
+    resolve_contract as NG's expiry-month suffix "_V2")."""
     open_signals = await repo.list_open_signals(user_id, contract)
     if not open_signals:
         return 0
 
-    quote = await get_quote(user_id, contract)
+    quote = await get_quote(user_id, quote_contract or contract)
     ltp = float(quote["last_price"])
     now = datetime.utcnow()
     closed = 0

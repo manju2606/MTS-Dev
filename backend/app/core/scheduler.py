@@ -615,7 +615,17 @@ async def _run_mcx_signal_check() -> None:
 
     Also persists each computed score to McxScoreCacheRepository -- see its
     own docstring on why (My Trading Dashboard reads this cache instead of
-    recomputing the full score live for every contract on every poll)."""
+    recomputing the full score live for every contract on every poll).
+
+    v1.0 above is unchanged from before v2.0 existed. v2.0 (tighter
+    thresholds, see mcx_ai_score_service.NG_AI_SCORE_VERSIONS) runs the
+    exact same check_and_log_signal/resolve_open_signals pipeline, just
+    tagged under a "<contract>_V2" key so its signals/accuracy tracking
+    stay completely separate from v1.0's -- reuses the existing WIN/LOSS
+    fixed-threshold tracker rather than building a new one, unlike RSI
+    Reversion's live deployment (which needed a stateless-replay approach
+    for its trailing stop; this scorer's stop/target are already fixed
+    thresholds, so the existing tracker fits as-is)."""
     try:
         from app.infra.brokers import session_store
         from app.infra.db.repositories.mcx_score_cache_repo import McxScoreCacheRepository
@@ -636,7 +646,18 @@ async def _run_mcx_signal_check() -> None:
                         await score_cache.save_score(user_id, contract, direction, score)
                         if await check_and_log_signal(user_id, contract, direction, score, repo):
                             logged += 1
+
+                        score_v2 = await compute_ng_ai_score(
+                            user_id, direction, 100_000.0, contract, version="v2.0"
+                        )
+                        if await check_and_log_signal(
+                            user_id, f"{contract}_V2", direction, score_v2, repo
+                        ):
+                            logged += 1
                     closed += await resolve_open_signals(user_id, contract, repo)
+                    closed += await resolve_open_signals(
+                        user_id, f"{contract}_V2", repo, quote_contract=contract
+                    )
                 except Exception as exc:
                     log.warning(
                         "scheduler.mcx_signal.contract_error",

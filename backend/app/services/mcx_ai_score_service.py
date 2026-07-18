@@ -18,10 +18,55 @@ candle collection only just started, so there's nothing to train on yet.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from app.infra.mcx import ng_indicators as ind
 from app.services.mcx_service import get_zerodha_broker, ist_now
+
+
+@dataclass(frozen=True)
+class NgAiScoreParams:
+    """Tunable thresholds within the Momentum/Volatility categories, plus
+    the verdict cutoffs -- everything else in the scorer (Trend, Price
+    Action, Order Flow, Correlation) is structural (breakout/alignment
+    checks) rather than a numeric threshold, so there's nothing to "tighten"
+    there without inventing a new check from scratch."""
+
+    rsi_bull_lo: float = 50.0
+    rsi_bull_hi: float = 70.0
+    rsi_bear_lo: float = 30.0
+    rsi_bear_hi: float = 50.0
+    stoch_bull_max: float = 80.0  # %K must stay below this on a BUY
+    stoch_bear_min: float = 20.0  # %K must stay above this on a SELL
+    adx_min: float = 25.0
+    choppiness_max: float = 38.0
+    trade_threshold: float = 85.0
+    watchlist_threshold: float = 70.0
+
+
+# v1.0 is the score exactly as originally specified (unchanged default for
+# every existing caller that doesn't pass a version). v2.0 raises the bar in
+# every category that has an actual numeric threshold to raise, aiming for
+# fewer, higher-conviction TRADE-tier calls -- same "which specific rule
+# changed" concreteness as RSI Reversion's v1.0/v2.0 split.
+#
+# Unlike RSI, there's no historical-candle replay backtest for this scorer
+# (mcx_backtest_service.py only evaluates signals already logged *live* over
+# time, via mcx_trade_signals) -- correlation/news inputs are live snapshots,
+# not a storable historical series, so a proper walk-forward comparison
+# isn't achievable the way it was for RSI. v2.0 is therefore NOT a validated
+# improvement, just a deliberately tighter variant to run alongside v1.0 and
+# judge later once enough real signals have accumulated under both.
+NG_AI_SCORE_VERSIONS: dict[str, NgAiScoreParams] = {
+    "v1.0": NgAiScoreParams(),
+    "v2.0": NgAiScoreParams(
+        rsi_bull_lo=55.0, rsi_bull_hi=68.0, rsi_bear_lo=32.0, rsi_bear_hi=45.0,
+        stoch_bull_max=75.0, stoch_bear_min=25.0,
+        adx_min=30.0, choppiness_max=35.0,
+        trade_threshold=88.0, watchlist_threshold=75.0,
+    ),
+}
 
 _INTERVAL_MAP = {"1m": "minute", "5m": "5minute", "15m": "15minute"}
 _LOOKBACK_DAYS = {"1m": 2, "5m": 5, "15m": 10}
@@ -158,7 +203,9 @@ def _score_trend(c: list[float], direction: str) -> dict:
     return _category("Trend", 25, checks, [])
 
 
-def _score_momentum(h: list[float], low: list[float], c: list[float], direction: str) -> dict:
+def _score_momentum(
+    h: list[float], low: list[float], c: list[float], direction: str, params: NgAiScoreParams
+) -> dict:
     bull = direction == "BUY"
     pts = 3.0
     rsi = ind.rsi(c)
@@ -166,11 +213,17 @@ def _score_momentum(h: list[float], low: list[float], c: list[float], direction:
     stoch = ind.stochastic(h, low, c)
     roc = ind.roc(c)
 
-    rsi_ok = rsi is not None and (50 < rsi < 70 if bull else 30 < rsi < 50)
+    rsi_ok = rsi is not None and (
+        params.rsi_bull_lo < rsi < params.rsi_bull_hi
+        if bull
+        else params.rsi_bear_lo < rsi < params.rsi_bear_hi
+    )
     macd_ok = macd is not None and (macd[0] > macd[1] if bull else macd[0] < macd[1])
     hist_ok = macd is not None and (macd[2] > 0 if bull else macd[2] < 0)
     stoch_ok = stoch is not None and (
-        (stoch[0] > stoch[1] and stoch[0] < 80) if bull else (stoch[0] < stoch[1] and stoch[0] > 20)
+        (stoch[0] > stoch[1] and stoch[0] < params.stoch_bull_max)
+        if bull
+        else (stoch[0] < stoch[1] and stoch[0] > params.stoch_bear_min)
     )
     roc_ok = roc is not None and (roc > 0 if bull else roc < 0)
 
@@ -262,7 +315,7 @@ def _score_order_flow(candles: list[dict], direction: str) -> dict:
     return _category("Order Flow", 10, checks, ["Bid/Ask imbalance (needs Level-2 market depth)"])
 
 
-def _score_volatility(candles: list[dict], direction: str) -> dict:
+def _score_volatility(candles: list[dict], direction: str, params: NgAiScoreParams) -> dict:
     bull = direction == "BUY"
     pts = 2.0
     h, low, c = ind.highs(candles), ind.lows(candles), ind.closes(candles)
@@ -273,9 +326,9 @@ def _score_volatility(candles: list[dict], direction: str) -> dict:
     bb = ind.bollinger(c)
     bb_ok = bb is not None and (price > bb[0] if bull else price < bb[2])
     adx = ind.adx(h, low, c)
-    adx_ok = adx is not None and adx > 25
+    adx_ok = adx is not None and adx > params.adx_min
     chop = ind.choppiness_index(h, low, c)
-    chop_ok = chop is not None and chop < 38
+    chop_ok = chop is not None and chop < params.choppiness_max
     kelt = ind.keltner(h, low, c)
     kelt_ok = kelt is not None and (price > kelt[0] if bull else price < kelt[2])
 
@@ -283,7 +336,7 @@ def _score_volatility(candles: list[dict], direction: str) -> dict:
     checks = [
         _check("ATR expansion", atr_expanding, pts),
         _check("Bollinger breakout", bb_ok, pts, f"bands={bb}" if bb else "unavailable"),
-        _check("ADX > 25", adx_ok, pts, f"ADX={adx}" if adx is not None else "unavailable"),
+        _check(f"ADX > {params.adx_min:g}", adx_ok, pts, f"ADX={adx}" if adx is not None else "unavailable"),
         _check("Choppiness (trending, not choppy)", chop_ok, pts, chop_note),
         _check("Keltner breakout", kelt_ok, pts),
     ]
@@ -363,23 +416,34 @@ def _score_news(news_items: list[dict], direction: str) -> dict:
     return _category("News Filter", 10, checks, excluded)
 
 
-def _classify(score_pct: float) -> str:
-    if score_pct >= 85:
+def _classify(score_pct: float, params: NgAiScoreParams) -> str:
+    if score_pct >= params.trade_threshold:
         return "TRADE"
-    if score_pct >= 70:
+    if score_pct >= params.watchlist_threshold:
         return "WATCHLIST"
     return "NO_TRADE"
 
 
 async def compute_ng_ai_score(
-    user_id: str, direction: str, capital: float = 100_000.0, contract: str = "NG"
+    user_id: str,
+    direction: str,
+    capital: float = 100_000.0,
+    contract: str = "NG",
+    version: str = "v1.0",
 ) -> dict:
-    """Full NG-AI Pro v1 breakdown for one direction (BUY or SELL) on either
+    """Full NG-AI Pro breakdown for one direction (BUY or SELL) on either
     contract ("NG" or "NGMINI"), using 15-minute candles as the primary
     timeframe (per the strategy's 1m/5m/15m multi-timeframe intent, 15m is
     used as the scoring timeframe; 1m/5m are available via the same candle
-    fetch for finer entry timing)."""
+    fetch for finer entry timing). version="v1.0" (original) or "v2.0"
+    (tighter thresholds, see NG_AI_SCORE_VERSIONS) -- NOT validated the way
+    RSI Reversion's v2.0 was, see that dict's own docstring."""
     from app.services.mcx_service import resolve_contract as resolve_mcx_contract
+
+    if version not in NG_AI_SCORE_VERSIONS:
+        raise ValueError(f"Unknown NG-AI Score version '{version}' -- expected one of "
+                          f"{list(NG_AI_SCORE_VERSIONS)}")
+    params = NG_AI_SCORE_VERSIONS[version]
 
     broker = await get_zerodha_broker(user_id)
     contract_info = await resolve_mcx_contract(broker, contract)
@@ -398,11 +462,11 @@ async def compute_ng_ai_score(
 
     categories = [
         _score_trend(c, direction),
-        _score_momentum(h, low, c, direction),
+        _score_momentum(h, low, c, direction, params),
         _score_volume(candles, direction),
         _score_price_action(candles, direction),
         _score_order_flow(candles, direction),
-        _score_volatility(candles, direction),
+        _score_volatility(candles, direction, params),
         _score_correlation(corr, direction),
         _score_news(news_items, direction),
     ]
@@ -410,7 +474,7 @@ async def compute_ng_ai_score(
     earned = sum(cat["earned"] for cat in categories)
     available = sum(cat["available"] for cat in categories)
     score_pct = round(earned / available * 100, 1) if available else 0.0
-    verdict = _classify(score_pct)
+    verdict = _classify(score_pct, params)
 
     price = c[-1]
     atr = ind.atr(h, low, c) or 0.0
@@ -445,6 +509,7 @@ async def compute_ng_ai_score(
     return {
         "tradingsymbol": contract_info["tradingsymbol"],
         "contract": contract.upper(),
+        "version": version,
         "direction": direction,
         "price": price,
         "score_pct": score_pct,

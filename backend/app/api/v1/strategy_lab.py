@@ -50,21 +50,30 @@ async def start_run(body: StartRunRequest, current_user: CurrentUser) -> dict:
 
 class StartIndexScanRequest(BaseModel):
     index: str = "NIFTY50"
-    exchange: str = "NSE"
     interval: str = "day"
     from_date: str  # "YYYY-MM-DD"
     to_date: str  # "YYYY-MM-DD"
     capital: float = 100_000.0
 
 
+@router.get("/index-scan/universes")
+async def list_index_universes(current_user: CurrentUser) -> list[dict]:
+    """The exchange each index universe requires -- e.g. NIFTY50 is NSE,
+    MCX_ALL is MCX. The frontend uses this to lock/display the right
+    exchange per index instead of letting a mismatched one be picked."""
+    return [
+        {"index": key, "exchange": u.exchange, "symbol_count": len(u.symbols)}
+        for key, u in strategy_lab_service.INDEX_UNIVERSES.items()
+    ]
+
+
 @router.post("/index-scan", status_code=status.HTTP_202_ACCEPTED)
 async def start_index_scan(body: StartIndexScanRequest, current_user: CurrentUser) -> dict:
     """Runs the full auto-generated 392-candidate sweep against every symbol
-    in an index universe (currently just NIFTY50), one full run per symbol,
-    processed sequentially -- see strategy_lab_service.start_index_scan_run
-    and INDEX_UNIVERSES."""
-    if body.exchange.upper() not in _EXCHANGES:
-        raise HTTPException(status_code=422, detail=f"exchange must be one of {sorted(_EXCHANGES)}")
+    in an index universe, one full run per symbol, processed sequentially --
+    see strategy_lab_service.start_index_scan_run and INDEX_UNIVERSES. The
+    exchange is derived from the index itself (not caller-supplied), so
+    there's no way to request e.g. NIFTY50 against the wrong exchange."""
     if body.interval not in _INTERVALS:
         raise HTTPException(status_code=422, detail=f"interval must be one of {sorted(_INTERVALS)}")
     if body.capital <= 0:
@@ -74,7 +83,6 @@ async def start_index_scan(body: StartIndexScanRequest, current_user: CurrentUse
         scan_id = await strategy_lab_service.start_index_scan_run(
             user_id=str(current_user.id),
             index=body.index.strip().upper(),
-            exchange=body.exchange.upper(),
             interval=body.interval,
             from_date=body.from_date,
             to_date=body.to_date,

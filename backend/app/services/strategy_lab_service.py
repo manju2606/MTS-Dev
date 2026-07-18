@@ -12,6 +12,7 @@ candidate's CPU-bound backtest work offloaded to a thread via
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from datetime import datetime
 
 import structlog
@@ -52,6 +53,12 @@ MIN_TREND_PULLBACK_1H_CANDLES = 50
 MIN_ORB_CANDLES = 100
 MIN_RSI_REVERSION_CANDLES = 100
 
+@dataclass(frozen=True)
+class IndexUniverse:
+    exchange: str  # the run's exchange must match this exactly
+    symbols: list[str]
+
+
 # NIFTY 50 constituents (NSE tradingsymbols) -- index composition is
 # reconstituted periodically (semi-annually), so this drifts out of date
 # over time; it isn't pulled from a live index-membership API since none is
@@ -70,8 +77,55 @@ NIFTY_50_SYMBOLS = [
     "TECHM", "TITAN", "TRENT", "ULTRACEMCO", "WIPRO",
 ]
 
-INDEX_UNIVERSES: dict[str, list[str]] = {
-    "NIFTY50": NIFTY_50_SYMBOLS,
+# NIFTY MIDCAP 50 -- same staleness caveat as NIFTY_50_SYMBOLS above, but
+# meaningfully lower confidence: this index reconstitutes more often and is
+# less memorable/verifiable from training data than the large-cap 50. A
+# wrong/delisted symbol here just fails cleanly for that one stock (shows up
+# in the scan's failed_symbols, same as any other download error) rather
+# than corrupting anything -- but treat this list as best-effort, not
+# authoritative, and expect a few misses.
+NIFTY_MIDCAP_50_SYMBOLS = [
+    "ABCAPITAL", "ALKEM", "APLAPOLLO", "ASHOKLEY", "ASTRAL",
+    "AUBANK", "BALKRISIND", "BANDHANBNK", "BHARATFORGE", "BHEL",
+    "CGPOWER", "COFORGE", "COLPAL", "CONCOR", "COROMANDEL",
+    "CROMPTON", "CUMMINSIND", "DALBHARAT", "DIXON", "ESCORTS",
+    "EXIDEIND", "FEDERALBNK", "FORTIS", "GMRAIRPORT", "GODREJPROP",
+    "HDFCAMC", "HONAUT", "IDFCFIRSTB", "IEX", "INDHOTEL",
+    "INDUSTOWER", "IPCALAB", "JUBLFOOD", "LICHSGFIN", "LUPIN",
+    "MANAPPURAM", "MAXHEALTH", "MFSL", "NMDC", "OBEROIRLTY",
+    "OFSS", "PAGEIND", "PERSISTENT", "PIIND", "POLYCAB",
+    "PRESTIGE", "SRF", "SUPREMEIND", "SUZLON", "VOLTAS",
+]
+
+# NIFTY SMALLCAP 50 -- same caveat as MIDCAP above, with even lower
+# confidence: smallcap index membership shifts the most and these are the
+# least "famous" names to verify from memory alone. Best-effort.
+NIFTY_SMALLCAP_50_SYMBOLS = [
+    "AARTIIND", "AAVAS", "ACE", "AEGISLOG", "AFFLE",
+    "ALKYLAMINE", "AMBER", "ANANTRAJ", "ANGELONE", "APOLLOTYRE",
+    "APTUS", "ATUL", "BALRAMCHIN", "BASF", "BATAINDIA",
+    "BSOFT", "BLUEDART", "BLUESTARCO", "CAMS", "CAPLIPOINT",
+    "CARBORUNIV", "CEATLTD", "CENTURYPLY", "CERA", "CHAMBLFERT",
+    "CHOLAHLDNG", "CYIENT", "DEEPAKFERT", "EIDPARRY", "EIHOTEL",
+    "ELGIEQUIP", "EMAMILTD", "FINEORG", "FINCABLES", "GALAXYSURF",
+    "GESHIP", "GRINDWELL", "GRSE", "HAPPSTMNDS", "HEG",
+    "IFBIND", "IIFL", "JBCHEPHARM", "JKCEMENT", "JKLAKSHMI",
+    "JUBLINGREA", "JUSTDIAL", "KAJARIACER", "KEI", "KPRMILL",
+]
+
+
+def _mcx_all_symbols() -> list[str]:
+    # Reuses the exact same 19 contract-family keys already defined for the
+    # Historical Data page's MCX dropdown -- not re-typed, so this can never
+    # drift out of sync with what the rest of the app calls these contracts.
+    return list(historical_data_service.MCX_CONTRACT_LABELS)
+
+
+INDEX_UNIVERSES: dict[str, IndexUniverse] = {
+    "NIFTY50": IndexUniverse(exchange="NSE", symbols=NIFTY_50_SYMBOLS),
+    "NIFTY_MIDCAP_50": IndexUniverse(exchange="NSE", symbols=NIFTY_MIDCAP_50_SYMBOLS),
+    "NIFTY_SMALLCAP_50": IndexUniverse(exchange="NSE", symbols=NIFTY_SMALLCAP_50_SYMBOLS),
+    "MCX_ALL": IndexUniverse(exchange="MCX", symbols=_mcx_all_symbols()),
 }
 
 
@@ -242,43 +296,38 @@ async def _backtest_one(
 async def start_index_scan_run(
     user_id: str,
     index: str,
-    exchange: str,
     interval: str,
     from_date: str,
     to_date: str,
     capital: float,
 ) -> str:
+    # No caller-supplied exchange -- each index universe has exactly one
+    # correct exchange (NIFTY* are NSE, MCX_ALL is MCX), so deriving it here
+    # removes the whole "picked the wrong exchange for this index" bug class
+    # instead of just validating against it (see conversation: BSE/NFO/MCX
+    # silently returning nothing for a run meant to scan NSE symbols).
     if index not in INDEX_UNIVERSES:
         raise ValueError(f"Unknown index '{index}' -- expected one of {list(INDEX_UNIVERSES)}")
-    if exchange.upper() != "NSE":
-        # NIFTY_50_SYMBOLS (and every other index universe so far) are NSE
-        # tradingsymbols -- BSE uses different (often numeric) codes and
-        # NFO/MCX aren't equity exchanges at all, so every symbol would just
-        # fail to resolve/download, silently producing zero results rather
-        # than a clear error (see conversation: "not loading anything").
-        raise ValueError(
-            f"Index Scan only supports NSE (index universes are NSE tradingsymbols) -- got '{exchange}'"
-        )
 
+    universe = INDEX_UNIVERSES[index]
     repo = StrategyLabRepository()
     await repo.ensure_indexes()
 
-    symbols = INDEX_UNIVERSES[index]
     scan = IndexScanRun(
         id=IndexScanRun.new_id(),
         user_id=user_id,
         index=index,
-        exchange=exchange.upper(),
+        exchange=universe.exchange,
         interval=interval,
         from_date=from_date,
         to_date=to_date,
         capital=capital,
         status="pending",
-        total_symbols=len(symbols),
+        total_symbols=len(universe.symbols),
     )
     await repo.create_index_scan(scan)
     asyncio.create_task(
-        _process_index_scan(scan.id, user_id, index, exchange, interval, from_date, to_date, capital)
+        _process_index_scan(scan.id, user_id, index, interval, from_date, to_date, capital)
     )
     return scan.id
 
@@ -287,7 +336,6 @@ async def _process_index_scan(
     scan_id: str,
     user_id: str,
     index: str,
-    exchange: str,
     interval: str,
     from_date: str,
     to_date: str,
@@ -302,7 +350,9 @@ async def _process_index_scan(
     (its own StrategyLabRun); get_index_scan_ranking() reads the best result
     back out of each afterward rather than duplicating any data here."""
     repo = StrategyLabRepository()
-    symbols = INDEX_UNIVERSES[index]
+    universe = INDEX_UNIVERSES[index]
+    exchange = universe.exchange
+    symbols = universe.symbols
 
     try:
         await repo.update_index_scan(scan_id, status="running")

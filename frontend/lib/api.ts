@@ -4660,9 +4660,11 @@ export type IndexScanRun = {
 
 export type IndexScanRankingRow = StrategyLabResultSummary & { symbol: string; run_id: string }
 
+// No `exchange` here -- the backend derives it from `index` itself (each
+// index universe has exactly one correct exchange), so there's no way to
+// request e.g. NIFTY50 against the wrong exchange from this client either.
 export async function startIndexScanRun(token: string, body: {
   index: string
-  exchange: string
   interval: HistoricalDataInterval
   from_date: string
   to_date: string
@@ -4673,6 +4675,14 @@ export async function startIndexScanRun(token: string, body: {
     body: JSON.stringify(body),
   })
   if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Failed to start index scan') }
+  return res.json()
+}
+
+export type IndexUniverseOption = { index: string; exchange: string; symbol_count: number }
+
+export async function listIndexUniverses(token: string): Promise<IndexUniverseOption[]> {
+  const res = await fetch(`${BASE}/api/v1/strategy-lab/index-scan/universes`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error('Failed to fetch index universes')
   return res.json()
 }
 

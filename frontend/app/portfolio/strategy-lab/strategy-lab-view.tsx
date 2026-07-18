@@ -7,11 +7,11 @@ import { RsiReversionLiveView } from '@/components/rsi-reversion-live'
 import {
   startStrategyLabRun, startTrendPullbackRun, startOrbRun, startRsiReversionRun, startIndexScanRun,
   listStrategyLabRuns, getStrategyLabRun, listStrategyLabResults, getStrategyLabResult,
-  listIndexScans, getIndexScan, getIndexScanRanking, listMcxContracts, searchStocks,
+  listIndexScans, getIndexScan, getIndexScanRanking, listIndexUniverses, listMcxContracts, searchStocks,
 } from '@/lib/api'
 import type {
   HistoricalDataInterval, StrategyLabRun, StrategyLabResultSummary, StrategyLabResultDetail,
-  IndexScanRun, IndexScanRankingRow, McxContractOption, StockSearchResult, RunSortBy,
+  IndexScanRun, IndexScanRankingRow, IndexUniverseOption, McxContractOption, StockSearchResult, RunSortBy,
 } from '@/lib/api'
 
 const EXCHANGES = ['NSE', 'BSE', 'NFO', 'MCX']
@@ -20,7 +20,17 @@ const INTERVALS: HistoricalDataInterval[] = [
 ]
 const ACTIVE_STATUSES = new Set(['pending', 'downloading', 'generating', 'running'])
 const ACTIVE_SCAN_STATUSES = new Set(['pending', 'running'])
-const INDEX_OPTIONS = [{ id: 'NIFTY50', label: 'NIFTY 50' }]
+
+// Friendly display labels for INDEX_UNIVERSES keys (see backend
+// strategy_lab_service.py) -- the API itself only returns the raw key,
+// exchange, and symbol count; falls back to the raw key for any index
+// added backend-side without a matching label here.
+const INDEX_LABELS: Record<string, string> = {
+  NIFTY50: 'NIFTY 50',
+  NIFTY_MIDCAP_50: 'NIFTY Midcap 50',
+  NIFTY_SMALLCAP_50: 'NIFTY Smallcap 50',
+  MCX_ALL: 'MCX (All Contracts)',
+}
 
 // 'rsi_live' isn't a backtest run at all -- it's the same live-monitoring
 // view as the MCX page's "RSI Strategy" tab (see RsiReversionLiveView),
@@ -307,6 +317,7 @@ export default function StrategyLabView() {
   const [detailLoading, setDetailLoading] = useState(false)
 
   const [indexScanIndex, setIndexScanIndex] = useState('NIFTY50')
+  const [indexUniverses, setIndexUniverses] = useState<IndexUniverseOption[]>([])
   const [activeScan, setActiveScan] = useState<IndexScanRun | null>(null)
   const [scanRanking, setScanRanking] = useState<IndexScanRankingRow[] | null>(null)
   const [pastScans, setPastScans] = useState<IndexScanRun[]>([])
@@ -356,6 +367,7 @@ export default function StrategyLabView() {
       .then(({ runs: r, total }) => { setRuns(r); setRunsTotal(total) })
       .catch(() => {})
     listIndexScans(t).then(setPastScans).catch(() => {})
+    listIndexUniverses(t).then(setIndexUniverses).catch(() => {})
     return () => clearTimeout(id)
   }, [router])
 
@@ -454,7 +466,22 @@ export default function StrategyLabView() {
       setFromDate(daysAgoStr(next === 'orb' ? 90 : 730))
     }
     if (next === 'orb' && interval === 'day') setIntervalOption('5minute')
-    if (next === 'index_scan') setExchange('NSE')
+  }
+
+  // MCX_ALL's contracts roll monthly (Kite only lists the current one), so
+  // a 2-year daily-candle default -- fine for the NSE index universes --
+  // would starve most MCX contracts below MIN_CANDLES_REQUIRED. Switching
+  // to it defaults to a realistic short window at 5-minute candles instead,
+  // same reasoning as trend_pullback/rsi_reversion's own MCX-aware default.
+  function handleIndexScanIndexChange(next: string) {
+    setIndexScanIndex(next)
+    if (next === 'MCX_ALL') {
+      setFromDate(daysAgoStr(180))
+      setIntervalOption('5minute')
+    } else {
+      setFromDate(daysAgoStr(730))
+      setIntervalOption('day')
+    }
   }
 
   async function handleStart() {
@@ -464,7 +491,7 @@ export default function StrategyLabView() {
       if (mode === 'index_scan') {
         setActiveScan(null); setScanRanking(null)
         const { scan_id } = await startIndexScanRun(tokenRef.current, {
-          index: indexScanIndex, exchange, interval, from_date: fromDate, to_date: toDate, capital,
+          index: indexScanIndex, interval, from_date: fromDate, to_date: toDate, capital,
         })
         const scan = await getIndexScan(tokenRef.current, scan_id)
         setActiveScan(scan)
@@ -717,7 +744,7 @@ export default function StrategyLabView() {
               <label className="mb-1 block text-xs font-medium text-zinc-500">Exchange</label>
               {mode === 'index_scan' ? (
                 <div className="flex h-[30px] w-full items-center rounded-lg border border-zinc-200 bg-zinc-50 px-2 text-xs text-zinc-500 dark:border-zinc-800 dark:bg-zinc-800/50 dark:text-zinc-400">
-                  NSE (fixed)
+                  {(indexUniverses.find(u => u.index === indexScanIndex)?.exchange ?? '…')} (fixed by index)
                 </div>
               ) : (
                 <select value={exchange} onChange={e => handleExchangeChange(e.target.value)}
@@ -757,14 +784,24 @@ export default function StrategyLabView() {
           {mode === 'index_scan' ? (
             <>
               <label className="mb-1 block text-xs font-medium text-zinc-500">Index</label>
-              <select value={indexScanIndex} onChange={e => setIndexScanIndex(e.target.value)}
+              <select value={indexScanIndex} onChange={e => handleIndexScanIndexChange(e.target.value)}
                 className="mb-3 w-full max-w-xs rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100">
-                {INDEX_OPTIONS.map(i => <option key={i.id} value={i.id}>{i.label}</option>)}
+                {indexUniverses.map(u => (
+                  <option key={u.index} value={u.index}>
+                    {INDEX_LABELS[u.index] ?? u.index} ({u.symbol_count} · {u.exchange})
+                  </option>
+                ))}
               </select>
               <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-                Runs the full 392-candidate sweep on every constituent (50 for NIFTY 50) sequentially, one full
-                symbol run at a time — this can take a while (candle download + ~400 backtests per symbol). Progress
-                and a live leaderboard appear below once started; you can navigate away and come back.
+                Runs the full 392-candidate sweep on every constituent
+                ({indexUniverses.find(u => u.index === indexScanIndex)?.symbol_count ?? '…'} symbols) sequentially,
+                one full symbol run at a time — this can take a while (candle download + ~400 backtests per symbol).
+                Progress and a live leaderboard appear below once started; you can navigate away and come back.
+                {indexScanIndex.startsWith('NIFTY_MIDCAP') || indexScanIndex.startsWith('NIFTY_SMALLCAP') ? (
+                  <> Midcap/Smallcap constituent lists are best-effort (lower confidence than NIFTY 50 — this index
+                  reconstitutes more often and isn&apos;t pulled from a live membership source); a wrong/delisted
+                  symbol just fails cleanly for that one stock, shown in the scan&apos;s skipped-symbols list.</>
+                ) : null}
               </p>
             </>
           ) : (
@@ -823,7 +860,7 @@ export default function StrategyLabView() {
               disabled={starting || (mode !== 'index_scan' && !symbol) || (activeRun !== null && ACTIVE_STATUSES.has(activeRun.status)) || (activeScan !== null && ACTIVE_SCAN_STATUSES.has(activeScan.status))}
               className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-60"
             >
-              {starting ? 'Starting…' : mode === 'trend_pullback' ? 'Run Trend Pullback Backtest' : mode === 'orb' ? 'Run Opening Range Breakout Backtest' : mode === 'rsi_reversion' ? `Run RSI Reversion ${rsiReversionVersion} Backtest` : mode === 'index_scan' ? `Scan ${INDEX_OPTIONS.find(i => i.id === indexScanIndex)?.label ?? indexScanIndex}` : 'Generate & Backtest'}
+              {starting ? 'Starting…' : mode === 'trend_pullback' ? 'Run Trend Pullback Backtest' : mode === 'orb' ? 'Run Opening Range Breakout Backtest' : mode === 'rsi_reversion' ? `Run RSI Reversion ${rsiReversionVersion} Backtest` : mode === 'index_scan' ? `Scan ${INDEX_LABELS[indexScanIndex] ?? indexScanIndex}` : 'Generate & Backtest'}
             </button>
           </div>
           </>

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { NavBar } from '@/components/nav-bar'
 import {
   downloadHistoricalData, getHistoricalCandles, listDownloadedHistoricalSymbols,
-  deleteHistoricalSeries, listMcxContracts, searchStocks,
+  deleteHistoricalSeries, listMcxContracts, searchStocks, getMe, ApiError,
 } from '@/lib/api'
 import type {
   HistoricalCandle, HistoricalDataInterval, HistoricalDownloadedSeries, HistoricalDownloadResult,
@@ -62,6 +62,28 @@ export default function HistoricalDataView() {
     loadDownloaded(t)
     listMcxContracts(t).then(setMcxContracts).catch(() => {})
     return () => clearTimeout(id)
+  }, [router])
+
+  // Session-expiry check: a token that exists in localStorage but is no
+  // longer valid (past ACCESS_TOKEN_EXPIRE_MINUTES, no refresh endpoint
+  // exists yet) otherwise leaves every picker on this page silently 401ing
+  // forever with no indication to the user that re-login would fix it --
+  // MCX contracts and symbol search both swallow a failed fetch into an
+  // empty list/array, so an expired token just looks like "nothing appears"
+  // for every exchange, with zero error shown. Same fix already applied to
+  // the Dashboard/MCX/Strategy Lab pages.
+  useEffect(() => {
+    const t = localStorage.getItem('mts_token')
+    if (!t) return
+    const checkSession = () => {
+      getMe(t).catch(err => { if (err instanceof ApiError && err.status === 401) router.replace('/login') })
+    }
+    checkSession()
+    // window.setInterval/clearInterval, not the bare global -- this file's
+    // own `interval` state (the download interval picker) is named
+    // `[interval, setInterval]`, which shadows the global setInterval.
+    const id = window.setInterval(checkSession, 60_000)
+    return () => window.clearInterval(id)
   }, [router])
 
   // Symbols are exchange-specific -- switching exchange invalidates prior picks.

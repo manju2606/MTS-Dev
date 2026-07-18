@@ -346,10 +346,24 @@ export function SentimentForecastView() {
               </>
             )}
 
-            {(lastWeek || lastMonth) && (
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                {lastWeek && <AccuracyBar forecast={lastWeek} title={`Last Week's Accuracy — week of ${lastWeek.week_start}`} />}
-                {lastMonth && <MonthAccuracyCard rollup={lastMonth} />}
+            {lastWeek && (
+              <div>
+                <p className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                  Last Week — week of {lastWeek.week_start}
+                </p>
+                <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                  {lastWeek.days.map(day => (
+                    <DayCard key={day.date} day={day} isToday={false} />
+                  ))}
+                </div>
+                <AccuracyBar forecast={lastWeek} title="Last Week's Accuracy" />
+              </div>
+            )}
+
+            {lastMonth && (
+              <div>
+                <p className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Last Month</p>
+                <MonthAccuracyCard rollup={lastMonth} />
               </div>
             )}
 

@@ -285,3 +285,41 @@ async def get_result(run_id: str, result_id: str, current_user: CurrentUser) -> 
     if result is None or result.run_id != run_id:
         raise HTTPException(status_code=404, detail="Result not found")
     return dataclasses.asdict(result)
+
+
+@router.get("/runs/{run_id}/results/{result_id}/monte-carlo")
+async def get_result_monte_carlo(
+    run_id: str, result_id: str, current_user: CurrentUser,
+    simulations: int = 2000, ruin_threshold_pct: float = 50.0,
+) -> dict:
+    """Bootstrap-resamples this result's own trade returns thousands of
+    times to build a distribution of possible outcomes -- works for any
+    completed backtest result (generated sweep, Trend Pullback, ORB, RSI
+    Reversion, an Index Scan symbol's result), not just RSI, since it only
+    needs the trade list already stored on the result. See
+    domain/services/strategy_lab/monte_carlo.py."""
+    from app.domain.services.strategy_lab.monte_carlo import run_monte_carlo
+
+    if simulations < 100 or simulations > 20_000:
+        raise HTTPException(status_code=422, detail="simulations must be between 100 and 20000")
+    if not 1.0 <= ruin_threshold_pct <= 99.0:
+        raise HTTPException(status_code=422, detail="ruin_threshold_pct must be between 1 and 99")
+
+    repo = StrategyLabRepository()
+    run = await repo.get_run(run_id)
+    if run is None or run.user_id != str(current_user.id):
+        raise HTTPException(status_code=404, detail="Run not found")
+    result = await repo.get_result(result_id)
+    if result is None or result.run_id != run_id:
+        raise HTTPException(status_code=404, detail="Result not found")
+
+    mc = run_monte_carlo(
+        result.trades, run.capital, num_simulations=simulations, ruin_threshold_pct=ruin_threshold_pct,
+    )
+    if mc is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Not enough trades for a meaningful Monte Carlo simulation "
+                   f"(need at least 10, this result has {len(result.trades)})",
+        )
+    return dataclasses.asdict(mc)

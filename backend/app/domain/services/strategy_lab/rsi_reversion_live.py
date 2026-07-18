@@ -23,7 +23,12 @@ from datetime import datetime
 from app.domain.models.historical_candle import HistoricalCandle
 from app.domain.services.strategy_lab import indicators as ind
 from app.domain.services.strategy_lab.engine import TransactionCosts, brokerage_cost, capped_quantity
-from app.domain.services.strategy_lab.rsi_reversion_v2 import RsiReversionParams
+from app.domain.services.strategy_lab.rsi_reversion_v2 import (
+    RsiReversionParams,
+    _rolling_atr_avg,
+    _volatility_state,
+    is_near_eia_report,
+)
 
 POSITION_SIZE_PCT = 2.0  # % of capital risked per trade, same convention as the generator
 
@@ -43,6 +48,12 @@ class LiveSignalState:
     last_signal_time: datetime | None = None
     last_signal_price: float | None = None
     last_exit_reason: str | None = None
+    # v3.0 filters: True only when the RSI condition fired on the very last
+    # (current/live) bar but the Time or Volatility filter held the entry
+    # back -- this, not any historical occurrence, is what the live signal
+    # service alerts on (see mcx_rsi_signal_service.py).
+    blocked_by_time_filter: bool = False
+    blocked_by_volatility_filter: bool = False
 
 
 @dataclass
@@ -74,7 +85,11 @@ def compute_live_state(
         return LiveSignalState(status="FLAT", direction=None, rsi=None, as_of=now), []
 
     closes = [c.close for c in candles]
+    highs = [c.high for c in candles]
+    lows = [c.low for c in candles]
     rsi_vals = ind.rsi(closes, p.period)
+    atr_vals = ind.atr(highs, lows, closes, 14) if p.atr_filter_enabled else [None] * n
+    atr_avg_vals = _rolling_atr_avg(atr_vals, p.atr_avg_period) if p.atr_filter_enabled else [None] * n
     costs = TransactionCosts()
 
     equity = capital
@@ -91,13 +106,15 @@ def compute_live_state(
     last_signal_price: float | None = None
     last_exit_reason: str | None = None
     trades: list[LiveTrade] = []
+    blocked_by_time_filter = False
+    blocked_by_volatility_filter = False
 
-    def open_long(i: int) -> None:
+    def open_long(i: int, stop_pct: float) -> None:
         nonlocal direction, entry_price, entry_time, qty, stop_price, target_price, trail_price
         nonlocal last_signal, last_signal_time, last_signal_price
         fill = candles[i].close * (1 + costs.slippage_pct / 100)
         risk_amount = equity * POSITION_SIZE_PCT / 100
-        stop_distance = fill * p.stop_loss_pct / 100
+        stop_distance = fill * stop_pct / 100
         q = capped_quantity(risk_amount, stop_distance, fill, equity)
         if q == 0:
             return
@@ -105,17 +122,17 @@ def compute_live_state(
         entry_price = fill
         entry_time = candles[i].time
         qty = q
-        stop_price = fill * (1 - p.stop_loss_pct / 100)
+        stop_price = fill * (1 - stop_pct / 100)
         target_price = fill * (1 + p.target_pct / 100)
         trail_price = None
         last_signal, last_signal_time, last_signal_price = "BUY", candles[i].time, fill
 
-    def open_short(i: int) -> None:
+    def open_short(i: int, stop_pct: float) -> None:
         nonlocal direction, entry_price, entry_time, qty, stop_price, target_price, trail_price
         nonlocal last_signal, last_signal_time, last_signal_price
         fill = candles[i].close * (1 - costs.slippage_pct / 100)
         risk_amount = equity * POSITION_SIZE_PCT / 100
-        stop_distance = fill * p.stop_loss_pct / 100
+        stop_distance = fill * stop_pct / 100
         q = capped_quantity(risk_amount, stop_distance, fill, equity)
         if q == 0:
             return
@@ -123,7 +140,7 @@ def compute_live_state(
         entry_price = fill
         entry_time = candles[i].time
         qty = q
-        stop_price = fill * (1 + p.stop_loss_pct / 100)
+        stop_price = fill * (1 + stop_pct / 100)
         target_price = fill * (1 - p.target_pct / 100)
         trail_price = None
         last_signal, last_signal_time, last_signal_price = "SELL", candles[i].time, fill
@@ -186,10 +203,30 @@ def compute_live_state(
                 close_position(i, bar.close, "signal")
 
         else:
-            if r is not None and r < p.oversold:
-                open_long(i)
-            elif p.allow_short and r is not None and r > p.overbought:
-                open_short(i)
+            wants_long = r is not None and r < p.oversold
+            wants_short = p.allow_short and r is not None and r > p.overbought
+            if wants_long or wants_short:
+                blocked_time = p.time_filter_enabled and is_near_eia_report(
+                    bar.time, p.eia_window_before_minutes, p.eia_window_after_minutes
+                )
+                vol_state = _volatility_state(atr_vals[i], atr_avg_vals[i], p)
+                if blocked_time or vol_state == "skip":
+                    # Only meaningful for the live/"now" bar -- overwritten
+                    # every iteration, so whatever it ends as after the loop
+                    # reflects just the final bar, not any historical block.
+                    blocked_by_time_filter = blocked_time
+                    blocked_by_volatility_filter = vol_state == "skip" and not blocked_time
+                else:
+                    blocked_by_time_filter = False
+                    blocked_by_volatility_filter = False
+                    stop_pct = p.stop_loss_pct * p.atr_widen_factor if vol_state == "widen" else p.stop_loss_pct
+                    if wants_long:
+                        open_long(i, stop_pct)
+                    else:
+                        open_short(i, stop_pct)
+            else:
+                blocked_by_time_filter = False
+                blocked_by_volatility_filter = False
 
     as_of = candles[-1].time
     if direction != 0:
@@ -218,5 +255,7 @@ def compute_live_state(
             last_signal_time=last_signal_time,
             last_signal_price=round(last_signal_price, 4) if last_signal_price is not None else None,
             last_exit_reason=last_exit_reason,
+            blocked_by_time_filter=blocked_by_time_filter,
+            blocked_by_volatility_filter=blocked_by_volatility_filter,
         )
     return state, trades

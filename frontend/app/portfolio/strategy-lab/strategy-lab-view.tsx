@@ -6,11 +6,11 @@ import { NavBar } from '@/components/nav-bar'
 import { RsiReversionLiveView } from '@/components/rsi-reversion-live'
 import {
   startStrategyLabRun, startTrendPullbackRun, startOrbRun, startRsiReversionRun, startIndexScanRun,
-  listStrategyLabRuns, getStrategyLabRun, listStrategyLabResults, getStrategyLabResult,
+  listStrategyLabRuns, getStrategyLabRun, listStrategyLabResults, getStrategyLabResult, getResultMonteCarlo,
   listIndexScans, getIndexScan, getIndexScanRanking, listIndexUniverses, listMcxContracts, searchStocks,
 } from '@/lib/api'
 import type {
-  HistoricalDataInterval, StrategyLabRun, StrategyLabResultSummary, StrategyLabResultDetail,
+  HistoricalDataInterval, StrategyLabRun, StrategyLabResultSummary, StrategyLabResultDetail, MonteCarloResult,
   IndexScanRun, IndexScanRankingRow, IndexUniverseOption, McxContractOption, StockSearchResult, RunSortBy,
 } from '@/lib/api'
 
@@ -159,6 +159,7 @@ function MetricsGrid({ m }: { m: StrategyLabResultDetail['full_metrics'] }) {
       <Metric label="Net P&L" value={`₹${m.net_pnl.toFixed(0)}`} accent={m.net_pnl >= 0 ? 'text-emerald-600' : 'text-red-500'} />
       <Metric label="Avg Hold" value={`${m.avg_holding_hours.toFixed(0)}h`} />
       <Metric label="Final Equity" value={`₹${m.final_equity.toLocaleString('en-IN')}`} />
+      <Metric label="Recovery Factor" value={m.recovery_factor.toFixed(2)} />
     </div>
   )
 }
@@ -284,7 +285,7 @@ export default function StrategyLabView() {
 
   const [mode, setMode] = useState<Mode>('generated')
   const [trendPullbackVersion, setTrendPullbackVersion] = useState<'v1.0' | 'v2.0'>('v2.0')
-  const [rsiReversionVersion, setRsiReversionVersion] = useState<'v1.0' | 'v2.0'>('v1.0')
+  const [rsiReversionVersion, setRsiReversionVersion] = useState<'v1.0' | 'v2.0' | 'v3.0'>('v1.0')
   const [exchange, setExchange] = useState('NSE')
   const [symbol, setSymbol] = useState('')
   const [symbolLabel, setSymbolLabel] = useState('')
@@ -315,6 +316,9 @@ export default function StrategyLabView() {
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [detail, setDetail] = useState<StrategyLabResultDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
+  const [monteCarlo, setMonteCarlo] = useState<MonteCarloResult | null>(null)
+  const [monteCarloLoading, setMonteCarloLoading] = useState(false)
+  const [monteCarloError, setMonteCarloError] = useState<string | null>(null)
 
   const [indexScanIndex, setIndexScanIndex] = useState('NIFTY50')
   const [indexUniverses, setIndexUniverses] = useState<IndexUniverseOption[]>([])
@@ -559,10 +563,24 @@ export default function StrategyLabView() {
   async function openDetail(resultId: string) {
     if (!activeRun) return
     setDetailLoading(true)
+    setMonteCarlo(null); setMonteCarloError(null)
     try {
       const d = await getStrategyLabResult(tokenRef.current, activeRun.id, resultId)
       setDetail(d)
     } catch { /* ignore */ } finally { setDetailLoading(false) }
+  }
+
+  async function runMonteCarlo() {
+    if (!activeRun || !detail) return
+    setMonteCarloLoading(true); setMonteCarloError(null)
+    try {
+      const mc = await getResultMonteCarlo(tokenRef.current, activeRun.id, detail.id)
+      setMonteCarlo(mc)
+    } catch (e) {
+      setMonteCarloError(e instanceof Error ? e.message : 'Failed to run Monte Carlo simulation')
+    } finally {
+      setMonteCarloLoading(false)
+    }
   }
 
   if (!authChecked) return null
@@ -721,19 +739,35 @@ export default function StrategyLabView() {
                 >
                   v2.0 (adds short leg — untested)
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setRsiReversionVersion('v3.0')}
+                  className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                    rsiReversionVersion === 'v3.0' ? 'bg-zinc-700 text-white' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400'
+                  }`}
+                >
+                  v3.0 (+ Time &amp; Volatility filters — untested)
+                </button>
               </div>
               <p className="rounded-lg bg-indigo-50 px-3 py-2 text-[11px] text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
                 {rsiReversionVersion === 'v1.0' ? (
                   <>Long-only: buy when RSI-14 drops below 20 (oversold), while flat. Stop: entry − 2.5%, trailing up
                   to close × (1 − 2.0%) once favorable. Target: entry + 5.0%. Exits early if RSI climbs back above
                   80. This is the exact logic already deployed live for Natural Gas Mini (see the MCX page&apos;s RSI
-                  Strategy tab) — the baseline to compare v2.0 against.</>
-                ) : (
+                  Strategy tab) — the baseline to compare v2.0/v3.0 against.</>
+                ) : rsiReversionVersion === 'v2.0' ? (
                   <>Adds a short leg, a symmetric mirror of the long side: short when RSI rises above 80 while flat,
                   cover on the mirrored stop/trailing-stop/target, or early if RSI drops back below 20. This is
                   <strong> not yet validated</strong> — run it and check whether P&amp;L improves and drawdown stays
                   flat-or-better vs v1.0, and always check the walk-forward split (train vs test) below before
                   trusting a full-period number alone.</>
+                ) : (
+                  <>Everything in v2.0 (long+short), plus two more rules. <strong>Time Filter:</strong> no new entries
+                  30min before / 60min after the weekly EIA Natural Gas Storage Report (Thu 10:30 AM ET) — volatility
+                  and slippage risk spikes around it; you get a notification when a signal is actually held back for
+                  this reason, live. <strong>Volatility Filter:</strong> when ATR ≥ 1.3× its 20-bar average, the stop
+                  widens 1.5×; at ≥ 2.0× the entry is skipped entirely. This is <strong>not yet validated</strong> —
+                  same caveat as v2.0, check the walk-forward split before trusting a full-period number.</>
                 )}
               </p>
             </div>
@@ -1063,6 +1097,47 @@ export default function StrategyLabView() {
                   <p className="mt-2 text-xs text-zinc-500">
                     Stability score: <span className="font-bold text-zinc-900 dark:text-zinc-50">{detail.walk_forward.stability_score.toFixed(0)}/100</span>
                   </p>
+                </div>
+
+                <div className="mt-5">
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
+                      Monte Carlo Simulation
+                    </p>
+                    <button
+                      onClick={runMonteCarlo}
+                      disabled={monteCarloLoading || detail.trades.length < 10}
+                      className="rounded-lg bg-indigo-600 px-3 py-1 text-[11px] font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
+                    >
+                      {monteCarloLoading ? 'Simulating…' : monteCarlo ? 'Re-run (2,000 sims)' : 'Run 2,000 Simulations'}
+                    </button>
+                  </div>
+                  {detail.trades.length < 10 ? (
+                    <p className="text-xs text-zinc-400">Needs at least 10 trades to be meaningful (this result has {detail.trades.length}).</p>
+                  ) : monteCarloError ? (
+                    <p className="text-xs text-red-500">{monteCarloError}</p>
+                  ) : monteCarlo ? (
+                    <>
+                      <p className="mb-3 text-[11px] text-zinc-400">
+                        Bootstrap-resamples this result&apos;s own {monteCarlo.trades_per_simulation} trade returns
+                        {monteCarlo.num_simulations.toLocaleString('en-IN')} times, compounding each draw the same
+                        way the backtest&apos;s own risk-based sizing would — the historical run above is just one
+                        draw from this distribution, not the expected outcome.
+                      </p>
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                        <Metric label="Net P&L (5th pct)" value={`${monteCarlo.net_pnl_pct_p5 >= 0 ? '+' : ''}${monteCarlo.net_pnl_pct_p5.toFixed(1)}%`} accent={monteCarlo.net_pnl_pct_p5 >= 0 ? 'text-emerald-600' : 'text-red-500'} />
+                        <Metric label="Net P&L (median)" value={`${monteCarlo.net_pnl_pct_p50 >= 0 ? '+' : ''}${monteCarlo.net_pnl_pct_p50.toFixed(1)}%`} accent={monteCarlo.net_pnl_pct_p50 >= 0 ? 'text-emerald-600' : 'text-red-500'} />
+                        <Metric label="Net P&L (95th pct)" value={`${monteCarlo.net_pnl_pct_p95 >= 0 ? '+' : ''}${monteCarlo.net_pnl_pct_p95.toFixed(1)}%`} accent={monteCarlo.net_pnl_pct_p95 >= 0 ? 'text-emerald-600' : 'text-red-500'} />
+                        <Metric label="Final Equity (median)" value={`₹${monteCarlo.final_equity_p50.toLocaleString('en-IN')}`} />
+                        <Metric label="Max DD (median)" value={`${monteCarlo.max_drawdown_pct_p50.toFixed(1)}%`} accent="text-red-500" />
+                        <Metric label="Max DD (95th pct, worse case)" value={`${monteCarlo.max_drawdown_pct_p95.toFixed(1)}%`} accent="text-red-500" />
+                        <Metric label="P(loss)" value={`${monteCarlo.probability_of_loss_pct.toFixed(1)}%`} />
+                        <Metric label="P(ruin, equity ≤ 50%)" value={`${monteCarlo.probability_of_ruin_pct.toFixed(1)}%`} accent={monteCarlo.probability_of_ruin_pct > 5 ? 'text-red-500' : undefined} />
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-xs text-zinc-400">Not run yet — click the button above.</p>
+                  )}
                 </div>
 
                 <div className="mt-5">

@@ -50,7 +50,7 @@ class BacktestMetrics:
     total_trades: int
     win_rate_pct: float
     profit_factor: float
-    expectancy: float  # average pnl per trade, in currency
+    expectancy: float  # average pnl per trade, in currency ("Average Trade")
     cagr_pct: float
     sharpe_ratio: float
     sortino_ratio: float
@@ -58,6 +58,10 @@ class BacktestMetrics:
     avg_holding_hours: float
     net_pnl: float
     final_equity: float
+    # net_pnl / max drawdown (currency) -- how much profit per unit of worst
+    # peak-to-trough loss. Defaulted (not required) so BacktestMetrics(**doc)
+    # still reconstructs stored results saved before this field existed.
+    recovery_factor: float = 0.0
 
 
 @dataclass

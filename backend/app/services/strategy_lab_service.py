@@ -819,7 +819,7 @@ async def _backtest_rsi_reversion(
         )
         if params.allow_short:
             description += (
-                f" v2.0 adds a short leg, symmetric mirror of the long side: short when "
+                f" Adds a short leg, symmetric mirror of the long side: short when "
                 f"RSI rises above {params.overbought:g} while flat, cover on the mirrored "
                 f"stop/trailing-stop/target, or early if RSI drops back below "
                 f"{params.oversold:g}. v1.0 (long-only) is the exact logic already deployed "
@@ -831,11 +831,25 @@ async def _backtest_rsi_reversion(
                 " v1.0: long-only, identical to the strategy deployed live for Natural Gas "
                 "Mini (see the MCX page's RSI Strategy tab)."
             )
+        if params.time_filter_enabled:
+            description += (
+                f" v3.0 Time Filter: no new entries within "
+                f"{params.eia_window_before_minutes}min before / "
+                f"{params.eia_window_after_minutes}min after the weekly EIA Natural Gas "
+                f"Storage Report (Thu 10:30 AM ET)."
+            )
+        if params.atr_filter_enabled:
+            description += (
+                f" v3.0 Volatility Filter: stop widened {params.atr_widen_factor:g}x when "
+                f"ATR >= {params.atr_elevated_multiple:g}x its {params.atr_avg_period}-bar "
+                f"average; entry skipped entirely when ATR >= {params.atr_extreme_multiple:g}x."
+            )
 
         candidate = StrategyCandidate(
             id=StrategyCandidate.new_id(),
             name=f"RSI-14 Reversion ({params.oversold:g}/{params.overbought:g}) {version}"
-            + (" [Long+Short]" if params.allow_short else " [Long-only]"),
+            + (" [Long+Short]" if params.allow_short else " [Long-only]")
+            + (" [Time+Vol Filters]" if params.time_filter_enabled or params.atr_filter_enabled else ""),
             family="rsi_reversion_v2",
             description=description,
             params={
@@ -843,6 +857,8 @@ async def _backtest_rsi_reversion(
                 "oversold": params.oversold,
                 "overbought": params.overbought,
                 "allow_short": int(params.allow_short),
+                "time_filter_enabled": int(params.time_filter_enabled),
+                "atr_filter_enabled": int(params.atr_filter_enabled),
             },
             stop_loss_pct=params.stop_loss_pct,
             target_pct=params.target_pct,

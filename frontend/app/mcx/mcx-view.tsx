@@ -71,7 +71,7 @@ function NgChart({ quote, score, contract, period, onPeriodChange }: {
   // "the chart" the user asked to see BUY/SELL signals on -- v1.0 (long-
   // only, display-only) is still one click away. See RsiReversionLiveView's
   // own docstring for why v2.0 isn't a validated profitable edge.
-  const [rsiVersion, setRsiVersion] = useState<'v1.0' | 'v2.0'>('v2.0')
+  const [rsiVersion, setRsiVersion] = useState<'v1.0' | 'v2.0' | 'v3.0'>('v2.0')
 
   // Validated only for Natural Gas Mini (see AI Strategy Lab conversation
   // history: RSI-14 Reversion 20/80 was the #1 ranked, walk-forward-stable
@@ -244,6 +244,16 @@ function NgChart({ quote, score, contract, period, onPeriodChange }: {
               )}
             >
               v2.0 (long+short, email alerts)
+            </button>
+            <button
+              type="button"
+              onClick={() => setRsiVersion('v3.0')}
+              className={cls(
+                'rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors',
+                rsiVersion === 'v3.0' ? 'bg-zinc-700 text-white' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400',
+              )}
+            >
+              v3.0 (+ Time &amp; Volatility filters)
             </button>
           </div>
           <RsiReversionPanel signal={rsiSignal} />

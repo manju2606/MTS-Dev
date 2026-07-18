@@ -27,6 +27,28 @@ def _max_drawdown_pct(equity_curve: list[dict]) -> float:
     return round(max_dd, 2)
 
 
+def _max_drawdown_currency(equity_curve: list[dict]) -> float:
+    """Same peak-to-trough walk as _max_drawdown_pct, but in currency --
+    Recovery Factor (net_pnl / this) needs an absolute rupee figure, not a
+    percentage, to be a meaningful ratio."""
+    if not equity_curve:
+        return 0.0
+    peak = equity_curve[0]["equity"]
+    max_dd = 0.0
+    for point in equity_curve:
+        peak = max(peak, point["equity"])
+        max_dd = max(max_dd, peak - point["equity"])
+    return round(max_dd, 2)
+
+
+def _recovery_factor(net_pnl: float, max_dd_currency: float) -> float:
+    """Net profit per unit of the worst peak-to-trough loss -- higher is
+    better (more profit recovered relative to the deepest hole the equity
+    curve ever dug). 0.0 (not infinite) when there was no drawdown at all,
+    since "recovery from nothing" isn't a meaningful ratio."""
+    return round(net_pnl / max_dd_currency, 2) if max_dd_currency > 0 else 0.0
+
+
 def _cagr_pct(capital: float, final_equity: float, equity_curve: list[dict]) -> float:
     """Annualizes over the full backtest period (first to last equity-curve
     point, which always spans the whole requested date range -- see
@@ -82,6 +104,7 @@ def compute_metrics(outcome: BacktestOutcome, capital: float) -> BacktestMetrics
             avg_holding_hours=0.0,
             net_pnl=0.0,
             final_equity=outcome.final_equity,
+            recovery_factor=0.0,
         )
 
     wins = [t for t in trades if t.pnl > 0]
@@ -100,6 +123,8 @@ def compute_metrics(outcome: BacktestOutcome, capital: float) -> BacktestMetrics
     )
 
     sharpe, sortino = _sharpe_and_sortino(trades)
+    net_pnl = round(outcome.final_equity - capital, 2)
+    max_dd_currency = _max_drawdown_currency(outcome.equity_curve)
 
     return BacktestMetrics(
         total_trades=total,
@@ -111,8 +136,9 @@ def compute_metrics(outcome: BacktestOutcome, capital: float) -> BacktestMetrics
         sortino_ratio=sortino,
         max_drawdown_pct=_max_drawdown_pct(outcome.equity_curve),
         avg_holding_hours=avg_holding_hours,
-        net_pnl=round(outcome.final_equity - capital, 2),
+        net_pnl=net_pnl,
         final_equity=round(outcome.final_equity, 2),
+        recovery_factor=_recovery_factor(net_pnl, max_dd_currency),
     )
 
 

@@ -81,10 +81,17 @@ export function RsiReversionPanel({ signal }: { signal: NgRsiSignal | null }) {
             </div>
           </dl>
         </>
+      ) : signal.blocked_by_time_filter || signal.blocked_by_volatility_filter ? (
+        <p className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+          An RSI entry condition just fired but was held back — {signal.blocked_by_time_filter
+            ? 'an upcoming EIA Natural Gas Storage Report is within the no-entry window (Time Filter).'
+            : 'ATR is extremely elevated right now (Volatility Filter).'}
+          {' '}You&apos;ve been notified.
+        </p>
       ) : (
         <p className="text-xs text-zinc-500">
           No open position — waiting for RSI-14 to drop below 20 (oversold) to trigger a BUY entry
-          {signal.version === 'v2.0' ? ', or rise above 80 (overbought) to trigger a SELL entry' : ''}.
+          {signal.version !== 'v1.0' ? ', or rise above 80 (overbought) to trigger a SELL entry' : ''}.
         </p>
       )}
 
@@ -106,7 +113,7 @@ const RSI_TRADE_RESULT_STYLE = (pnl: number) => (pnl >= 0 ? 'bg-emerald-600 text
 // panel + recent trades log. Self-fetching (polls every 60s, refetches on
 // version change) so any page can drop it in standalone.
 export function RsiReversionLiveView() {
-  const [version, setVersion] = useState<'v1.0' | 'v2.0'>('v1.0')
+  const [version, setVersion] = useState<'v1.0' | 'v2.0' | 'v3.0'>('v1.0')
   const [signal, setSignal] = useState<NgRsiSignal | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [tradesOpen, setTradesOpen] = useState(true)
@@ -150,13 +157,24 @@ export function RsiReversionLiveView() {
         >
           v2.0 (long+short, email alerts)
         </button>
+        <button
+          type="button"
+          onClick={() => setVersion('v3.0')}
+          className={cls(
+            'rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors',
+            version === 'v3.0' ? 'bg-zinc-700 text-white' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400',
+          )}
+        >
+          v3.0 (+ Time &amp; Volatility filters)
+        </button>
       </div>
 
       <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 px-4 py-3 text-xs text-indigo-700 dark:border-indigo-900 dark:bg-indigo-950/10 dark:text-indigo-300">
         <p className="mb-2 font-semibold">RSI-14 Reversion (20/80, SL 2.5% / TG 5.0% / trail 2.0%) — Natural Gas Mini, 5-min candles</p>
         <p className="mb-1">
           <span className="font-semibold">Entry:</span> BUY the instant RSI-14 drops below 20 (oversold), while flat.
-          {version === 'v2.0' && <> v2.0 adds a symmetric short leg: SELL the instant RSI-14 rises above 80 (overbought), while flat.</>}
+          {version !== 'v1.0' && <> v2.0+ adds a symmetric short leg: SELL the instant RSI-14 rises above 80 (overbought), while flat.</>}
+          {version === 'v3.0' && <> v3.0 also gates every entry through a Time Filter and a Volatility Filter (below) before it&apos;s taken.</>}
         </p>
         <p className="mb-1">
           <span className="font-semibold">Exit priority, checked every bar (only one fires per bar — stop/target beats the RSI exit on the same candle):</span>
@@ -177,18 +195,29 @@ export function RsiReversionLiveView() {
             once RSI climbs back above 80; a short exits once RSI drops back below 20.
           </li>
         </ol>
+        {version === 'v3.0' && (
+          <p className="mt-2">
+            <span className="font-semibold">Time Filter:</span> no new entries 30min before / 60min after the weekly
+            EIA Natural Gas Storage Report (Thu 10:30 AM ET) — a signal held back for this reason still notifies you
+            (once per day, not every 5-min poll), so you know an entry was skipped and why.{' '}
+            <span className="font-semibold">Volatility Filter:</span> when ATR ≥ 1.3× its 20-bar average, the stop
+            widens 1.5× (smaller risk-based position size, same total risk budget); at ATR ≥ 2.0× the entry is
+            skipped entirely.
+          </p>
+        )}
         <p className="mt-2">
           {version === 'v1.0' ? (
             <>This is the exact long-only logic validated as the #1 ranked, walk-forward-stable candidate out of 392
             tested in the AI Strategy Lab, specifically for Natural Gas Mini — not extrapolated to full-size NG or any
             other contract.</>
           ) : (
-            <>v2.0&apos;s short leg is <strong>not a validated profitable edge</strong> — a real backtest comparison
-            (see AI Strategy Lab &gt; RSI Reversion (Backtest)) showed it roughly doubles trade count and raw P&amp;L,
-            but per-trade expectancy, profit factor, and max drawdown all came out worse than v1.0. It&apos;s live here
-            because it was asked for, not because it beat v1.0 — check the backtest comparison before trusting it more
-            than the long-only baseline. New v2.0 entries also send an email/push alert (every 5 min, see the
-            scheduler); v1.0 is display-only.</>
+            <><strong>Not a validated profitable edge</strong> — a real backtest comparison (see AI Strategy Lab &gt;
+            RSI Reversion (Backtest)) showed the {version === 'v2.0' ? 'short leg' : 'long+short base'} roughly
+            doubles trade count and raw P&amp;L vs v1.0, but per-trade expectancy, profit factor, and max drawdown
+            all came out worse. {version === 'v3.0' && "The Time/Volatility filters haven't been separately backtested "}
+            It&apos;s live here because it was asked for, not because it beat v1.0 — check the backtest comparison
+            before trusting it more than the long-only baseline. New entries also send an email/push alert (every 5
+            min, see the scheduler); v1.0 is display-only.</>
           )}
           {' '}This view is stateless: it replays the live candle history on every poll, so &quot;in position&quot;
           always reflects the real series rather than a stored flag.

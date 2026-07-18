@@ -2191,7 +2191,7 @@ export async function getNgAiScore(
 // position open right now" always reflects the live series, not a stored flag.
 export type NgRsiSignal = {
   contract: string
-  version: 'v1.0' | 'v2.0'
+  version: 'v1.0' | 'v2.0' | 'v3.0'
   strategy: string
   interval: string
   status: 'FLAT' | 'IN_POSITION'
@@ -2225,9 +2225,14 @@ export type NgRsiSignal = {
     pnl: number
     pnl_pct: number
   }[]
+  // v3.0 filters -- true only when an RSI entry condition is met right now
+  // but the Time (EIA report window) or Volatility (extreme ATR) filter is
+  // holding it back.
+  blocked_by_time_filter: boolean
+  blocked_by_volatility_filter: boolean
 }
 
-export async function getNgRsiSignal(token: string, capital = 100000, version: 'v1.0' | 'v2.0' = 'v1.0'): Promise<NgRsiSignal> {
+export async function getNgRsiSignal(token: string, capital = 100000, version: 'v1.0' | 'v2.0' | 'v3.0' = 'v1.0'): Promise<NgRsiSignal> {
   const res = await fetch(`${BASE}/api/v1/mcx/ng/rsi-signal?capital=${capital}&version=${version}`, {
     headers: authHeaders(token),
   })
@@ -4557,6 +4562,7 @@ export type BacktestMetrics = {
   avg_holding_hours: number
   net_pnl: number
   final_equity: number
+  recovery_factor: number
 }
 
 export type WalkForwardSplit = {
@@ -4742,7 +4748,7 @@ export async function startRsiReversionRun(token: string, body: {
   from_date: string
   to_date: string
   capital: number
-  version: 'v1.0' | 'v2.0'
+  version: 'v1.0' | 'v2.0' | 'v3.0'
 }): Promise<{ run_id: string }> {
   const res = await fetch(`${BASE}/api/v1/strategy-lab/runs/rsi-reversion`, {
     method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
@@ -4783,5 +4789,38 @@ export async function listStrategyLabResults(token: string, runId: string): Prom
 export async function getStrategyLabResult(token: string, runId: string, resultId: string): Promise<StrategyLabResultDetail> {
   const res = await fetch(`${BASE}/api/v1/strategy-lab/runs/${runId}/results/${resultId}`, { headers: authHeaders(token) })
   if (!res.ok) throw new Error('Failed to fetch result detail')
+  return res.json()
+}
+
+// Bootstrap-resamples a result's own trade returns thousands of times to
+// build a distribution of possible outcomes -- works for any completed
+// backtest result (Generate & Backtest, Trend Pullback, ORB, RSI Reversion,
+// an Index Scan symbol's result), not just RSI.
+export type MonteCarloResult = {
+  num_simulations: number
+  trades_per_simulation: number
+  starting_capital: number
+  final_equity_p5: number
+  final_equity_p25: number
+  final_equity_p50: number
+  final_equity_p75: number
+  final_equity_p95: number
+  max_drawdown_pct_p50: number
+  max_drawdown_pct_p95: number
+  net_pnl_pct_p5: number
+  net_pnl_pct_p50: number
+  net_pnl_pct_p95: number
+  probability_of_loss_pct: number
+  probability_of_ruin_pct: number
+}
+
+export async function getResultMonteCarlo(
+  token: string, runId: string, resultId: string, simulations = 2000,
+): Promise<MonteCarloResult> {
+  const res = await fetch(
+    `${BASE}/api/v1/strategy-lab/runs/${runId}/results/${resultId}/monte-carlo?simulations=${simulations}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Failed to run Monte Carlo simulation') }
   return res.json()
 }

@@ -96,6 +96,18 @@ class RsiReversionParams:
     regime_filter_enabled: bool = False
     regime_adx_max: float = 25.0
 
+    # v4.0 (experimental, on top of v2.2's regime-filtered base) -- Partial
+    # Profit-Taking: changes *how a winning trade is exited* rather than
+    # adding another entry filter (every prior variant only touched entry
+    # conditions, and stacking more of those risks over-filtering into too
+    # few trades to mean anything -- see v3.1). Instead of closing the whole
+    # position at the fixed target, take partial_exit_fraction of it off
+    # there and let the remainder run under just the stop/trailing-stop/RSI
+    # exit (no fixed ceiling anymore), so a trade that keeps extending past
+    # the original target captures more of the move.
+    partial_exit_enabled: bool = False
+    partial_exit_fraction: float = 0.5
+
 
 RSI_REVERSION_VERSIONS: dict[str, RsiReversionParams] = {
     "v1.0": RsiReversionParams(allow_short=False),
@@ -117,6 +129,13 @@ RSI_REVERSION_VERSIONS: dict[str, RsiReversionParams] = {
     # mean anything).
     "v3.1": RsiReversionParams(
         allow_short=True, time_filter_enabled=True, atr_filter_enabled=True, regime_filter_enabled=True,
+    ),
+    # v2.2's regime-filtered base (the current live default) + partial
+    # profit-taking (see RsiReversionParams' own docstring) -- isolates the
+    # effect of the new exit mechanic against the current best, rather than
+    # bundling it with an unrelated entry-filter change.
+    "v4.0": RsiReversionParams(
+        allow_short=True, regime_filter_enabled=True, regime_adx_max=30.0, partial_exit_enabled=True,
     ),
 }
 
@@ -195,17 +214,22 @@ def run_rsi_reversion_backtest(
     direction = 0  # 0 flat, 1 long, -1 short
     entry_price = 0.0
     entry_time: datetime | None = None
-    qty = 0
+    qty = 0            # remaining open quantity (shrinks on a partial exit)
+    original_qty = 0   # total quantity at entry -- used for the trade record + blended exit price
     stop_price = 0.0
     target_price = 0.0
     trail_price: float | None = None
+    partial_taken = False
+    partial_pnl = 0.0
+    partial_notional = 0.0
 
     outcome.equity_curve.append(
         {"time": candles[0].time.isoformat(), "equity": round(equity, 2)}
     )
 
     def open_long(i: int, stop_pct: float) -> None:
-        nonlocal direction, entry_price, entry_time, qty, stop_price, target_price, trail_price
+        nonlocal direction, entry_price, entry_time, qty, original_qty, stop_price, target_price, trail_price
+        nonlocal partial_taken, partial_pnl, partial_notional
         fill = candles[i].close * (1 + costs.slippage_pct / 100)
         risk_amount = equity * POSITION_SIZE_PCT / 100
         stop_distance = fill * stop_pct / 100
@@ -216,12 +240,17 @@ def run_rsi_reversion_backtest(
         entry_price = fill
         entry_time = candles[i].time
         qty = q
+        original_qty = q
         stop_price = fill * (1 - stop_pct / 100)
         target_price = fill * (1 + p.target_pct / 100)
         trail_price = None
+        partial_taken = False
+        partial_pnl = 0.0
+        partial_notional = 0.0
 
     def open_short(i: int, stop_pct: float) -> None:
-        nonlocal direction, entry_price, entry_time, qty, stop_price, target_price, trail_price
+        nonlocal direction, entry_price, entry_time, qty, original_qty, stop_price, target_price, trail_price
+        nonlocal partial_taken, partial_pnl, partial_notional
         fill = candles[i].close * (1 - costs.slippage_pct / 100)
         risk_amount = equity * POSITION_SIZE_PCT / 100
         stop_distance = fill * stop_pct / 100
@@ -232,9 +261,35 @@ def run_rsi_reversion_backtest(
         entry_price = fill
         entry_time = candles[i].time
         qty = q
+        original_qty = q
         stop_price = fill * (1 + stop_pct / 100)
         target_price = fill * (1 - p.target_pct / 100)
         trail_price = None
+        partial_taken = False
+        partial_pnl = 0.0
+        partial_notional = 0.0
+
+    def take_partial(i: int, exit_price: float) -> None:
+        """Realizes P&L on partial_exit_fraction of the position at the
+        (now-passed) target price, shrinks `qty` for the remainder, and
+        marks partial_taken so the target-close branch below stops firing
+        for this position -- the remainder now only exits via stop/
+        trailing-stop/RSI signal."""
+        nonlocal qty, partial_taken, partial_pnl, partial_notional, equity
+        is_long = direction == 1
+        fill = exit_price * (1 - costs.slippage_pct / 100 if is_long else 1 + costs.slippage_pct / 100)
+        leg_qty = int(original_qty * p.partial_exit_fraction)
+        if leg_qty <= 0 or leg_qty >= qty:
+            return
+        entry_cost = brokerage_cost(entry_price * leg_qty, costs)
+        exit_cost = brokerage_cost(fill * leg_qty, costs) + fill * leg_qty * costs.stt_pct / 100
+        raw_pnl = (fill - entry_price) * leg_qty if is_long else (entry_price - fill) * leg_qty
+        pnl = raw_pnl - entry_cost - exit_cost
+        partial_pnl += pnl
+        partial_notional += fill * leg_qty
+        qty -= leg_qty
+        partial_taken = True
+        equity += pnl
 
     def close_position(i: int, exit_price: float, reason: str) -> None:
         nonlocal direction, equity
@@ -244,8 +299,16 @@ def run_rsi_reversion_backtest(
         exit_cost = brokerage_cost(fill * qty, costs) + fill * qty * costs.stt_pct / 100
         raw_pnl = (fill - entry_price) * qty if is_long else (entry_price - fill) * qty
         pnl = raw_pnl - entry_cost - exit_cost
-        pnl_pct = pnl / (entry_price * qty) * 100 if entry_price * qty else 0.0
         equity += pnl
+        # Fold in whatever was already realized by a partial exit -- one
+        # TradeRecord per logical position, with a blended exit price and a
+        # combined reason, rather than two records that would otherwise
+        # double-count "trades" in win-rate/expectancy stats.
+        total_pnl = pnl + partial_pnl
+        total_notional = fill * qty + partial_notional
+        blended_exit_price = total_notional / original_qty if original_qty else fill
+        pnl_pct = total_pnl / (entry_price * original_qty) * 100 if entry_price * original_qty else 0.0
+        combined_reason = f"partial_target+{reason}" if partial_taken else reason
         assert entry_time is not None
         outcome.trades.append(
             TradeRecord(
@@ -253,11 +316,11 @@ def run_rsi_reversion_backtest(
                 exit_time=candles[i].time,
                 signal="BUY" if is_long else "SELL",
                 entry_price=round(entry_price, 4),
-                exit_price=round(fill, 4),
-                quantity=qty,
-                pnl=round(pnl, 2),
+                exit_price=round(blended_exit_price, 4),
+                quantity=original_qty,
+                pnl=round(total_pnl, 2),
                 pnl_pct=round(pnl_pct, 2),
-                exit_reason=reason,
+                exit_reason=combined_reason,
             )
         )
         direction = 0
@@ -274,7 +337,9 @@ def run_rsi_reversion_backtest(
             if bar.low <= effective_stop:
                 reason = "trailing_stop" if effective_stop == trail_price else "stop_loss"
                 close_position(i, effective_stop, reason)
-            elif bar.high >= target_price:
+            elif p.partial_exit_enabled and not partial_taken and bar.high >= target_price:
+                take_partial(i, target_price)
+            elif not p.partial_exit_enabled and bar.high >= target_price:
                 close_position(i, target_price, "target")
             elif r is not None and r > p.overbought:
                 close_position(i, bar.close, "signal")
@@ -287,7 +352,9 @@ def run_rsi_reversion_backtest(
             if bar.high >= effective_stop:
                 reason = "trailing_stop" if effective_stop == trail_price else "stop_loss"
                 close_position(i, effective_stop, reason)
-            elif bar.low <= target_price:
+            elif p.partial_exit_enabled and not partial_taken and bar.low <= target_price:
+                take_partial(i, target_price)
+            elif not p.partial_exit_enabled and bar.low <= target_price:
                 close_position(i, target_price, "target")
             elif r is not None and r < p.oversold:
                 close_position(i, bar.close, "signal")

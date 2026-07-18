@@ -673,37 +673,37 @@ async def _run_mcx_signal_check() -> None:
 
 async def _run_ng_rsi_v2_signal_check() -> None:
     """Every 5 min, 09:00-23:30 IST weekdays: recompute the live RSI-14
-    Reversion state for Natural Gas Mini per connected user, for both v2.0
-    (long+short) and v3.0 (long+short + Time/Volatility filters), and send a
-    BUY/SELL + SL/target email+push alert the first time a genuinely new
-    position opens (see mcx_rsi_signal_service.sync_and_alert_rsi_signal for
-    the dedup logic -- a stateless replay recomputed every poll, so without
-    this it would re-alert every 5 min for as long as the position stays
-    open). v3.0 additionally gets sync_and_alert_blocked_signal -- an
-    informational notice (once per day, not per position) when an entry
-    condition fired but the Time or Volatility filter held it back.
+    Reversion v2.0 (long+short) state for Natural Gas Mini per connected
+    user, and send a BUY/SELL + SL/target email+push alert the first time a
+    genuinely new position opens (see
+    mcx_rsi_signal_service.sync_and_alert_rsi_signal for the dedup logic --
+    a stateless replay recomputed every poll, so without this it would
+    re-alert every 5 min for as long as the position stays open).
 
     v1.0 (long-only, no filters) isn't alerted here -- it's shown live on
     the chart/RSI Strategy tab already (see mcx-view.tsx), same as before
-    this job existed; only v2.0/v3.0 are new and were specifically asked to
-    email."""
+    this job existed.
+
+    v3.0 (long+short + Time/Volatility filters) is NOT live-alerted here on
+    purpose: a real backtest comparison (same NGMINI window as v2.0/v1.0)
+    showed v3.0 worse on every profitability metric -- expectancy Rs495 vs
+    Rs795/trade, profit factor 1.90 vs 2.08, recovery factor 2.56 vs 3.56 --
+    while Monte Carlo showed its 95th-percentile drawdown was actually worse
+    than v2.0's despite the Volatility Filter's whole purpose being to
+    reduce drawdown. v3.0 stays available to view/backtest manually (see the
+    MCX page and AI Strategy Lab's version toggles), just not part of the
+    automated live-alerting pipeline until it beats v2.0 on real evidence."""
     try:
         from app.infra.brokers import session_store
         from app.infra.db.repositories.mcx_rsi_signal_alert_repo import RsiSignalAlertRepository
-        from app.services.mcx_rsi_signal_service import (
-            sync_and_alert_blocked_signal,
-            sync_and_alert_rsi_signal,
-        )
+        from app.services.mcx_rsi_signal_service import sync_and_alert_rsi_signal
 
         alert_repo = RsiSignalAlertRepository()
         user_ids = await session_store.list_connected_user_ids()
         alerted = 0
         for user_id in user_ids:
             try:
-                for version in ("v2.0", "v3.0"):
-                    if await sync_and_alert_rsi_signal(user_id, version, alert_repo):
-                        alerted += 1
-                if await sync_and_alert_blocked_signal(user_id, "v3.0", alert_repo):
+                if await sync_and_alert_rsi_signal(user_id, "v2.0", alert_repo):
                     alerted += 1
             except Exception as exc:
                 log.warning("scheduler.ng_rsi_v2_signal.user_error", user_id=user_id, error=str(exc))

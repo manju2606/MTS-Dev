@@ -205,6 +205,31 @@ async def _run_sentiment_snapshot() -> None:
         log.error("scheduler.sentiment_snapshot.error", error=str(exc))
 
 
+async def _run_watchlist_history_ingest() -> None:
+    """15:40 IST weekdays: create new tracked-pick rows for today's SotD/BTST/
+    Golden Stock picks (5 min after the 15:35 EOD-resolve cluster, well after
+    Golden Stock's 15:00 close scan finalizes the day's picks)."""
+    try:
+        from app.services.watchlist_history_service import ingest_todays_picks
+
+        result = await ingest_todays_picks()
+        log.info("scheduler.watchlist_history_ingest.done", **result)
+    except Exception as exc:
+        log.error("scheduler.watchlist_history_ingest.error", error=str(exc))
+
+
+async def _run_watchlist_history_snapshot() -> None:
+    """15:45 IST weekdays: append today's close price/P&L to every non-frozen
+    tracked pick, freezing any that complete their tracking window."""
+    try:
+        from app.services.watchlist_history_service import run_daily_price_snapshot
+
+        result = await run_daily_price_snapshot()
+        log.info("scheduler.watchlist_history_snapshot.done", **result)
+    except Exception as exc:
+        log.error("scheduler.watchlist_history_snapshot.error", error=str(exc))
+
+
 async def _run_weekly_sentiment_forecast() -> None:
     """09:00 IST Monday: generate this week's Mon-Fri sentiment forecast."""
     try:
@@ -623,6 +648,38 @@ async def _run_mcx_signal_check() -> None:
         log.info("scheduler.mcx_signal.done", users=len(user_ids), logged=logged, closed=closed)
     except Exception as exc:
         log.error("scheduler.mcx_signal.error", error=str(exc))
+
+
+async def _run_ng_rsi_v2_signal_check() -> None:
+    """Every 5 min, 09:00-23:30 IST weekdays: recompute the live RSI-14
+    Reversion v2.0 (long+short) state for Natural Gas Mini per connected
+    user, and send a BUY/SELL + SL/target email+push alert the first time a
+    genuinely new position opens (see
+    mcx_rsi_signal_service.sync_and_alert_rsi_signal for the dedup logic --
+    a stateless replay recomputed every poll, so without this it would
+    re-alert every 5 min for as long as the position stays open).
+
+    v1.0 (long-only) isn't alerted here -- it's shown live on the chart/RSI
+    Strategy tab already (see mcx-view.tsx), same as before this job existed;
+    only v2.0 is new and was specifically asked to email."""
+    try:
+        from app.infra.brokers import session_store
+        from app.infra.db.repositories.mcx_rsi_signal_alert_repo import RsiSignalAlertRepository
+        from app.services.mcx_rsi_signal_service import sync_and_alert_rsi_signal
+
+        alert_repo = RsiSignalAlertRepository()
+        user_ids = await session_store.list_connected_user_ids()
+        alerted = 0
+        for user_id in user_ids:
+            try:
+                if await sync_and_alert_rsi_signal(user_id, "v2.0", alert_repo):
+                    alerted += 1
+            except Exception as exc:
+                log.warning("scheduler.ng_rsi_v2_signal.user_error", user_id=user_id, error=str(exc))
+            await asyncio.sleep(0)
+        log.info("scheduler.ng_rsi_v2_signal.done", users=len(user_ids), alerted=alerted)
+    except Exception as exc:
+        log.error("scheduler.ng_rsi_v2_signal.error", error=str(exc))
 
 
 async def _run_mcx_metals_trend_check() -> None:
@@ -1263,6 +1320,26 @@ def start_scheduler() -> None:
         misfire_grace_time=None,
     )
 
+    # Watchlist History: ingest today's SotD/BTST/Golden Stock picks at
+    # 15:40 IST, then snapshot every non-frozen tracked pick's price/P&L at
+    # 15:45 IST (after the 15:35 EOD-resolve cluster above)
+    _scheduler.add_job(
+        _run_watchlist_history_ingest,
+        CronTrigger(day_of_week="mon-fri", hour=15, minute=40, second=0, timezone="Asia/Kolkata"),
+        id="watchlist_history_ingest",
+        name="Watchlist History — Ingest Today's Picks",
+        max_instances=1,
+        misfire_grace_time=3600,
+    )
+    _scheduler.add_job(
+        _run_watchlist_history_snapshot,
+        CronTrigger(day_of_week="mon-fri", hour=15, minute=45, second=0, timezone="Asia/Kolkata"),
+        id="watchlist_history_snapshot",
+        name="Watchlist History — Daily Price Snapshot",
+        max_instances=1,
+        misfire_grace_time=3600,
+    )
+
     # Generate the week's Mon-Fri sentiment forecast at 09:00 IST every Monday
     _scheduler.add_job(
         _run_weekly_sentiment_forecast,
@@ -1390,6 +1467,20 @@ def start_scheduler() -> None:
         ),
         id="mcx_signal_check",
         name="MCX — AI Trade Signal Logging + Resolution",
+        max_instances=1,
+        misfire_grace_time=180,
+    )
+
+    # RSI-14 Reversion v2.0 (long+short) live signal alerting, same 5-min
+    # cadence, offset a few seconds so it doesn't fire in the same instant.
+    _scheduler.add_job(
+        _run_ng_rsi_v2_signal_check,
+        CronTrigger(
+            day_of_week="mon-fri", hour="9-23", minute="*/5", second=25,
+            timezone="Asia/Kolkata",
+        ),
+        id="ng_rsi_v2_signal_check",
+        name="MCX NG Mini — RSI Reversion v2.0 Signal Alerting",
         max_instances=1,
         misfire_grace_time=180,
     )

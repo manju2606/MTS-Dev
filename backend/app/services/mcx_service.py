@@ -426,7 +426,7 @@ async def get_range_stats(user_id: str, contract: str = "NG") -> dict:
     month_high = _high(month_candles)
     month_low = _low(month_candles)
 
-    return {
+    result = {
         "contract": contract.upper(),
         "day_high": round(day_high, 2),
         "day_low": round(day_low, 2),
@@ -435,6 +435,30 @@ async def get_range_stats(user_id: str, contract: str = "NG") -> dict:
         "month_high": round(month_high, 2),
         "month_low": round(month_low, 2),
     }
+
+    # Classic (5-point) floor-trader pivots off the last *completed* daily
+    # candle -- today's own candle is still forming, so it's excluded the
+    # same way day_high/day_low above are sourced from the live quote
+    # instead. `candles` already covers the last 40 days for week/month, so
+    # no extra broker call is needed.
+    prior_days = sorted((c for c in candles if c["date"].date() < today), key=lambda c: c["date"])
+    if prior_days:
+        prior = prior_days[-1]
+        p_high, p_low, p_close = float(prior["high"]), float(prior["low"]), float(prior["close"])
+        pivot = (p_high + p_low + p_close) / 3
+        result.update(
+            {
+                "pivot": round(pivot, 2),
+                "r1": round(2 * pivot - p_low, 2),
+                "s1": round(2 * pivot - p_high, 2),
+                "r2": round(pivot + (p_high - p_low), 2),
+                "s2": round(pivot - (p_high - p_low), 2),
+                "r3": round(p_high + 2 * (pivot - p_low), 2),
+                "s3": round(p_low - 2 * (p_high - pivot), 2),
+            }
+        )
+
+    return result
 
 
 def _trade_dict(trade: Trade, lot_size: int) -> dict:

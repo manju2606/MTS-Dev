@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { NavBar } from '@/components/nav-bar'
 import { PriceChart } from '@/components/price-chart'
 import type { AILevels, RefLine, PredictionPoint } from '@/components/price-chart'
@@ -115,12 +115,12 @@ function MetalChart({ quote, score, contract, period, onPeriodChange }: {
 
   const refLines: RefLine[] = rangeStats
     ? [
-        { price: rangeStats.day_high, label: 'DH1' },
-        { price: rangeStats.week_high, label: 'DH2' },
-        { price: rangeStats.month_high, label: 'DH3' },
-        { price: rangeStats.day_low, label: 'DL1' },
-        { price: rangeStats.week_low, label: 'DL2' },
-        { price: rangeStats.month_low, label: 'DL3' },
+        { price: rangeStats.day_high, label: 'DH1', color: '#10b981' },
+        { price: rangeStats.week_high, label: 'WH', color: '#3b82f6' },
+        { price: rangeStats.month_high, label: 'MH', color: '#ef4444' },
+        { price: rangeStats.day_low, label: 'DL1', color: '#10b981' },
+        { price: rangeStats.week_low, label: 'WL', color: '#3b82f6' },
+        { price: rangeStats.month_low, label: 'ML', color: '#ef4444' },
       ]
     : []
 
@@ -1004,7 +1004,7 @@ function MetalChartTab({ quote, score, contract }: { quote: NgQuote | null; scor
       <p className="text-xs text-zinc-400">
         Live price via your connected Zerodha Kite account for the current front-month MCX futures contract.
         Refreshes every 5s; the chart's last candle updates in real time between fetches. Dotted lines mark
-        DH1/DL1 (day), DH2/DL2 (week), and DH3/DL3 (month) high-low.
+        DH1/DL1 (day), WH/WL (week), and MH/ML (month) high-low.
       </p>
     </div>
   )
@@ -1809,11 +1809,32 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'portfolio', label: 'Portfolio' },
 ]
 
+const _ALL_METAL_CONTRACTS = new Set<string>(
+  [...BASE_METALS, ...PRECIOUS_METALS].flatMap(m => m.variants.map(v => v.id)),
+)
+
 export default function McxMetalsView() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const tokenRef = useRef('')
   const [tab, setTab] = useState<Tab>('dashboard')
   const [contract, setContract] = useState<McxMetalsContract>('GOLD')
+
+  // Deep-link support (?contract=GOLD&tab=chart) -- lets My Trading
+  // Dashboard's "Chart" button jump straight to a contract's chart. Runs
+  // once on mount; validated against the known tab/contract shapes so a
+  // malformed URL just falls back silently.
+  useEffect(() => {
+    const c = searchParams.get('contract')
+    const t = searchParams.get('tab')
+    if (c && _ALL_METAL_CONTRACTS.has(c)) {
+      setContract(c as McxMetalsContract)
+    }
+    if (t && TABS.some(tb => tb.id === t)) {
+      setTab(t as Tab)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const [broker, setBroker] = useState<BrokerStatus | null>(null)
   const [quote, setQuote] = useState<NgQuote | null>(null)
   const [quoteLoading, setQuoteLoading] = useState(true)

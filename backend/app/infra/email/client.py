@@ -29,16 +29,24 @@ def _send_smtp_sync(
     to: str,
     subject: str,
     html: str,
+    priority: bool = False,
 ) -> None:
     # Build a minimal RFC 2822 message entirely as ASCII bytes.
     # The subject is RFC2047-encoded; the HTML body is base64-encoded.
     # This avoids all Windows cp1252 codec surprises inside Python's MIME stack.
     subject_hdr = Header(subject, "utf-8").encode()
     html_b64 = base64.b64encode(html.encode("utf-8")).decode("ascii")
+    # X-Priority/X-MSMail-Priority/Importance is the standard trio recognized
+    # across Outlook/Gmail/Apple Mail for a "high priority" flag on the
+    # message -- no single header is honored by every client, so all three.
+    priority_hdrs = (
+        "X-Priority: 1\r\nX-MSMail-Priority: High\r\nImportance: High\r\n" if priority else ""
+    )
     raw = (
         f"From: {from_addr}\r\n"
         f"To: {to}\r\n"
         f"Subject: {subject_hdr}\r\n"
+        f"{priority_hdrs}"
         f"MIME-Version: 1.0\r\n"
         f"Content-Type: text/html; charset=utf-8\r\n"
         f"Content-Transfer-Encoding: base64\r\n"
@@ -53,7 +61,7 @@ def _send_smtp_sync(
         smtp.sendmail(from_addr, to, raw)
 
 
-async def send_email(*, to: str, subject: str, html: str) -> None:
+async def send_email(*, to: str, subject: str, html: str, priority: bool = False) -> None:
     from app.core.config import settings
 
     # ── 1. SMTP ──────────────────────────────────────────────────────────────
@@ -72,6 +80,7 @@ async def send_email(*, to: str, subject: str, html: str) -> None:
                     to=to,
                     subject=subject,
                     html=html,
+                    priority=priority,
                 ),
             )
             safe = subject.encode("ascii", errors="replace").decode("ascii")
@@ -85,6 +94,20 @@ async def send_email(*, to: str, subject: str, html: str) -> None:
         import httpx
 
         try:
+            payload = {
+                "from": f"Manju Trade AI Pro <{settings.RESEND_FROM}>",
+                "to": [to],
+                "subject": subject,
+                "html": html,
+            }
+            if priority:
+                # Resend passes custom headers through as-is to the outgoing
+                # message -- same trio as the SMTP path above.
+                payload["headers"] = {
+                    "X-Priority": "1",
+                    "X-MSMail-Priority": "High",
+                    "Importance": "High",
+                }
             async with httpx.AsyncClient(timeout=15) as client:
                 resp = await client.post(
                     "https://api.resend.com/emails",
@@ -92,12 +115,7 @@ async def send_email(*, to: str, subject: str, html: str) -> None:
                         "Authorization": f"Bearer {settings.RESEND_API_KEY}",
                         "Content-Type": "application/json",
                     },
-                    json={
-                        "from": f"Manju Trade AI Pro <{settings.RESEND_FROM}>",
-                        "to": [to],
-                        "subject": subject,
-                        "html": html,
-                    },
+                    json=payload,
                 )
                 if resp.status_code < 400:
                     log.info("email.sent.resend", to=to, subject=subject)

@@ -2,16 +2,17 @@
 
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { NavBar } from '@/components/nav-bar'
 import { PriceChart } from '@/components/price-chart'
 import { NgGlobalChart } from '@/components/ng-global-chart'
+import { RsiReversionPanel, RsiReversionLiveView } from '@/components/rsi-reversion-live'
 import type { AILevels, RefLine, PredictionPoint } from '@/components/price-chart'
 import {
-  getNgQuote, listNgTrades, placeNgTrade, closeNgTrade, cancelNgTrade, getBrokerStatus, getNgAiScore, getNgHistory, getNgTrend, getNgTrendHistory, getNgRangeStats, getNgPrediction, getNgPredictionArchive, getNgDashboardHistory, getNgSignals, getNgGlobalSymbols, getNgGlobalSymbolsHistory, getNgNews, getMe, ApiError,
+  getNgQuote, listNgTrades, placeNgTrade, closeNgTrade, cancelNgTrade, getBrokerStatus, getNgAiScore, getNgRsiSignal, getNgHistory, getNgTrend, getNgTrendHistory, getNgRangeStats, getNgPrediction, getNgPredictionArchive, getNgDashboardHistory, getNgSignals, getNgGlobalSymbols, getNgGlobalSymbolsHistory, getNgNews, getMe, ApiError,
 } from '@/lib/api'
 import type {
-  NgQuote, McxTrade, BrokerStatus, NgAiScore, HistoryBar, ChartPeriod, McxContract, NgTrendLadder, TrendTimeframe, NgTrendChangeEntry, NgRangeStats, NgPrediction, NgPredictionHistoryPoint, NgPredictionAccuracy, PredictionPeriod, NgDashboardSnapshot, NgSignalsResponse, NgGlobalSymbolRow, NgGlobalSymbolSnapshot, NgSessionOpenReference, NgNewsResponse,
+  NgQuote, McxTrade, BrokerStatus, NgAiScore, NgRsiSignal, HistoryBar, ChartPeriod, McxContract, NgTrendLadder, TrendTimeframe, NgTrendChangeEntry, NgRangeStats, NgPrediction, NgPredictionHistoryPoint, NgPredictionAccuracy, PredictionPeriod, NgDashboardSnapshot, NgSignalsResponse, NgGlobalSymbolRow, NgGlobalSymbolSnapshot, NgSessionOpenReference, NgNewsResponse,
 } from '@/lib/api'
 import { readPageCache, writePageCache } from '@/lib/page-cache'
 
@@ -24,7 +25,7 @@ function pnlColor(v: number) { return v > 0 ? 'text-emerald-600 dark:text-emeral
 // highlighted for any NG expiry, not just the exact front-month value.
 function isNgProduct(c: McxContract) { return c === 'NG' || c.startsWith('NG_') }
 
-type Tab = 'dashboard' | 'chart' | 'ng-global' | 'trend' | 'ai' | 'trade' | 'portfolio'
+type Tab = 'dashboard' | 'chart' | 'ng-global' | 'trend' | 'ai' | 'rsi-strategy' | 'trade' | 'portfolio'
 
 const CONTRACTS: { id: McxContract; label: string }[] = [
   { id: 'NG', label: 'Natural Gas' },
@@ -65,6 +66,31 @@ function NgChart({ quote, score, contract, period, onPeriodChange }: {
   const [loading, setLoading] = useState(true)
   const [rangeStats, setRangeStats] = useState<NgRangeStats | null>(null)
   const [prediction, setPrediction] = useState<NgPrediction | null>(null)
+  const [rsiSignal, setRsiSignal] = useState<NgRsiSignal | null>(null)
+  // v2.0 (long+short, email-alerted) is the default here since this is
+  // "the chart" the user asked to see BUY/SELL signals on -- v1.0 (long-
+  // only, display-only) is still one click away. See RsiReversionLiveView's
+  // own docstring for why v2.0 isn't a validated profitable edge.
+  const [rsiVersion, setRsiVersion] = useState<'v1.0' | 'v2.0'>('v2.0')
+
+  // Validated only for Natural Gas Mini (see AI Strategy Lab conversation
+  // history: RSI-14 Reversion 20/80 was the #1 ranked, walk-forward-stable
+  // candidate specifically on NGMINI's 5-minute candles) -- not extrapolated
+  // to full-size NG or any other contract.
+  const isRsiSignalContract = contract === 'NGMINI'
+
+  useEffect(() => {
+    if (!isRsiSignalContract) { setRsiSignal(null); return }
+    const t = localStorage.getItem('mts_token') ?? ''
+    if (!t) return
+    setRsiSignal(null)
+    function load() {
+      getNgRsiSignal(t, 100000, rsiVersion).then(setRsiSignal).catch(() => {})
+    }
+    load()
+    const id = setInterval(load, 60_000)
+    return () => clearInterval(id)
+  }, [isRsiSignalContract, rsiVersion])
 
   useEffect(() => {
     const t = localStorage.getItem('mts_token') ?? ''
@@ -110,23 +136,46 @@ function NgChart({ quote, score, contract, period, onPeriodChange }: {
     return () => clearInterval(id)
   }, [contract, period])
 
-  const aiLevels: AILevels = score
-    ? {
-        signal: score.verdict === 'NO_TRADE' ? 'HOLD' : score.direction,
-        entry: score.entry.entry_price,
-        stopLoss: score.entry.stop_loss,
-        target: score.entry.target_1,
-      }
-    : null
+  const aiLevels: AILevels = isRsiSignalContract
+    ? (rsiSignal?.status === 'IN_POSITION' && rsiSignal.position
+        ? {
+            signal: rsiSignal.position.direction === 'SHORT' ? 'SELL' : 'BUY',
+            entry: rsiSignal.position.entry_price!,
+            stopLoss: rsiSignal.position.trailing_stop ?? rsiSignal.position.stop_loss!,
+            target: rsiSignal.position.target!,
+            signalTime: rsiSignal.position.entry_time ? Math.floor(new Date(rsiSignal.position.entry_time).getTime() / 1000) : undefined,
+          }
+        : null)
+    : score
+      ? {
+          signal: score.verdict === 'NO_TRADE' ? 'HOLD' : score.direction,
+          entry: score.entry.entry_price,
+          stopLoss: score.entry.stop_loss,
+          target: score.entry.target_1,
+        }
+      : null
 
   const refLines: RefLine[] = rangeStats
     ? [
-        { price: rangeStats.day_high, label: 'DH1' },
-        { price: rangeStats.week_high, label: 'DH2' },
-        { price: rangeStats.month_high, label: 'DH3' },
-        { price: rangeStats.day_low, label: 'DL1' },
-        { price: rangeStats.week_low, label: 'DL2' },
-        { price: rangeStats.month_low, label: 'DL3' },
+        { price: rangeStats.day_high, label: 'DH1', color: '#10b981' },
+        { price: rangeStats.week_high, label: 'WH', color: '#3b82f6' },
+        { price: rangeStats.month_high, label: 'MH', color: '#ef4444' },
+        { price: rangeStats.day_low, label: 'DL1', color: '#10b981' },
+        { price: rangeStats.week_low, label: 'WL', color: '#3b82f6' },
+        { price: rangeStats.month_low, label: 'ML', color: '#ef4444' },
+        // Classic floor-trader pivots off the last completed daily candle --
+        // absent on a contract's first trading day (no prior candle yet).
+        ...(rangeStats.pivot !== undefined
+          ? [
+              { price: rangeStats.pivot, label: 'P', color: '#a1a1aa' },
+              { price: rangeStats.r1!, label: 'R1', color: '#fca5a5' },
+              { price: rangeStats.r2!, label: 'R2', color: '#f87171' },
+              { price: rangeStats.r3!, label: 'R3', color: '#dc2626' },
+              { price: rangeStats.s1!, label: 'S1', color: '#86efac' },
+              { price: rangeStats.s2!, label: 'S2', color: '#4ade80' },
+              { price: rangeStats.s3!, label: 'S3', color: '#16a34a' },
+            ]
+          : []),
       ]
     : []
 
@@ -173,10 +222,43 @@ function NgChart({ quote, score, contract, period, onPeriodChange }: {
           )}
         </p>
       )}
+      {isRsiSignalContract && (
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setRsiVersion('v1.0')}
+              className={cls(
+                'rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors',
+                rsiVersion === 'v1.0' ? 'bg-emerald-600 text-white' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400',
+              )}
+            >
+              v1.0 (long-only)
+            </button>
+            <button
+              type="button"
+              onClick={() => setRsiVersion('v2.0')}
+              className={cls(
+                'rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors',
+                rsiVersion === 'v2.0' ? 'bg-zinc-700 text-white' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400',
+              )}
+            >
+              v2.0 (long+short, email alerts)
+            </button>
+          </div>
+          <RsiReversionPanel signal={rsiSignal} />
+        </div>
+      )}
     </div>
   )
 }
 
+// RSI-14 Reversion (20/80, SL 2.5%/TG 5.0%/trail 2.0%, 5-min candles) — the
+// AI Strategy Lab's #1 ranked, walk-forward-validated candidate specifically
+// for Natural Gas Mini. Recomputed live on every poll (see getNgRsiSignal) by
+// replaying recent candle history, so "in position" reflects the real series
+// rather than a stored flag — the chart's BUY marker/entry-stop-target lines
+// (aiLevels above) mirror this same state.
 // Each intraday granularity gets its own single-group table (display order:
 // Hours, 30 Mins, 15 Mins, then Minutes split into two half-day tables --
 // see MinuteAccuracyTables) rather than one wide multi-group table, since a
@@ -1288,7 +1370,8 @@ function NgChartTab({ quote, score, contract }: { quote: NgQuote | null; score: 
       <p className="text-xs text-zinc-400">
         Live price via your connected Zerodha Kite account for the current front-month MCX Natural Gas futures
         contract. Refreshes every 5s; the chart's last candle updates in real time between fetches. Dotted lines
-        mark DH1/DL1 (day), DH2/DL2 (week), and DH3/DL3 (month) high-low.
+        mark DH1/DL1 (day), WH/WL (week), and MH/ML (month) high-low, plus P/R1-3/S1-3 pivot levels
+        off the last completed daily candle.
       </p>
     </div>
   )
@@ -2183,15 +2266,33 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'ng-global', label: 'NG Global' },
   { id: 'trend', label: 'Trend' },
   { id: 'ai', label: 'AI Signal' },
+  { id: 'rsi-strategy', label: 'RSI Strategy' },
   { id: 'trade', label: 'Trade' },
   { id: 'portfolio', label: 'Portfolio' },
 ]
 
 export default function McxView() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const tokenRef = useRef('')
   const [tab, setTab] = useState<Tab>('dashboard')
   const [contract, setContract] = useState<McxContract>('NG')
+
+  // Deep-link support (?contract=NG&tab=chart) -- lets My Trading Dashboard's
+  // "Chart" button jump straight to a contract's chart instead of landing on
+  // the default NG Dashboard tab. Runs once on mount; validated against the
+  // known tab/contract shapes so a malformed URL just falls back silently.
+  useEffect(() => {
+    const c = searchParams.get('contract')
+    const t = searchParams.get('tab')
+    if (c && (c === 'NG' || c === 'NGMINI' || /^NG_[A-Z]{3}$/.test(c))) {
+      setContract(c as McxContract)
+    }
+    if (t && TABS.some(tb => tb.id === t)) {
+      setTab(t as Tab)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const [broker, setBroker] = useState<BrokerStatus | null>(null)
   const [quote, setQuote] = useState<NgQuote | null>(null)
   const [quoteLoading, setQuoteLoading] = useState(true)
@@ -2393,6 +2494,7 @@ export default function McxView() {
             <NgNewsPanel />
           </div>
         )}
+        {tab === 'rsi-strategy' && <RsiReversionLiveView />}
         {tab === 'trade' && <NgTradeForm quote={quote} onPlaced={loadTrades} prefill={tradePrefill} contract={contract} />}
         {tab === 'portfolio' && (
           <NgPortfolio trades={trades} loading={tradesLoading} onClose={handleClose} onCancel={handleCancel} closingId={closingId} />

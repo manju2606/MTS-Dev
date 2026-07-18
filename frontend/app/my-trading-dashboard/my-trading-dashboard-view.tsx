@@ -118,6 +118,15 @@ const PRED_COLS: { key: keyof McxDashboardRow['predicted']; label: string }[] = 
 // row underneath a clicked contract.
 const TABLE_COLUMN_COUNT = 1 + 3 + 1 + 1 + PRED_COLS.length
 
+// Deep-links into the contract's own Chart tab on /mcx or /mcx/metals (see
+// those pages' ?contract=&tab= handling) -- reuses the full chart (AI
+// prediction overlay, range lines, everything) instead of duplicating a
+// second chart implementation on this dashboard.
+function chartHref(row: McxDashboardRow): string {
+  const base = row.market === 'metals' ? '/mcx/metals' : '/mcx'
+  return `${base}?contract=${row.contract}&tab=chart`
+}
+
 function RankRow({ row, rank, expanded, onToggle }: {
   row: McxDashboardRow
   rank: number
@@ -134,6 +143,17 @@ function RankRow({ row, rank, expanded, onToggle }: {
         <td className="px-2 py-2 text-center">{RANK_MEDALS[rank] ?? rank + 1}</td>
         <td className="px-2 py-2 text-center">
           <span className="mr-1">{row.icon}</span>{row.name}
+          <a
+            href={chartHref(row)}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={e => e.stopPropagation()}
+            title={`Open ${row.name} chart in a new window`}
+            className="ml-1.5 inline-block rounded px-1 text-[10px] font-semibold no-underline"
+            style={{ background: 'rgba(99,102,241,0.25)', color: '#c7d2fe' }}
+          >
+            📈 Chart
+          </a>
           <span className="ml-1.5 inline-block text-[9px]" style={{ opacity: 0.5 }}>{expanded ? '▲' : '▼'}</span>
         </td>
         <td className="px-2 py-2 text-center">{fmtPrice(row.ltp)}</td>

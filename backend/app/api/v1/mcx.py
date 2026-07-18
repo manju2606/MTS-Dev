@@ -88,6 +88,32 @@ async def ng_ai_score(
         ) from exc
 
 
+@router.get("/ng/rsi-signal")
+async def ng_rsi_signal(
+    current_user: CurrentUser, capital: float = 100_000.0, version: str = "v1.0"
+) -> dict:
+    """Live BUY/SELL/EXIT state for the RSI-14 Reversion strategy
+    (oversold=20/overbought=80, SL 2.5%/target 5.0%/trailing stop 2.0%,
+    5-minute candles) -- the AI Strategy Lab's #1 ranked, walk-forward
+    validated candidate for Natural Gas Mini specifically. version="v1.0"
+    (long-only, the originally validated logic) or "v2.0" (adds a symmetric
+    short leg). See app/services/mcx_rsi_signal_service.py."""
+    from app.services.mcx_rsi_signal_service import get_live_rsi_signal
+    from app.services.mcx_service import McxNotConnectedError
+
+    try:
+        return await get_live_rsi_signal(str(current_user.id), capital, version)
+    except McxNotConnectedError as exc:
+        raise HTTPException(status_code=http_status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"RSI signal unavailable: {exc}",
+        ) from exc
+
+
 @router.get("/ng/predict")
 async def ng_predict(
     current_user: CurrentUser, period: str = "15m", contract: McxContract = "NG"
@@ -328,8 +354,10 @@ async def ng_day_summary_history(
 
 @router.get("/ng/range-stats")
 async def ng_range_stats(current_user: CurrentUser, contract: McxContract = "NG") -> dict:
-    """Day/week/month high-low for the front-month contract -- powers the
-    DH1-3/DL1-3 chart reference lines (see mcx_service.get_range_stats)."""
+    """Day/week/month high-low, plus classic floor-trader pivots off the
+    last completed daily candle, for the front-month contract -- powers the
+    DH1/DL1, WH/WL, MH/ML, and pivot/R1-3/S1-3 chart reference lines (see
+    mcx_service.get_range_stats)."""
     from app.services.mcx_service import McxNotConnectedError, get_range_stats
 
     try:

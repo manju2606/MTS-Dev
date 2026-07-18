@@ -9,9 +9,15 @@ export type AILevels = {
   entry: number
   stopLoss: number
   target: number
+  // Unix seconds for when this signal actually fired -- places the
+  // BUY/SELL marker at the real entry candle instead of always sliding it
+  // to the newest bar. Optional so callers without a fixed entry moment
+  // (e.g. a score recomputed fresh on every poll) keep the old behavior of
+  // pinning the marker to the latest bar.
+  signalTime?: number
 } | null
 
-export type RefLine = { price: number; label: string }
+export type RefLine = { price: number; label: string; color?: string }
 export type PredictionPoint = { time: number; predictedClose: number; upper: number; lower: number }
 
 type LiveBar = { time: UTCTimestamp; open: number; high: number; low: number; close: number }
@@ -316,9 +322,9 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
 
           candleSeries.createPriceLine({
             price: aiLevels.entry,
-            color: '#2563eb',
+            color: aiLevels.signal === 'BUY' ? '#facc15' : '#2563eb',
             lineWidth: 2,
-            lineStyle: LineStyle.Dashed,
+            lineStyle: LineStyle.Solid,
             axisLabelVisible: true,
             title: `Entry (${aiLevels.signal})`,
           })
@@ -326,40 +332,49 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
             price: aiLevels.stopLoss,
             color: '#ef4444',
             lineWidth: 2,
-            lineStyle: LineStyle.Dashed,
+            lineStyle: LineStyle.Solid,
             axisLabelVisible: true,
             title: `Stop Loss ${fmtPnl(aiLevels.stopLoss)}`,
           })
           candleSeries.createPriceLine({
             price: aiLevels.target,
-            color: '#10b981',
+            color: '#d4af37',
             lineWidth: 2,
-            lineStyle: LineStyle.Dashed,
+            lineStyle: LineStyle.Solid,
             axisLabelVisible: true,
             title: `Target ${fmtPnl(aiLevels.target)}`,
           })
 
-          const lastBar = data[data.length - 1]
-          if (lastBar) {
+          // Prefer the signal's own real generation time (e.g. the actual
+          // entry candle for a strategy that stays in a position across
+          // many bars) -- falls back to the newest bar for callers that
+          // don't track a fixed entry moment. Clamped to the visible data
+          // range so a signal from just outside the fetched window (e.g.
+          // right at a chart-period boundary) doesn't silently vanish.
+          const markerTime = data.find(b => b.time >= (aiLevels.signalTime ?? Infinity))?.time
+            ?? data[data.length - 1]?.time
+          if (markerTime != null) {
             createSeriesMarkers(candleSeries, [{
-              time: lastBar.time as UTCTimestamp,
+              time: markerTime as UTCTimestamp,
               position: aiLevels.signal === 'BUY' ? 'belowBar' : 'aboveBar',
               color: aiLevels.signal === 'BUY' ? '#2563eb' : '#ef4444',
               shape: aiLevels.signal === 'BUY' ? 'arrowUp' : 'arrowDown',
-              text: aiLevels.signal,
+              text: `${aiLevels.signal}@${aiLevels.entry.toFixed(2)}${aiLevels.signalTime ? ` ${formatIstTickTime(aiLevels.signalTime)}` : ''}`,
             }])
           }
         }
 
-        // Reference lines (day/week/month high-low, etc.) — flat black dotted
-        // lines, independent of the AI signal overlay.
+        // Reference lines (day/week/month high-low, etc.) — dotted lines,
+        // independent of the AI signal overlay. Each caller-supplied line can
+        // set its own color (e.g. day=green/week=blue/month=red); falls back
+        // to a flat black/white (theme-dependent) dotted line otherwise.
         const isDarkTheme = document.documentElement.classList.contains('dark')
         const refLineColor = isDarkTheme ? '#e4e4e7' : '#18181b'
         for (const rl of refLines ?? []) {
           candleSeries.createPriceLine({
             price: rl.price,
-            color: refLineColor,
-            lineWidth: 1,
+            color: rl.color ?? refLineColor,
+            lineWidth: 2,
             lineStyle: LineStyle.Dotted,
             axisLabelVisible: true,
             title: `${rl.label} ${currencySymbol}${rl.price.toFixed(2)}`,

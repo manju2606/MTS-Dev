@@ -94,6 +94,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/options',        label: 'Options Chain',  icon: 'layers',   desc: 'NSE/BSE options chain, PCR & max pain' },
       { href: '/calendar',       label: 'Economic Calendar', icon: 'calendar', desc: 'F&O expiries, RBI MPC, earnings & holidays' },
       { href: '/screener',       label: 'Custom Screener', icon: 'sliders', desc: 'Multi-factor stock screen across Nifty universes' },
+      { href: '/historical-data', label: 'Historical Data', icon: 'database', desc: 'Download & browse OHLCV history via Zerodha' },
     ],
   },
   {
@@ -146,6 +147,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: '/portfolio',           label: 'Paper Trading',        icon: 'clipboard',  desc: 'P&L and analysis of paper trades' },
       { href: '/portfolio/assistant', label: 'Portfolio Assistant',  icon: 'sparkles',   desc: 'Track real holdings · AI analysis · chat' },
+      { href: '/portfolio/strategy-lab', label: 'AI Strategy Lab',   icon: 'cpu',        desc: 'Auto-generate, backtest & rank hundreds of strategies' },
       { href: '/tax',                 label: 'Tax Report',           icon: 'fileText',   desc: 'STCG / LTCG breakdown & CSV export' },
       { href: '/reports',             label: 'Reports',              icon: 'fileText',   desc: 'Hourly scan email reports' },
     ],
@@ -159,6 +161,8 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/mts-ops',        label: 'MTS Ops',      icon: 'cpu',      desc: 'Local dev stack — DB, cache, K8s & monitoring health' },
       { href: '/api-keys',       label: 'API Keys',     icon: 'key',      desc: 'Manage your API credentials' },
       { href: '/market-sources', label: 'Data Sources', icon: 'database', desc: 'Live source health & quote comparison' },
+      { href: '/broker',         label: 'Broker',       icon: 'link',     desc: 'Zerodha / simulated setup' },
+      { href: '/historical-data', label: 'Historical Data', icon: 'database', desc: 'Download & browse OHLCV history via Zerodha' },
     ],
   },
 ]

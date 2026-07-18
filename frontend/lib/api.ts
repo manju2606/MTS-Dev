@@ -1353,6 +1353,16 @@ export type NgRangeStats = {
   week_low: number
   month_high: number
   month_low: number
+  // Classic floor-trader pivots off the last completed daily candle --
+  // absent on the first trading day of a newly-listed contract (no prior
+  // candle to derive them from yet).
+  pivot?: number
+  r1?: number
+  s1?: number
+  r2?: number
+  s2?: number
+  r3?: number
+  s3?: number
 }
 
 export async function getNgRangeStats(token: string, contract: McxContract = 'NG'): Promise<NgRangeStats> {
@@ -2174,6 +2184,60 @@ export async function getNgAiScore(
   return res.json()
 }
 
+// RSI-14 Reversion (20/80, SL 2.5%/TG 5.0%/trail 2.0%, 5-min candles) -- the
+// AI Strategy Lab's #1 ranked, walk-forward-validated candidate specifically
+// for Natural Gas Mini (see backend mcx_rsi_signal_service.py). Stateless:
+// recomputed by replaying recent candle history on every call, so "is a
+// position open right now" always reflects the live series, not a stored flag.
+export type NgRsiSignal = {
+  contract: string
+  version: 'v1.0' | 'v2.0'
+  strategy: string
+  interval: string
+  status: 'FLAT' | 'IN_POSITION'
+  direction: 'LONG' | 'SHORT' | null
+  rsi: number | null
+  as_of: string
+  position: {
+    direction: 'LONG' | 'SHORT' | null
+    entry_time: string | null
+    entry_price: number | null
+    stop_loss: number | null
+    target: number | null
+    trailing_stop: number | null
+  } | null
+  last_signal: {
+    type: 'BUY' | 'SELL' | 'EXIT'
+    time: string | null
+    price: number | null
+    exit_reason: string | null
+  } | null
+  // Completed entry -> exit round trips within the fetched lookback window
+  // (~15 days of 5-min candles) -- not persisted, just the replay's own
+  // trade log, most recent first.
+  recent_trades: {
+    direction: 'LONG' | 'SHORT'
+    entry_time: string
+    entry_price: number
+    exit_time: string
+    exit_price: number
+    exit_reason: string
+    pnl: number
+    pnl_pct: number
+  }[]
+}
+
+export async function getNgRsiSignal(token: string, capital = 100000, version: 'v1.0' | 'v2.0' = 'v1.0'): Promise<NgRsiSignal> {
+  const res = await fetch(`${BASE}/api/v1/mcx/ng/rsi-signal?capital=${capital}&version=${version}`, {
+    headers: authHeaders(token),
+  })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch RSI signal')
+  }
+  return res.json()
+}
+
 // ── MCX Base & Precious Metals ────────────────────────────────────────────────
 // Sibling to the NG section above -- same response shapes (reuses NgQuote,
 // NgRangeStats, NgDashboardSnapshot, NgSignalsResponse, NgPrediction,
@@ -2423,6 +2487,30 @@ export async function connectUpstox(token: string, code: string): Promise<Broker
   const res = await fetch(`${BASE}/api/v1/broker/upstox/connect`, {
     method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
     body: JSON.stringify({ code }),
+  })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Connect failed') }
+  return res.json()
+}
+
+export async function getAliceBlueLoginUrl(token: string): Promise<{ login_url: string }> {
+  const res = await fetch(`${BASE}/api/v1/broker/aliceblue/login-url`, { headers: authHeaders(token) })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Failed') }
+  return res.json()
+}
+
+export async function connectAliceBlue(token: string, user_id: string, auth_code: string): Promise<BrokerStatus> {
+  const res = await fetch(`${BASE}/api/v1/broker/aliceblue/connect`, {
+    method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id, auth_code }),
+  })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Connect failed') }
+  return res.json()
+}
+
+export async function connectDhan(token: string, client_id: string, access_token: string): Promise<BrokerStatus> {
+  const res = await fetch(`${BASE}/api/v1/broker/dhan/connect`, {
+    method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_id, access_token }),
   })
   if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Connect failed') }
   return res.json()
@@ -3993,6 +4081,55 @@ export async function getGoldenStockPerformance(token: string): Promise<Record<s
   return r.json()
 }
 
+// ── Watchlist History (SotD / BTST / Golden Stock pick tracking) ────────────
+
+export type WatchlistHistorySource = 'SOTD' | 'BTST' | 'GOLDEN_STOCK'
+
+export type WatchlistHistorySnapshot = {
+  date: string
+  trading_day_number: number
+  price: number
+  pnl_pct: number
+  captured_at: string
+}
+
+export type WatchlistHistoryPick = {
+  id: string
+  source: WatchlistHistorySource
+  symbol: string
+  name: string
+  sector: string
+  announced_date: string
+  announced_at: string
+  buy_price: number
+  stop_loss: number | null
+  target: number | null
+  source_score: number | null
+  window_days: number
+  trading_day_count: number
+  frozen: boolean
+  frozen_at: string | null
+  last_price: number | null
+  last_pnl_pct: number | null
+  last_snapshot_date: string | null
+  snapshots: WatchlistHistorySnapshot[]
+}
+
+export async function getWatchlistHistoryPicks(
+  token: string,
+  params: { source?: string; active?: boolean; start_date?: string; end_date?: string; limit?: number } = {},
+): Promise<WatchlistHistoryPick[]> {
+  const q = new URLSearchParams()
+  if (params.source) q.set('source', params.source)
+  if (params.active !== undefined) q.set('active', String(params.active))
+  if (params.start_date) q.set('start_date', params.start_date)
+  if (params.end_date) q.set('end_date', params.end_date)
+  q.set('limit', String(params.limit ?? 200))
+  const res = await fetch(`${BASE}/api/v1/watchlist-history/picks?${q}`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
 // ── DSWS (Daily Discovery Watchlist Summary) ─────────────────────────────────
 
 export type DswsBucket = 'STRONG_BUY' | 'BUY' | 'SELL' | 'STRONG_SELL'
@@ -4270,5 +4407,339 @@ export async function askTradingAgent(token: string, question: string): Promise<
     body: JSON.stringify({ question }),
   })
   if (!res.ok) throw new Error('Trading agent is unavailable right now')
+  return res.json()
+}
+
+// ── Historical Data (via connected Zerodha broker session) ──────────────────
+
+export type HistoricalDataInterval =
+  'minute' | '3minute' | '5minute' | '10minute' | '15minute' | '30minute' | '60minute' | 'day'
+
+export type HistoricalDownloadResult = {
+  symbol: string
+  ok: boolean
+  error: string | null
+  candles_saved: number
+}
+
+export type HistoricalCandle = {
+  time: string
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number
+  open_interest: number | null
+}
+
+export type HistoricalDownloadedSeries = {
+  symbol: string
+  exchange: string
+  interval: string
+  candles: number
+  from_time: string
+  to_time: string
+  friendly_label: string | null
+}
+
+export async function downloadHistoricalData(token: string, body: {
+  symbols: string[]
+  exchange: string
+  interval: HistoricalDataInterval
+  from_date: string
+  to_date: string
+  include_oi: boolean
+}): Promise<{ results: HistoricalDownloadResult[] }> {
+  const res = await fetch(`${BASE}/api/v1/historical-data/download`, {
+    method: 'POST',
+    headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Download failed') }
+  return res.json()
+}
+
+export async function getHistoricalCandles(token: string, params: {
+  symbol: string
+  exchange: string
+  interval: HistoricalDataInterval
+  from_date: string
+  to_date: string
+}): Promise<HistoricalCandle[]> {
+  const q = new URLSearchParams(params)
+  const res = await fetch(`${BASE}/api/v1/historical-data/candles?${q}`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error('Failed to fetch candles')
+  return res.json()
+}
+
+export async function listDownloadedHistoricalSymbols(token: string): Promise<HistoricalDownloadedSeries[]> {
+  const res = await fetch(`${BASE}/api/v1/historical-data/symbols`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error('Failed to fetch downloaded symbols')
+  return res.json()
+}
+
+export async function deleteHistoricalSeries(token: string, params: {
+  symbol: string
+  exchange: string
+  interval: string
+}): Promise<{ deleted: number }> {
+  const q = new URLSearchParams(params)
+  const res = await fetch(`${BASE}/api/v1/historical-data/symbols?${q}`, {
+    method: 'DELETE', headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error('Failed to delete series')
+  return res.json()
+}
+
+export type McxContractOption = { value: string; label: string }
+
+export async function listMcxContracts(token: string): Promise<McxContractOption[]> {
+  const res = await fetch(`${BASE}/api/v1/historical-data/mcx-contracts`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error('Failed to fetch MCX contracts')
+  return res.json()
+}
+
+// ── AI Strategy Lab ───────────────────────────────────────────────────────────
+
+export type StrategyCandidate = {
+  id: string
+  name: string
+  family: string
+  description: string
+  params: Record<string, number>
+  stop_loss_pct: number
+  target_pct: number
+  trailing_stop_pct: number | null
+  position_size_pct: number
+}
+
+export type BacktestMetrics = {
+  total_trades: number
+  win_rate_pct: number
+  profit_factor: number
+  expectancy: number
+  cagr_pct: number
+  sharpe_ratio: number
+  sortino_ratio: number
+  max_drawdown_pct: number
+  avg_holding_hours: number
+  net_pnl: number
+  final_equity: number
+}
+
+export type WalkForwardSplit = {
+  train_metrics: BacktestMetrics
+  test_metrics: BacktestMetrics
+  stability_score: number
+}
+
+export type StrategyLabResultSummary = {
+  id: string
+  candidate: StrategyCandidate
+  full_metrics: BacktestMetrics
+  walk_forward: { stability_score: number }
+  composite_score: number
+}
+
+export type StrategyLabTrade = {
+  entry_time: string
+  exit_time: string
+  signal: string
+  entry_price: number
+  exit_price: number
+  quantity: number
+  pnl: number
+  pnl_pct: number
+  exit_reason: string
+}
+
+export type StrategyLabResultDetail = {
+  id: string
+  run_id: string
+  candidate: StrategyCandidate
+  full_metrics: BacktestMetrics
+  walk_forward: WalkForwardSplit
+  composite_score: number
+  equity_curve: { time: string; equity: number }[]
+  drawdown_curve: { time: string; drawdown_pct: number }[]
+  trades: StrategyLabTrade[]
+}
+
+export type StrategyLabRun = {
+  id: string
+  user_id: string
+  symbol: string
+  exchange: string
+  interval: string
+  from_date: string
+  to_date: string
+  capital: number
+  status: 'pending' | 'downloading' | 'generating' | 'running' | 'completed' | 'failed'
+  total_candidates: number
+  completed_candidates: number
+  error: string | null
+  created_at: string
+  completed_at: string | null
+  // This run's own top-scoring result once it completes -- lets Past Runs
+  // show "which strategy was best for this symbol" without a separate
+  // results fetch per row. Null until the run finishes.
+  best_candidate_name: string | null
+  best_composite_score: number | null
+}
+
+export async function startStrategyLabRun(token: string, body: {
+  symbol: string
+  exchange: string
+  interval: HistoricalDataInterval
+  from_date: string
+  to_date: string
+  capital: number
+}): Promise<{ run_id: string }> {
+  const res = await fetch(`${BASE}/api/v1/strategy-lab/runs`, {
+    method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Failed to start run') }
+  return res.json()
+}
+
+export async function startTrendPullbackRun(token: string, body: {
+  symbol: string
+  exchange: string
+  from_date: string
+  to_date: string
+  capital: number
+  version: 'v1.0' | 'v2.0'
+}): Promise<{ run_id: string }> {
+  const res = await fetch(`${BASE}/api/v1/strategy-lab/runs/trend-pullback`, {
+    method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Failed to start run') }
+  return res.json()
+}
+
+export async function startOrbRun(token: string, body: {
+  symbol: string
+  exchange: string
+  interval: HistoricalDataInterval
+  from_date: string
+  to_date: string
+  capital: number
+}): Promise<{ run_id: string }> {
+  const res = await fetch(`${BASE}/api/v1/strategy-lab/runs/opening-range-breakout`, {
+    method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Failed to start run') }
+  return res.json()
+}
+
+// ── Index Scan -- runs the full generated sweep across every symbol in an
+// index universe (currently just NIFTY50), one full StrategyLabRun per
+// symbol, then ranks symbols by their own best composite_score. ───────────
+
+export type IndexScanRun = {
+  id: string
+  user_id: string
+  index: string
+  exchange: string
+  interval: string
+  from_date: string
+  to_date: string
+  capital: number
+  status: 'pending' | 'running' | 'completed' | 'failed'
+  total_symbols: number
+  completed_symbols: number
+  child_run_ids: Record<string, string>
+  failed_symbols: string[]
+  error: string | null
+  created_at: string
+  completed_at: string | null
+}
+
+export type IndexScanRankingRow = StrategyLabResultSummary & { symbol: string; run_id: string }
+
+export async function startIndexScanRun(token: string, body: {
+  index: string
+  exchange: string
+  interval: HistoricalDataInterval
+  from_date: string
+  to_date: string
+  capital: number
+}): Promise<{ scan_id: string }> {
+  const res = await fetch(`${BASE}/api/v1/strategy-lab/index-scan`, {
+    method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Failed to start index scan') }
+  return res.json()
+}
+
+export async function listIndexScans(token: string): Promise<IndexScanRun[]> {
+  const res = await fetch(`${BASE}/api/v1/strategy-lab/index-scan`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error('Failed to fetch index scans')
+  return res.json()
+}
+
+export async function getIndexScan(token: string, scanId: string): Promise<IndexScanRun> {
+  const res = await fetch(`${BASE}/api/v1/strategy-lab/index-scan/${scanId}`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error('Failed to fetch index scan')
+  return res.json()
+}
+
+export async function getIndexScanRanking(token: string, scanId: string): Promise<IndexScanRankingRow[]> {
+  const res = await fetch(`${BASE}/api/v1/strategy-lab/index-scan/${scanId}/ranking`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error('Failed to fetch index scan ranking')
+  return res.json()
+}
+
+export async function startRsiReversionRun(token: string, body: {
+  symbol: string
+  exchange: string
+  from_date: string
+  to_date: string
+  capital: number
+  version: 'v1.0' | 'v2.0'
+}): Promise<{ run_id: string }> {
+  const res = await fetch(`${BASE}/api/v1/strategy-lab/runs/rsi-reversion`, {
+    method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Failed to start run') }
+  return res.json()
+}
+
+// Paginated -- an Index Scan alone creates one run per symbol (50 for
+// NIFTY 50), so the old flat unpaginated list silently hid everything past
+// the 20 most recent runs. `total` lets the caller show/hide "Load more".
+export type RunSortBy = 'created_at' | 'score' | 'symbol' | 'status'
+
+export async function listStrategyLabRuns(
+  token: string, limit = 20, offset = 0, sortBy: RunSortBy = 'created_at', sortDir: 1 | -1 = -1,
+): Promise<{ runs: StrategyLabRun[]; total: number }> {
+  const res = await fetch(
+    `${BASE}/api/v1/strategy-lab/runs?limit=${limit}&offset=${offset}&sort_by=${sortBy}&sort_dir=${sortDir}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) throw new Error('Failed to fetch runs')
+  return res.json()
+}
+
+export async function getStrategyLabRun(token: string, runId: string): Promise<StrategyLabRun> {
+  const res = await fetch(`${BASE}/api/v1/strategy-lab/runs/${runId}`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error('Failed to fetch run')
+  return res.json()
+}
+
+export async function listStrategyLabResults(token: string, runId: string): Promise<StrategyLabResultSummary[]> {
+  const res = await fetch(`${BASE}/api/v1/strategy-lab/runs/${runId}/results`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error('Failed to fetch results')
+  return res.json()
+}
+
+export async function getStrategyLabResult(token: string, runId: string, resultId: string): Promise<StrategyLabResultDetail> {
+  const res = await fetch(`${BASE}/api/v1/strategy-lab/runs/${runId}/results/${resultId}`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error('Failed to fetch result detail')
   return res.json()
 }

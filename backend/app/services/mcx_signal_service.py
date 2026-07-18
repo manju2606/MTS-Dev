@@ -18,6 +18,12 @@ from app.services.mcx_service import get_quote
 
 MCX_SIGNAL_EXPIRY_DAYS = 5
 
+# Quick kill switch, mirroring mcx_trend_service.TREND_ALERT_EMAILS_ENABLED /
+# mcx_extreme_alert_service.EXTREME_ALERT_EMAILS_ENABLED -- flip to False to
+# pause without deciding anything else. Unlike those two (informational),
+# this fires on an actual new TRADE-tier signal, so it's sent high-priority.
+MCX_SIGNAL_ALERT_EMAILS_ENABLED = True
+
 
 async def check_and_log_signal(
     user_id: str, contract: str, direction: str, score: dict, repo: McxSignalRepository
@@ -45,7 +51,76 @@ async def check_and_log_signal(
             "generated_at": datetime.utcnow(),
         },
     )
+    await _send_signal_alert(user_id, contract, direction, score)
     return True
+
+
+async def _send_signal_alert(user_id: str, contract: str, direction: str, score: dict) -> None:
+    """In-app notification for every new signal; high-priority email on top
+    -- unlike trend/extreme-proximity alerts (informational), a new
+    TRADE-tier signal is an actionable call, so it always emails (subject to
+    the MCX_SIGNAL_ALERT_EMAILS_ENABLED kill switch) rather than being
+    gated to a JUST_CHANGED-only subset.
+
+    Shared verbatim by mcx_metals_signal_service.py (it imports this function
+    unchanged, see that module's docstring) -- contract naming is the only
+    signal available here to route the link/label correctly for either
+    market: NG's own codes are always "NG"/"NGMINI"/"NG_<MONTH>", so anything
+    else reaching this function is a metals contract."""
+    import structlog
+
+    log = structlog.get_logger()
+    entry = score["entry"]
+    tradingsymbol = score["tradingsymbol"]
+    is_metals = not contract.upper().startswith("NG")
+    market_label = "MCX Metals" if is_metals else "MCX"
+    link = "/mcx/metals" if is_metals else "/mcx"
+
+    try:
+        from app.infra.notifications.push import fire as notif_fire
+
+        notif_fire(
+            user_id,
+            "mcx.signal_alert",
+            f"{market_label} {contract} {direction} Signal",
+            f"Entry {entry['entry_price']:.2f} · SL {entry['stop_loss']:.2f} · Target {entry['target_1']:.2f}",
+            link,
+        )
+    except Exception as exc:
+        log.warning("mcx.signal_alert.notif_failed", error=str(exc))
+
+    if not MCX_SIGNAL_ALERT_EMAILS_ENABLED:
+        return
+
+    try:
+        from uuid import UUID
+
+        from app.infra.db.repositories.user_repo import SQLUserRepository
+        from app.infra.db.session import AsyncSessionLocal
+        from app.infra.email.client import send_email
+        from app.infra.email.mcx_signal_alert_report import mcx_signal_alert_html
+
+        async with AsyncSessionLocal() as session:
+            user = await SQLUserRepository(session).get_by_id(UUID(user_id))
+        if user is None:
+            return
+
+        html = mcx_signal_alert_html(
+            contract,
+            tradingsymbol,
+            direction,
+            score["score_pct"],
+            entry["entry_price"],
+            entry["stop_loss"],
+            entry["target_1"],
+            entry.get("target_2"),
+            market_label,
+        )
+        subject = f"{market_label} {contract} {direction} Signal — Entry {entry['entry_price']:.2f}"
+        await send_email(to=user.email, subject=subject, html=html, priority=True)
+        log.info("mcx.signal_alert.sent", user_id=user_id, contract=contract, direction=direction)
+    except Exception as exc:
+        log.warning("mcx.signal_alert.email_failed", error=str(exc))
 
 
 async def resolve_open_signals(user_id: str, contract: str, repo: McxSignalRepository) -> int:

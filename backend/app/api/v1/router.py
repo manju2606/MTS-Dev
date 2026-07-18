@@ -18,6 +18,7 @@ from app.api.v1 import (
     dsws,
     forecast,
     golden_stock,
+    historical_data,
     international_market,
     journal,
     live,
@@ -37,10 +38,12 @@ from app.api.v1 import (
     sentiment_forecast,
     stock_of_day,
     strategy_api,
+    strategy_lab,
     tax_report,
     trading_agent,
     usa_stocks,
     usage,
+    watchlist_history,
     webhook_api,
     ws,
 )
@@ -86,6 +89,7 @@ router.include_router(calendar.router)
 router.include_router(custom_screener.router)
 router.include_router(golden_stock.router)
 router.include_router(btst.router)
+router.include_router(watchlist_history.router)
 router.include_router(sentiment_forecast.router)
 router.include_router(trading_agent.router)
 router.include_router(alerting.router)
@@ -95,3 +99,5 @@ router.include_router(mcx_metals.router)
 router.include_router(crypto.router)
 router.include_router(usa_stocks.router)
 router.include_router(international_market.router)
+router.include_router(historical_data.router)
+router.include_router(strategy_lab.router)

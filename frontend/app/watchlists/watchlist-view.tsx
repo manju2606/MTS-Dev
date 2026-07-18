@@ -497,6 +497,17 @@ export default function WatchlistView() {
         <p className="text-[11px] text-zinc-400">
           Track stocks · Live quotes · Auto-refreshes every 30s · Powered by yfinance
         </p>
+        <div className="mt-2 flex gap-1">
+          <span className="rounded-md bg-zinc-900 px-3 py-1 text-[11px] font-semibold text-white dark:bg-zinc-50 dark:text-zinc-900">
+            Watchlists
+          </span>
+          <Link
+            href="/watchlists/history"
+            className="rounded-md px-3 py-1 text-[11px] font-semibold text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+          >
+            History
+          </Link>
+        </div>
       </div>
       <div className="flex min-h-0 flex-1">
         {token ? <WatchlistsPanel token={token} /> : null}

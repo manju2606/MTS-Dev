@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import time
 from datetime import date, timedelta
 from functools import partial
@@ -47,6 +48,12 @@ def _fetch_one(sym: str, name: str) -> dict | None:
         prev = float(hist["Close"].iloc[-2]) if len(hist) >= 2 else price
         high = float(hist["High"].iloc[-1])
         low = float(hist["Low"].iloc[-1])
+        if math.isnan(price) or math.isnan(prev) or math.isnan(high) or math.isnan(low):
+            # yfinance sometimes returns a row with NaN OHLC instead of an
+            # empty frame (seen on ^DJI/^GSPC/^IXIC) -- treat that the same
+            # as no data, since NaN serializes to JSON null and the frontend
+            # types every IndexQuote field as a non-nullable number.
+            return None
         change = round(price - prev, 2)
         change_pct = round((change / prev * 100) if prev else 0, 2)
         return {

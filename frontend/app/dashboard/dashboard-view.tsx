@@ -6,12 +6,12 @@ import Link from 'next/link'
 import { NavBar } from '@/components/nav-bar'
 import {
   getMe, getTopPicks, getDiscoveryStatus, listTrades, listAlerts, getQuote, getMarketOverview,
-  getSotDToday, listWatchlists, addItemToWatchlist, getGoldenStockLatest, getBTSTLatest, ApiError,
+  getSotDToday, listWatchlists, addItemToWatchlist, getGoldenStockLatest, getBTSTLatest, getBrokerStatus, ApiError,
 } from '@/lib/api'
 import type {
   User, StockScore, DiscoveryStatus, Trade, AlertRule,
   IndexQuote, EconomicEvent, MarketOverviewData, StockOfDay, Watchlist,
-  GoldenStockScan, BTSTScanResult,
+  GoldenStockScan, BTSTScanResult, BrokerStatus,
 } from '@/lib/api'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -720,6 +720,7 @@ export default function DashboardView() {
   const [sotdLtp, setSotdLtp]   = useState<number | null>(null)
   const [goldenStockLtp, setGoldenStockLtp] = useState<number | null>(null)
   const [btstLtp, setBtstLtp]   = useState<number | null>(null)
+  const [broker, setBroker]     = useState<BrokerStatus | null>(null)
 
   const CACHE_KEY = 'mts_dashboard_cache'
 
@@ -786,6 +787,8 @@ export default function DashboardView() {
     // Show cached data immediately (no blank screen)
     const cached = localStorage.getItem(CACHE_KEY)
     if (cached) applyCache(cached)
+
+    getBrokerStatus(t).then(setBroker).catch(() => null)
 
     // Only a genuine 401 (session actually expired/invalid) sends the user back
     // to login — any other failure (transient network blip, a slow backend
@@ -861,6 +864,8 @@ export default function DashboardView() {
       )
     : {}
 
+  const zerodhaConnected = broker?.broker === 'zerodha' && broker.connected
+
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
       <NavBar active="Dashboard" />
@@ -881,6 +886,14 @@ export default function DashboardView() {
             Full Discovery →
           </Link>
         </div>
+
+        {/* Broker connection status */}
+        {broker !== null && !zerodhaConnected && (
+          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
+            No broker connected — connect your Zerodha account to enable live trading and portfolio sync.{' '}
+            <a href="/broker" className="font-semibold underline">Go to Broker settings →</a>
+          </div>
+        )}
 
         {/* Index ticker strip */}
         <IndexStrip indices={market?.indices ?? []} />
@@ -1097,6 +1110,7 @@ export default function DashboardView() {
                   { href: '/paper', label: 'Paper Trading' },
                   { href: '/market-pulse', label: 'Market Pulse' },
                   { href: '/reports', label: 'Reports' },
+                  { href: '/historical-data', label: 'Historical Data' },
                 ].map(({ href, label }) => (
                   <Link key={href} href={href}
                     className="rounded-lg border border-zinc-100 px-3 py-2 text-xs font-medium text-zinc-600 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700 dark:border-zinc-800 dark:text-zinc-400 dark:hover:border-indigo-700 dark:hover:bg-indigo-950/30 dark:hover:text-indigo-300">

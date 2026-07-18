@@ -257,6 +257,15 @@ async def list_runs(
     return {"runs": [dataclasses.asdict(r) for r in runs], "total": total}
 
 
+@router.get("/compare/{symbol}")
+async def compare_symbol_strategies(symbol: str, current_user: CurrentUser, limit: int = 10) -> dict:
+    """Top `limit` completed backtest runs for `symbol` (any strategy
+    family/version), ranked by composite score -- "which strategy is
+    actually best for this instrument" across everything ever run, not
+    just the most recent attempt. See strategy_lab_service.get_symbol_comparison."""
+    return await strategy_lab_service.get_symbol_comparison(str(current_user.id), symbol, limit)
+
+
 @router.get("/runs/{run_id}")
 async def get_run(run_id: str, current_user: CurrentUser) -> dict:
     repo = StrategyLabRepository()

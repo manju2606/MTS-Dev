@@ -897,6 +897,61 @@ async def _backtest_rsi_reversion(
     return await asyncio.to_thread(work)
 
 
+def _symbol_family_key(symbol: str) -> str:
+    """Maps a stored run's literal symbol back to a stable comparison key.
+    An MCX contract resolves to a month-specific Kite tradingsymbol at run
+    time (e.g. "NATGASMINI26JULFUT"), which rolls to a different literal
+    string every month -- comparing runs by that raw field would silently
+    drop last month's results the moment the contract rolls. Reverse-maps
+    back to the stable family key ("NGMINI") the same way
+    historical_data_service.friendly_mcx_label() does for the "Already
+    Downloaded" list, but returns the key itself (what the symbol picker
+    passes in) rather than the display label. Non-MCX symbols (NSE/BSE/NFO)
+    pass through unchanged -- they don't roll, so the literal symbol is
+    already the stable key."""
+    from app.services import mcx_metals_service, mcx_service
+
+    all_contracts = {**mcx_service.MCX_CONTRACTS, **mcx_metals_service.MCX_METALS_CONTRACTS}
+    symbol_u = symbol.upper()
+    for key, kite_name in sorted(all_contracts.items(), key=lambda kv: -len(kv[1])):
+        if symbol_u.startswith(kite_name):
+            return key
+    return symbol_u
+
+
+async def get_symbol_comparison(user_id: str, symbol: str, limit: int = 10) -> dict:
+    """Every completed backtest run for `symbol`, across every strategy
+    family/version ever tried (Generate & Backtest's 392-sweep, Trend
+    Pullback, ORB, every RSI Reversion version, an Index Scan's per-symbol
+    child run) -- ranked by composite score, so a user can see which
+    strategy has actually performed best for a given instrument rather than
+    hunting through Past Runs one at a time. Each row's metrics come from
+    that run's own best-scoring StrategyLabResult (limit=1 on the same
+    composite-score-sorted query Past Runs' expand-row already uses)."""
+    repo = StrategyLabRepository()
+    target_key = _symbol_family_key(symbol)
+    all_runs = await repo.list_completed_scored_runs(user_id)
+    # Already sorted by best_composite_score desc from the repo query.
+    matching = [r for r in all_runs if _symbol_family_key(r.symbol) == target_key]
+    total = len(matching)
+    top = matching[:limit]
+
+    rows = []
+    for run in top:
+        results = await repo.list_results(run.id, limit=1)
+        top_result = results[0] if results else None
+        rows.append({
+            "run_id": run.id,
+            "created_at": run.created_at.isoformat(),
+            "candidate_name": run.best_candidate_name,
+            "family": top_result["candidate"]["family"] if top_result else None,
+            "composite_score": run.best_composite_score,
+            "metrics": top_result["full_metrics"] if top_result else None,
+        })
+
+    return {"symbol": target_key, "total_completed_runs": total, "rows": rows}
+
+
 def _custom_strategy_stability(train: BacktestMetrics, test: BacktestMetrics) -> float:
     """Same scoring shape as walk_forward._stability_score, duplicated here
     rather than imported since that one is coupled to the single-timeframe

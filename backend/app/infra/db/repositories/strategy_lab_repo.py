@@ -91,6 +91,27 @@ class StrategyLabRepository:
     async def count_runs(self, user_id: str) -> int:
         return await self._runs.count_documents({"user_id": user_id})
 
+    # Every completed run (any family -- generated/trend_pullback/orb/
+    # rsi_reversion, including an Index Scan's per-symbol child runs, which
+    # are ordinary StrategyLabRun docs with a real symbol) that has a
+    # denormalized best_composite_score, ranked highest-first -- reuses
+    # best_candidate_name/best_composite_score (already written once at
+    # completion for Past Runs) rather than a new results join. Returns
+    # every match rather than filtering by symbol in Mongo: an MCX run's
+    # `symbol` field is the literal resolved Kite tradingsymbol (e.g.
+    # "NATGASMINI26JULFUT"), which rolls to a different string every month,
+    # so per-instrument grouping has to happen in Python against a stable
+    # family key -- see strategy_lab_service._symbol_family_key.
+    async def list_completed_scored_runs(self, user_id: str) -> list[StrategyLabRun]:
+        cursor = (
+            self._runs.find(
+                {"user_id": user_id, "status": "completed", "best_composite_score": {"$ne": None}},
+                {"_id": 0},
+            )
+            .sort("best_composite_score", -1)
+        )
+        return [StrategyLabRun(**doc) async for doc in cursor]
+
     # ── Results ──────────────────────────────────────────────────────────────
 
     async def save_result(self, result: StrategyLabResult) -> None:

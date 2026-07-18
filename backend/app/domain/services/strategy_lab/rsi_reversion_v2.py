@@ -83,11 +83,41 @@ class RsiReversionParams:
     atr_extreme_multiple: float = 2.0
     atr_widen_factor: float = 1.5
 
+    # v2.1 (experimental, on top of v2.0's long+short base) -- Regime
+    # Filter: RSI reversion is a counter-trend strategy, and its worst
+    # trades come from firing into a market that's trending hard enough to
+    # stay "oversold"/"overbought" for a long stretch without reverting.
+    # ADX < regime_adx_max requires the market to be non-trending/ranging
+    # (same ADX(14) indicator and >25 "confirmed trend" threshold Trend
+    # Pullback already uses for the opposite purpose -- there it CONFIRMS a
+    # trend to follow; here it's inverted to REQUIRE the absence of one,
+    # since a reversion entry fighting a real trend is exactly the failure
+    # mode this is meant to filter out).
+    regime_filter_enabled: bool = False
+    regime_adx_max: float = 25.0
+
 
 RSI_REVERSION_VERSIONS: dict[str, RsiReversionParams] = {
     "v1.0": RsiReversionParams(allow_short=False),
     "v2.0": RsiReversionParams(allow_short=True),
+    "v2.1": RsiReversionParams(allow_short=True, regime_filter_enabled=True),  # ADX < 25 (tightest)
+    # ADX < 30 -- a real ADX-threshold sensitivity sweep (see conversation)
+    # found this the most walk-forward-consistent of 25/30/35: lowest max
+    # drawdown of every variant tested (including v2.1's 25), best stability
+    # score, and train/test profit factor nearly identical (2.46 vs 2.51) --
+    # the strongest walk-forward agreement seen in this strategy family so
+    # far, on a still-thin-but-more-reasonable 25-trade sample. Trades off
+    # v2.1's higher raw profit factor (4.2 vs 2.49) for that consistency.
+    "v2.2": RsiReversionParams(allow_short=True, regime_filter_enabled=True, regime_adx_max=30.0),
     "v3.0": RsiReversionParams(allow_short=True, time_filter_enabled=True, atr_filter_enabled=True),
+    # v3.0's Time+Volatility filters plus v2.1's Regime filter, all three
+    # stacked -- experimental, testing whether they compound or fight each
+    # other (e.g. the regime filter alone already cuts trade count ~83%;
+    # stacking more filters on top could over-filter into too few trades to
+    # mean anything).
+    "v3.1": RsiReversionParams(
+        allow_short=True, time_filter_enabled=True, atr_filter_enabled=True, regime_filter_enabled=True,
+    ),
 }
 
 
@@ -159,6 +189,7 @@ def run_rsi_reversion_backtest(
     rsi_vals = ind.rsi(closes, p.period)
     atr_vals = ind.atr(highs, lows, closes, 14) if p.atr_filter_enabled else [None] * n
     atr_avg_vals = _rolling_atr_avg(atr_vals, p.atr_avg_period) if p.atr_filter_enabled else [None] * n
+    adx_vals = ind.adx(highs, lows, closes, 14) if p.regime_filter_enabled else [None] * n
 
     equity = capital
     direction = 0  # 0 flat, 1 long, -1 short
@@ -268,8 +299,15 @@ def run_rsi_reversion_backtest(
                 blocked_by_time = p.time_filter_enabled and is_near_eia_report(
                     bar.time, p.eia_window_before_minutes, p.eia_window_after_minutes
                 )
+                # Regime filter: ADX unavailable (warmup) is treated as "not
+                # confirmed non-trending" -- i.e. blocks the entry, the same
+                # conservative default the Volatility/Time filters use when
+                # their own inputs aren't ready yet.
+                blocked_by_regime = p.regime_filter_enabled and (
+                    adx_vals[i] is None or adx_vals[i] >= p.regime_adx_max  # type: ignore[operator]
+                )
                 vol_state = _volatility_state(atr_vals[i], atr_avg_vals[i], p)
-                if not blocked_by_time and vol_state != "skip":
+                if not blocked_by_time and not blocked_by_regime and vol_state != "skip":
                     stop_pct = p.stop_loss_pct * p.atr_widen_factor if vol_state == "widen" else p.stop_loss_pct
                     if wants_long:
                         open_long(i, stop_pct)

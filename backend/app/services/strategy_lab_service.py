@@ -844,12 +844,19 @@ async def _backtest_rsi_reversion(
                 f"ATR >= {params.atr_elevated_multiple:g}x its {params.atr_avg_period}-bar "
                 f"average; entry skipped entirely when ATR >= {params.atr_extreme_multiple:g}x."
             )
+        if params.regime_filter_enabled:
+            description += (
+                f" v2.1 Regime Filter (experimental): entries skipped entirely unless "
+                f"ADX(14) < {params.regime_adx_max:g} -- requires a non-trending/ranging "
+                f"market, since RSI reversion's worst trades come from fighting a real trend."
+            )
 
         candidate = StrategyCandidate(
             id=StrategyCandidate.new_id(),
             name=f"RSI-14 Reversion ({params.oversold:g}/{params.overbought:g}) {version}"
             + (" [Long+Short]" if params.allow_short else " [Long-only]")
-            + (" [Time+Vol Filters]" if params.time_filter_enabled or params.atr_filter_enabled else ""),
+            + (" [Time+Vol Filters]" if params.time_filter_enabled or params.atr_filter_enabled else "")
+            + (" [Regime Filter]" if params.regime_filter_enabled else ""),
             family="rsi_reversion_v2",
             description=description,
             params={
@@ -859,6 +866,7 @@ async def _backtest_rsi_reversion(
                 "allow_short": int(params.allow_short),
                 "time_filter_enabled": int(params.time_filter_enabled),
                 "atr_filter_enabled": int(params.atr_filter_enabled),
+                "regime_filter_enabled": int(params.regime_filter_enabled),
             },
             stop_loss_pct=params.stop_loss_pct,
             target_pct=params.target_pct,

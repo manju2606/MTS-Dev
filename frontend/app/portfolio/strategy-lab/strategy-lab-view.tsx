@@ -285,7 +285,7 @@ export default function StrategyLabView() {
 
   const [mode, setMode] = useState<Mode>('generated')
   const [trendPullbackVersion, setTrendPullbackVersion] = useState<'v1.0' | 'v2.0'>('v2.0')
-  const [rsiReversionVersion, setRsiReversionVersion] = useState<'v1.0' | 'v2.0' | 'v3.0'>('v1.0')
+  const [rsiReversionVersion, setRsiReversionVersion] = useState<'v1.0' | 'v2.0' | 'v2.1' | 'v2.2' | 'v3.0'>('v1.0')
   const [exchange, setExchange] = useState('NSE')
   const [symbol, setSymbol] = useState('')
   const [symbolLabel, setSymbolLabel] = useState('')
@@ -466,6 +466,10 @@ export default function StrategyLabView() {
       // MCX futures roll monthly and Kite only lists the current contract,
       // so a long lookback isn't achievable -- default to a realistic window.
       setFromDate(daysAgoStr(180))
+      // Both strategies only trade MCX contracts -- lock the exchange so the
+      // symbol picker shows the MCX contract dropdown (e.g. NG) instead of
+      // silently staying on whatever exchange was last selected (NSE search).
+      if (exchange !== 'MCX') handleExchangeChange('MCX')
     } else {
       setFromDate(daysAgoStr(next === 'orb' ? 90 : 730))
     }
@@ -741,6 +745,24 @@ export default function StrategyLabView() {
                 </button>
                 <button
                   type="button"
+                  onClick={() => setRsiReversionVersion('v2.1')}
+                  className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                    rsiReversionVersion === 'v2.1' ? 'bg-zinc-700 text-white' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400'
+                  }`}
+                >
+                  v2.1 (+ regime filter, ADX&lt;25)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRsiReversionVersion('v2.2')}
+                  className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                    rsiReversionVersion === 'v2.2' ? 'bg-zinc-700 text-white' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400'
+                  }`}
+                >
+                  v2.2 (+ regime filter, ADX&lt;30)
+                </button>
+                <button
+                  type="button"
                   onClick={() => setRsiReversionVersion('v3.0')}
                   className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors ${
                     rsiReversionVersion === 'v3.0' ? 'bg-zinc-700 text-white' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400'
@@ -761,6 +783,15 @@ export default function StrategyLabView() {
                   <strong> not yet validated</strong> — run it and check whether P&amp;L improves and drawdown stays
                   flat-or-better vs v1.0, and always check the walk-forward split (train vs test) below before
                   trusting a full-period number alone.</>
+                ) : rsiReversionVersion === 'v2.1' ? (
+                  <>Everything in v2.0 (long+short), plus a <strong>regime filter</strong>: no new entries while
+                  ADX-14 ≥ 25 (a strongly trending market, where mean-reversion tends to fight the trend and lose).
+                  Backtested improvement over v2.0 with better Monte Carlo tail-risk (lower 95th-percentile
+                  drawdown) but fewer trades. <strong>Backtest-only</strong> — not deployed to live alerting.</>
+                ) : rsiReversionVersion === 'v2.2' ? (
+                  <>Same idea as v2.1, with a looser regime threshold: no new entries while ADX-14 ≥ 30. More trades
+                  and tighter walk-forward (train vs test) consistency than v2.1, but a higher Monte Carlo
+                  95th-percentile tail drawdown. <strong>Backtest-only</strong> — not deployed to live alerting.</>
                 ) : (
                   <>Everything in v2.0 (long+short), plus two more rules. <strong>Time Filter:</strong> no new entries
                   30min before / 60min after the weekly EIA Natural Gas Storage Report (Thu 10:30 AM ET) — volatility
@@ -779,6 +810,10 @@ export default function StrategyLabView() {
               {mode === 'index_scan' ? (
                 <div className="flex h-[30px] w-full items-center rounded-lg border border-zinc-200 bg-zinc-50 px-2 text-xs text-zinc-500 dark:border-zinc-800 dark:bg-zinc-800/50 dark:text-zinc-400">
                   {(indexUniverses.find(u => u.index === indexScanIndex)?.exchange ?? '…')} (fixed by index)
+                </div>
+              ) : mode === 'trend_pullback' || mode === 'rsi_reversion' ? (
+                <div className="flex h-[30px] w-full items-center rounded-lg border border-zinc-200 bg-zinc-50 px-2 text-xs text-zinc-500 dark:border-zinc-800 dark:bg-zinc-800/50 dark:text-zinc-400">
+                  MCX (fixed — MCX-only strategy)
                 </div>
               ) : (
                 <select value={exchange} onChange={e => handleExchangeChange(e.target.value)}

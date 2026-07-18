@@ -4582,6 +4582,35 @@ export type StrategyLabResultSummary = {
   composite_score: number
 }
 
+// Top-N completed backtest runs for one instrument, across every strategy
+// family/version ever tried -- "which strategy is actually best for this
+// symbol" (see backend strategy_lab_service.get_symbol_comparison).
+export type SymbolComparisonRow = {
+  run_id: string
+  created_at: string
+  candidate_name: string | null
+  family: string | null
+  composite_score: number
+  metrics: BacktestMetrics | null
+}
+export type SymbolComparison = {
+  symbol: string
+  total_completed_runs: number
+  rows: SymbolComparisonRow[]
+}
+
+export async function getSymbolComparison(token: string, symbol: string, limit = 10): Promise<SymbolComparison> {
+  const res = await fetch(
+    `${BASE}/api/v1/strategy-lab/compare/${encodeURIComponent(symbol)}?limit=${limit}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch symbol comparison')
+  }
+  return res.json()
+}
+
 export type StrategyLabTrade = {
   entry_time: string
   exit_time: string

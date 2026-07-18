@@ -8,11 +8,12 @@ import {
   startStrategyLabRun, startTrendPullbackRun, startOrbRun, startRsiReversionRun, startIndexScanRun,
   listStrategyLabRuns, getStrategyLabRun, listStrategyLabResults, getStrategyLabResult, getResultMonteCarlo,
   listIndexScans, getIndexScan, getIndexScanRanking, listIndexUniverses, listMcxContracts, searchStocks,
-  getMe, ApiError,
+  getMe, ApiError, getSymbolComparison,
 } from '@/lib/api'
 import type {
   HistoricalDataInterval, StrategyLabRun, StrategyLabResultSummary, StrategyLabResultDetail, MonteCarloResult,
   IndexScanRun, IndexScanRankingRow, IndexUniverseOption, McxContractOption, StockSearchResult, RunSortBy,
+  SymbolComparison,
 } from '@/lib/api'
 
 const EXCHANGES = ['NSE', 'BSE', 'NFO', 'MCX']
@@ -40,7 +41,7 @@ const INDEX_LABELS: Record<string, string> = {
 // #1 ranked of 392 candidates for Natural Gas Mini). 'index_scan' runs the
 // full generated sweep against every symbol in an index (see
 // strategy_lab_service.start_index_scan_run) instead of a single symbol.
-type Mode = 'generated' | 'trend_pullback' | 'orb' | 'rsi_reversion' | 'index_scan' | 'rsi_live'
+type Mode = 'generated' | 'trend_pullback' | 'orb' | 'rsi_reversion' | 'index_scan' | 'rsi_live' | 'compare'
 
 type SortKey = 'score' | 'cagr' | 'sharpe' | 'max_dd' | 'win_rate' | 'pf' | 'trades' | 'stability'
 type SortDir = 'asc' | 'desc'
@@ -161,6 +162,116 @@ function MetricsGrid({ m }: { m: StrategyLabResultDetail['full_metrics'] }) {
       <Metric label="Avg Hold" value={`${m.avg_holding_hours.toFixed(0)}h`} />
       <Metric label="Final Equity" value={`₹${m.final_equity.toLocaleString('en-IN')}`} />
       <Metric label="Recovery Factor" value={m.recovery_factor.toFixed(2)} />
+    </div>
+  )
+}
+
+// ── Compare Strategies ───────────────────────────────────────────────────
+
+const COMPARE_FAMILY_LABELS: Record<string, string> = {
+  generated: 'Auto-Generated (392-sweep)',
+  trend_pullback: 'Trend Pullback',
+  opening_range_breakout: 'Opening Range Breakout',
+  rsi_reversion_v2: 'RSI Reversion',
+}
+
+function SymbolComparisonView({ result, loading, error }: {
+  result: SymbolComparison | null
+  loading: boolean
+  error: string | null
+}) {
+  if (loading) {
+    return (
+      <div className="mt-6 flex justify-center py-10">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
+      </div>
+    )
+  }
+  if (error) {
+    return (
+      <p className="mt-6 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-400">
+        {error}
+      </p>
+    )
+  }
+  if (!result) {
+    return (
+      <p className="mt-6 text-xs text-zinc-400">
+        Pick a symbol above and click &quot;Compare Strategies&quot; to see every completed backtest ever run for it
+        (any mode -- Generate &amp; Backtest, Trend Pullback, ORB, RSI Reversion, an Index Scan child run), ranked by
+        AI composite score.
+      </p>
+    )
+  }
+  if (result.rows.length === 0) {
+    return (
+      <p className="mt-6 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+        No completed backtests yet for {result.symbol} — run one first (any mode above), then come back here to
+        compare.
+      </p>
+    )
+  }
+
+  const maxScore = Math.max(...result.rows.map(r => r.composite_score), 1)
+  const rankBadge = (i: number) =>
+    i === 0 ? 'bg-amber-500' : i === 1 ? 'bg-zinc-400' : i === 2 ? 'bg-amber-700' : 'bg-zinc-300 dark:bg-zinc-700'
+
+  return (
+    <div className="mt-6 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+          Top {result.rows.length} Strategies — {result.symbol}
+        </p>
+        <p className="text-[11px] text-zinc-400">
+          {result.total_completed_runs} completed run{result.total_completed_runs === 1 ? '' : 's'} total
+          {result.total_completed_runs > result.rows.length ? ` (showing top ${result.rows.length})` : ''}
+        </p>
+      </div>
+      <div className="space-y-3">
+        {result.rows.map((row, i) => {
+          const m = row.metrics
+          return (
+            <div key={`${row.run_id}-${i}`} className="rounded-lg border border-zinc-100 p-3 dark:border-zinc-800">
+              <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white ${rankBadge(i)}`}>
+                    {i + 1}
+                  </span>
+                  <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-50">
+                    {row.candidate_name ?? 'Unnamed strategy'}
+                  </span>
+                  {row.family && (
+                    <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                      {COMPARE_FAMILY_LABELS[row.family] ?? row.family}
+                    </span>
+                  )}
+                </div>
+                <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">
+                  {row.composite_score.toFixed(1)}/100
+                </span>
+              </div>
+              <div className="mb-2 h-2 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+                <div
+                  className="h-full rounded-full bg-indigo-500"
+                  style={{ width: `${(row.composite_score / maxScore) * 100}%` }}
+                />
+              </div>
+              {m ? (
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+                  <Metric label="CAGR" value={`${m.cagr_pct.toFixed(1)}%`} accent={m.cagr_pct >= 0 ? 'text-emerald-600' : 'text-red-500'} />
+                  <Metric label="Profit Factor" value={m.profit_factor.toFixed(2)} />
+                  <Metric label="Max DD" value={`${m.max_drawdown_pct.toFixed(1)}%`} accent="text-red-500" />
+                  <Metric label="Win Rate" value={`${m.win_rate_pct.toFixed(1)}%`} />
+                  <Metric label="Trades" value={String(m.total_trades)} />
+                  <Metric label="Net P&L" value={`₹${m.net_pnl.toFixed(0)}`} accent={m.net_pnl >= 0 ? 'text-emerald-600' : 'text-red-500'} />
+                </div>
+              ) : (
+                <p className="text-[11px] text-zinc-400">No metrics available</p>
+              )}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -297,6 +408,9 @@ export default function StrategyLabView() {
   const [interval, setIntervalOption] = useState<HistoricalDataInterval>('day')
   const [fromDate, setFromDate] = useState(daysAgoStr(730))
   const [toDate, setToDate] = useState(todayStr())
+  const [compareResult, setCompareResult] = useState<SymbolComparison | null>(null)
+  const [compareLoading, setCompareLoading] = useState(false)
+  const [compareError, setCompareError] = useState<string | null>(null)
   const [capital, setCapital] = useState(100000)
 
   const [starting, setStarting] = useState(false)
@@ -551,6 +665,17 @@ export default function StrategyLabView() {
     } finally { setStarting(false) }
   }
 
+  async function handleCompare() {
+    if (!symbol) return
+    setCompareLoading(true); setCompareError(null); setCompareResult(null)
+    try {
+      const result = await getSymbolComparison(tokenRef.current, symbol, 10)
+      setCompareResult(result)
+    } catch (e) {
+      setCompareError(e instanceof Error ? e.message : 'Failed to fetch comparison')
+    } finally { setCompareLoading(false) }
+  }
+
   // Opens a symbol's own full run+result (its child StrategyLabRun from the
   // index scan) using the exact same detail view as a normal single-symbol
   // run -- switches mode to 'generated' since that's the view that renders
@@ -682,6 +807,15 @@ export default function StrategyLabView() {
               }`}
             >
               RSI Reversion (Live)
+            </button>
+            <button
+              type="button"
+              onClick={() => handleModeChange('compare')}
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                mode === 'compare' ? 'bg-indigo-600 text-white' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400'
+              }`}
+            >
+              Compare Strategies
             </button>
           </div>
 
@@ -851,7 +985,7 @@ export default function StrategyLabView() {
             </div>
           )}
 
-          <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className={`mb-4 grid grid-cols-2 gap-3 ${mode === 'compare' ? '' : 'sm:grid-cols-4'}`}>
             <div>
               <label className="mb-1 block text-xs font-medium text-zinc-500">Exchange</label>
               {mode === 'index_scan' ? (
@@ -869,7 +1003,7 @@ export default function StrategyLabView() {
                 </select>
               )}
             </div>
-            {mode !== 'trend_pullback' && mode !== 'rsi_reversion' ? (
+            {mode === 'compare' ? null : mode !== 'trend_pullback' && mode !== 'rsi_reversion' ? (
               <div>
                 <label className="mb-1 block text-xs font-medium text-zinc-500">Interval</label>
                 <select value={interval} onChange={e => setIntervalOption(e.target.value as HistoricalDataInterval)}
@@ -885,16 +1019,20 @@ export default function StrategyLabView() {
                 </div>
               </div>
             )}
-            <div>
-              <label className="mb-1 block text-xs font-medium text-zinc-500">From</label>
-              <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)}
-                className="w-full rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-zinc-500">To</label>
-              <input type="date" value={toDate} onChange={e => setToDate(e.target.value)}
-                className="w-full rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
-            </div>
+            {mode !== 'compare' && (
+              <>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-500">From</label>
+                  <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)}
+                    className="w-full rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-500">To</label>
+                  <input type="date" value={toDate} onChange={e => setToDate(e.target.value)}
+                    className="w-full rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
+                </div>
+              </>
+            )}
           </div>
 
           {mode === 'index_scan' ? (
@@ -966,17 +1104,27 @@ export default function StrategyLabView() {
           </>
           )}
 
-          <label className="mb-1 block text-xs font-medium text-zinc-500">Capital (₹)</label>
-          <input type="number" value={capital} onChange={e => setCapital(Number(e.target.value))} min={1000} step={1000}
-            className="mb-4 w-full max-w-[200px] rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
+          {mode !== 'compare' && (
+            <>
+              <label className="mb-1 block text-xs font-medium text-zinc-500">Capital (₹)</label>
+              <input type="number" value={capital} onChange={e => setCapital(Number(e.target.value))} min={1000} step={1000}
+                className="mb-4 w-full max-w-[200px] rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100" />
+            </>
+          )}
 
           <div>
             <button
-              onClick={handleStart}
-              disabled={starting || (mode !== 'index_scan' && !symbol) || (activeRun !== null && ACTIVE_STATUSES.has(activeRun.status)) || (activeScan !== null && ACTIVE_SCAN_STATUSES.has(activeScan.status))}
+              onClick={mode === 'compare' ? handleCompare : handleStart}
+              disabled={
+                mode === 'compare'
+                  ? compareLoading || !symbol
+                  : starting || (mode !== 'index_scan' && !symbol) || (activeRun !== null && ACTIVE_STATUSES.has(activeRun.status)) || (activeScan !== null && ACTIVE_SCAN_STATUSES.has(activeScan.status))
+              }
               className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-60"
             >
-              {starting ? 'Starting…' : mode === 'trend_pullback' ? 'Run Trend Pullback Backtest' : mode === 'orb' ? 'Run Opening Range Breakout Backtest' : mode === 'rsi_reversion' ? `Run RSI Reversion ${rsiReversionVersion} Backtest` : mode === 'index_scan' ? `Scan ${INDEX_LABELS[indexScanIndex] ?? indexScanIndex}` : 'Generate & Backtest'}
+              {mode === 'compare'
+                ? (compareLoading ? 'Comparing…' : 'Compare Strategies')
+                : starting ? 'Starting…' : mode === 'trend_pullback' ? 'Run Trend Pullback Backtest' : mode === 'orb' ? 'Run Opening Range Breakout Backtest' : mode === 'rsi_reversion' ? `Run RSI Reversion ${rsiReversionVersion} Backtest` : mode === 'index_scan' ? `Scan ${INDEX_LABELS[indexScanIndex] ?? indexScanIndex}` : 'Generate & Backtest'}
             </button>
           </div>
           </>
@@ -984,6 +1132,10 @@ export default function StrategyLabView() {
         </div>
 
         {mode === 'rsi_live' && <RsiReversionLiveView />}
+
+        {mode === 'compare' && (
+          <SymbolComparisonView result={compareResult} loading={compareLoading} error={compareError} />
+        )}
 
         {mode === 'index_scan' && (
           <>

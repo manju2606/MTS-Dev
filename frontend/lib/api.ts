@@ -4383,6 +4383,38 @@ export async function getSentimentForecastHistory(token: string, limit = 12): Pr
   return r.json()
 }
 
+export async function getLastWeekSentimentForecast(token: string): Promise<WeeklySentimentForecast | null> {
+  const r = await fetch(`${BASE}/api/v1/sentiment-forecast/last-week`, { headers: authHeaders(token) })
+  if (r.status === 404) return null
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+// Rolls up every week whose Monday falls in the given calendar month --
+// there's no separate "monthly forecast" generated (the forecast itself is
+// only ever week-ahead), this pools already-generated weekly forecasts and
+// their resolved actuals into one accuracy plus a per-week breakdown.
+export type MonthlySentimentRollup = {
+  year: number
+  month: number
+  month_start: string
+  month_end: string
+  weeks: WeeklySentimentForecast[]
+  accuracy: SentimentForecastAccuracy
+}
+
+export async function getLastMonthSentimentForecast(token: string): Promise<MonthlySentimentRollup> {
+  const r = await fetch(`${BASE}/api/v1/sentiment-forecast/last-month`, { headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+export async function getMonthSentimentForecast(token: string, year: number, month: number): Promise<MonthlySentimentRollup> {
+  const r = await fetch(`${BASE}/api/v1/sentiment-forecast/month/${year}/${month}`, { headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
 export async function generateSentimentForecast(token: string): Promise<WeeklySentimentForecast> {
   const r = await fetch(`${BASE}/api/v1/sentiment-forecast/generate`, { method: 'POST', headers: authHeaders(token) })
   if (!r.ok) throw new Error(await r.text())

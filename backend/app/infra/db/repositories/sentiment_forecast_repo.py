@@ -67,6 +67,18 @@ class SentimentForecastRepository:
         cursor = self._forecasts.find({}, {"_id": 0}).sort("week_start", -1).limit(limit)
         return await cursor.to_list(length=limit)
 
+    async def list_forecasts_between(self, start_date: str, end_date: str) -> list[dict]:
+        """Every week whose week_start (its Monday) falls in [start_date,
+        end_date] -- both ISO date strings, compared lexicographically
+        (valid since week_start is always "YYYY-MM-DD"). Used for the
+        monthly rollup: a week "belongs" to whichever month its Monday
+        falls in, same convention as the flat history table already uses
+        week_start as each row's label."""
+        cursor = self._forecasts.find(
+            {"week_start": {"$gte": start_date, "$lte": end_date}}, {"_id": 0}
+        ).sort("week_start", 1)
+        return await cursor.to_list(length=100)
+
     async def resolve_forecast_day(
         self,
         week_start: str,

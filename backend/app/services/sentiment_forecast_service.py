@@ -244,3 +244,47 @@ async def get_forecast_history(limit: int = 12) -> list[dict]:
     repo = SentimentForecastRepository()
     weeks = await repo.list_forecast_history(limit=limit)
     return [{**w, "accuracy": _week_accuracy(w["days"])} for w in weeks]
+
+
+async def get_last_week_view() -> dict | None:
+    """The week immediately before the current one -- same shape as
+    get_week_view(), just pre-resolved to last Monday so the frontend
+    doesn't need to compute that date itself."""
+    last_week_start = (_week_start(date.today()) - timedelta(days=7)).isoformat()
+    return await get_week_view(last_week_start)
+
+
+def _month_bounds(year: int, month: int) -> tuple[date, date]:
+    start = date(year, month, 1)
+    end = date(year, month + 1, 1) - timedelta(days=1) if month < 12 else date(year, 12, 31)
+    return start, end
+
+
+async def get_month_view(year: int, month: int) -> dict:
+    """Rolls up every week whose Monday falls in the given calendar month
+    into one pooled accuracy (all days across all those weeks), plus each
+    individual week's own accuracy for a breakdown table -- there's no
+    separate "monthly forecast" generated (the forecast itself is only ever
+    week-ahead, see this module's own docstring); this is purely an
+    aggregation of already-generated weekly forecasts and their resolved
+    actuals."""
+    repo = SentimentForecastRepository()
+    start, end = _month_bounds(year, month)
+    weeks = await repo.list_forecasts_between(start.isoformat(), end.isoformat())
+
+    all_days = [d for w in weeks for d in w["days"]]
+    return {
+        "year": year,
+        "month": month,
+        "month_start": start.isoformat(),
+        "month_end": end.isoformat(),
+        "weeks": [{**w, "accuracy": _week_accuracy(w["days"])} for w in weeks],
+        "accuracy": _week_accuracy(all_days),
+    }
+
+
+async def get_last_month_view() -> dict:
+    """The calendar month immediately before the current one."""
+    first_of_this_month = date.today().replace(day=1)
+    last_month_end = first_of_this_month - timedelta(days=1)
+    return await get_month_view(last_month_end.year, last_month_end.month)

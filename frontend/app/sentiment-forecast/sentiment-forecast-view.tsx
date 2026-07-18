@@ -5,9 +5,10 @@ import { useRouter } from 'next/navigation'
 import { NavBar } from '@/components/nav-bar'
 import {
   getCurrentWeekSentimentForecast, getSentimentForecastHistory,
+  getLastWeekSentimentForecast, getLastMonthSentimentForecast,
   generateSentimentForecast, triggerSentimentSnapshot,
 } from '@/lib/api'
-import type { WeeklySentimentForecast } from '@/lib/api'
+import type { WeeklySentimentForecast, MonthlySentimentRollup } from '@/lib/api'
 import { readPageCache, writePageCache } from '@/lib/page-cache'
 
 const FORECAST_CACHE_KEY = 'sentiment-forecast:forecast'
@@ -74,11 +75,11 @@ function DayCard({ day, isToday }: { day: WeeklySentimentForecast['days'][number
   )
 }
 
-function AccuracyBar({ forecast }: { forecast: WeeklySentimentForecast }) {
+function AccuracyBar({ forecast, title = "This Week's Accuracy" }: { forecast: WeeklySentimentForecast; title?: string }) {
   const { accuracy } = forecast
   return (
     <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-400">This Week&apos;s Accuracy</p>
+      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-400">{title}</p>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <div>
           <p className="text-[10px] text-zinc-400">Days Tracked</p>
@@ -107,6 +108,56 @@ function AccuracyBar({ forecast }: { forecast: WeeklySentimentForecast }) {
         {forecast.inputs.vix_value !== null && <> · India VIX {forecast.inputs.vix_value.toFixed(1)} (adj {forecast.inputs.vix_adjustment >= 0 ? '+' : ''}{forecast.inputs.vix_adjustment.toFixed(1)})</>}
         {' '}· Nifty momentum {forecast.inputs.nifty_momentum_pct >= 0 ? '+' : ''}{forecast.inputs.nifty_momentum_pct.toFixed(1)}% (adj {forecast.inputs.nifty_adjustment >= 0 ? '+' : ''}{forecast.inputs.nifty_adjustment.toFixed(1)})
       </div>
+    </div>
+  )
+}
+
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+]
+
+function MonthAccuracyCard({ rollup }: { rollup: MonthlySentimentRollup }) {
+  const { accuracy } = rollup
+  const label = `${MONTH_NAMES[rollup.month - 1]} ${rollup.year}`
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+        Last Month&apos;s Accuracy — {label}
+      </p>
+      {rollup.weeks.length === 0 ? (
+        <p className="text-sm text-zinc-400">No forecasts were generated in {label}.</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <div>
+              <p className="text-[10px] text-zinc-400">Weeks Tracked</p>
+              <p className="text-lg font-bold text-zinc-900 dark:text-zinc-50">{rollup.weeks.length}</p>
+            </div>
+            <div>
+              <p className="text-[10px] text-zinc-400">Days Correct</p>
+              <p className="text-lg font-bold text-zinc-900 dark:text-zinc-50">
+                {accuracy.days_correct} / {accuracy.days_resolved}
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] text-zinc-400">Accuracy</p>
+              <p className={`text-lg font-bold ${accuracy.accuracy_pct !== null && accuracy.accuracy_pct >= 50 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'}`}>
+                {accuracy.accuracy_pct !== null ? `${accuracy.accuracy_pct}%` : '—'}
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] text-zinc-400">Avg Error</p>
+              <p className="text-lg font-bold text-zinc-700 dark:text-zinc-200">
+                {accuracy.avg_error_pct !== null ? `±${accuracy.avg_error_pct}%` : '—'}
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+            <HistoryTable history={rollup.weeks} />
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -156,6 +207,8 @@ export function SentimentForecastView() {
   const [userRole, setUserRole] = useState('')
   const [forecast, setForecast] = useState<WeeklySentimentForecast | null>(null)
   const [history, setHistory] = useState<WeeklySentimentForecast[]>([])
+  const [lastWeek, setLastWeek] = useState<WeeklySentimentForecast | null>(null)
+  const [lastMonth, setLastMonth] = useState<MonthlySentimentRollup | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<'generate' | 'snapshot' | null>(null)
@@ -167,13 +220,17 @@ export function SentimentForecastView() {
     setLoading(true)
     setError(null)
     try {
-      const [f, h] = await Promise.all([
+      const [f, h, lw, lm] = await Promise.all([
         getCurrentWeekSentimentForecast(token),
         getSentimentForecastHistory(token, 12),
+        getLastWeekSentimentForecast(token).catch(() => null),
+        getLastMonthSentimentForecast(token).catch(() => null),
       ])
       setForecast(f)
       if (f) writePageCache(FORECAST_CACHE_KEY, f)
       setHistory(h)
+      setLastWeek(lw)
+      setLastMonth(lm)
       if (!f) setError('No forecast generated for this week yet.')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load')
@@ -265,27 +322,43 @@ export function SentimentForecastView() {
               <div key={i} className="h-24 animate-pulse rounded-xl bg-zinc-200 dark:bg-zinc-800" />
             ))}
           </div>
-        ) : !forecast ? (
-          <div className="rounded-xl border border-zinc-200 bg-white px-4 py-16 text-center dark:border-zinc-800 dark:bg-zinc-900">
-            <p className="text-sm font-medium text-zinc-500">{error ?? 'No forecast available.'}</p>
-            {isAdmin && (
-              <p className="mt-1 text-xs text-zinc-400">Click &quot;Generate This Week&apos;s Forecast&quot; to create one now.</p>
-            )}
-          </div>
         ) : (
           <div className="space-y-6">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-              {forecast.days.map(day => (
-                <DayCard key={day.date} day={day} isToday={day.date === today} />
-              ))}
-            </div>
+            {/* This week's forecast may not exist yet (e.g. before it's been
+                generated for the new week) -- that's no longer a reason to
+                hide Last Week/Last Month/Past Weeks below, which only depend
+                on their own data existing, not on this week's. */}
+            {!forecast ? (
+              <div className="rounded-xl border border-zinc-200 bg-white px-4 py-16 text-center dark:border-zinc-800 dark:bg-zinc-900">
+                <p className="text-sm font-medium text-zinc-500">{error ?? 'No forecast available.'}</p>
+                {isAdmin && (
+                  <p className="mt-1 text-xs text-zinc-400">Click &quot;Generate This Week&apos;s Forecast&quot; to create one now.</p>
+                )}
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                  {forecast.days.map(day => (
+                    <DayCard key={day.date} day={day} isToday={day.date === today} />
+                  ))}
+                </div>
+                <AccuracyBar forecast={forecast} />
+              </>
+            )}
 
-            <AccuracyBar forecast={forecast} />
+            {(lastWeek || lastMonth) && (
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                {lastWeek && <AccuracyBar forecast={lastWeek} title={`Last Week's Accuracy — week of ${lastWeek.week_start}`} />}
+                {lastMonth && <MonthAccuracyCard rollup={lastMonth} />}
+              </div>
+            )}
 
-            <div>
-              <p className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Past Weeks</p>
-              <HistoryTable history={history.filter(w => w.week_start !== forecast.week_start)} />
-            </div>
+            {history.length > 0 && (
+              <div>
+                <p className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Past Weeks</p>
+                <HistoryTable history={history.filter(w => w.week_start !== forecast?.week_start && w.week_start !== lastWeek?.week_start)} />
+              </div>
+            )}
           </div>
         )}
       </main>

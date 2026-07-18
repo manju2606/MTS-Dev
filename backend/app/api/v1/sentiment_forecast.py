@@ -30,6 +30,26 @@ async def week(week_start: str, current_user: CurrentUser) -> dict:
     return view
 
 
+@router.get("/last-week")
+async def last_week(current_user: CurrentUser) -> dict:
+    view = await service.get_last_week_view()
+    if not view:
+        raise HTTPException(status_code=404, detail="No forecast found for last week")
+    return view
+
+
+@router.get("/last-month")
+async def last_month(current_user: CurrentUser) -> dict:
+    return await service.get_last_month_view()
+
+
+@router.get("/month/{year}/{month}")
+async def month(year: int, month: int, current_user: CurrentUser) -> dict:
+    if not 1 <= month <= 12:
+        raise HTTPException(status_code=422, detail="month must be 1-12")
+    return await service.get_month_view(year, month)
+
+
 @router.get("/history")
 async def history(
     current_user: CurrentUser,

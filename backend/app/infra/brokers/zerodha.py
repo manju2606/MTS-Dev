@@ -47,10 +47,8 @@ class ZerodhaBroker(AbstractBroker):
         return "zerodha"
 
     @property
-    def credentials(self) -> tuple[str, str]:
-        """(api_key, access_token) -- lets session_store persist and later
-        reconstruct this session without reaching into a private attribute."""
-        return self._kite.api_key, self._kite.access_token
+    def credentials(self) -> dict[str, str]:
+        return {"api_key": self._kite.api_key, "access_token": self._kite.access_token}
 
     @property
     def is_connected(self) -> bool:

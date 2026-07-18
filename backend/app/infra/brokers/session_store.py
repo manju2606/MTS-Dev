@@ -4,13 +4,11 @@ survives backend restarts and is visible across uvicorn worker processes
 whichever worker happened to handle the /connect request, so the other
 worker would see "not connected" even seconds later).
 
-Only Zerodha sessions are persisted -- it's the only broker here whose
-credentials (api_key + access_token) are enough to reconstruct a working
-client on another worker/after a restart. Kite's own access tokens are
-valid for roughly one trading day; a session that's gone stale there will
-simply fail on its next API call and prompt a reconnect -- this store
-makes no attempt to outlive Kite's own expiry, just to survive *our*
-process churn within that window.
+Every live broker (Zerodha, Upstox, Alice Blue, Dhan) persists via its
+`credentials` dict (see AbstractBroker) -- the simulated broker has none,
+so set_broker() below just skips it. Each broker's own access token expiry
+still applies (Kite ~1 day, Dhan 24h, etc.); this store makes no attempt to
+outlive that, just to survive *our* process churn within that window.
 """
 
 import json
@@ -19,7 +17,7 @@ from app.core.config import settings
 from app.domain.interfaces.broker import AbstractBroker
 
 _REDIS_PREFIX = "broker_session:"
-_REDIS_TTL = 20 * 3600  # a little under Kite's ~1-day access token lifetime
+_REDIS_TTL = 20 * 3600  # a little under the shortest-lived token (Kite/Dhan, ~1 day)
 
 # Per-process cache so repeated calls within the same worker/request burst
 # don't all round-trip to Redis. Redis remains the source of truth.
@@ -30,6 +28,32 @@ def _redis():
     import redis.asyncio as aioredis
 
     return aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+
+
+def _reconstruct(data: dict) -> AbstractBroker | None:
+    broker_name = data.get("broker")
+    # Old sessions (written before credentials were nested) stored api_key /
+    # access_token directly on `data` -- fall back to that shape too so an
+    # already-connected user isn't forced to reconnect after this change.
+    creds = data.get("credentials") or data
+
+    if broker_name == "zerodha":
+        from app.infra.brokers.zerodha import ZerodhaBroker
+
+        return ZerodhaBroker(api_key=creds["api_key"], access_token=creds["access_token"])
+    if broker_name == "upstox":
+        from app.infra.brokers.upstox import UpstoxBroker
+
+        return UpstoxBroker(api_key=creds["api_key"], access_token=creds["access_token"])
+    if broker_name == "aliceblue":
+        from app.infra.brokers.aliceblue import AliceBlueBroker
+
+        return AliceBlueBroker(client_id=creds["client_id"], user_session=creds["user_session"])
+    if broker_name == "dhan":
+        from app.infra.brokers.dhan import DhanBroker
+
+        return DhanBroker(client_id=creds["client_id"], access_token=creds["access_token"])
+    return None
 
 
 async def get(user_id: str) -> AbstractBroker | None:
@@ -46,12 +70,9 @@ async def get(user_id: str) -> AbstractBroker | None:
         return None
 
     try:
-        from app.infra.brokers.zerodha import ZerodhaBroker
-
-        data = json.loads(raw)
-        if data.get("broker") != "zerodha":
+        broker = _reconstruct(json.loads(raw))
+        if broker is None:
             return None
-        broker = ZerodhaBroker(api_key=data["api_key"], access_token=data["access_token"])
         _local_cache[user_id] = broker
         return broker
     except Exception:
@@ -61,14 +82,12 @@ async def get(user_id: str) -> AbstractBroker | None:
 async def set_broker(user_id: str, broker: AbstractBroker) -> None:
     _local_cache[user_id] = broker
 
-    if broker.name != "zerodha":
+    creds = broker.credentials
+    if not creds:
         return  # simulated/other brokers carry no reconstructible credentials
 
     try:
-        api_key, access_token = broker.credentials  # type: ignore[attr-defined]
-        payload = json.dumps(
-            {"broker": "zerodha", "api_key": api_key, "access_token": access_token}
-        )
+        payload = json.dumps({"broker": broker.name, "credentials": creds})
         r = _redis()
         await r.set(_REDIS_PREFIX + user_id, payload, ex=_REDIS_TTL)
         await r.aclose()

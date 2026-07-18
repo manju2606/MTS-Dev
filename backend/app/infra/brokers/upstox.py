@@ -71,6 +71,10 @@ class UpstoxBroker(AbstractBroker):
     def is_connected(self) -> bool:
         return self._connected
 
+    @property
+    def credentials(self) -> dict[str, str]:
+        return {"api_key": self._api_key, "access_token": self._access_token}
+
     def _headers(self) -> dict:
         return {
             "Authorization": f"Bearer {self._access_token}",

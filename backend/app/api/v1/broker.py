@@ -1,4 +1,5 @@
-"""Broker management endpoints — connect/disconnect Zerodha, Upstox, or use simulated."""
+"""Broker management endpoints — connect/disconnect Zerodha, Upstox,
+Alice Blue, Dhan, or use simulated."""
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
@@ -16,6 +17,17 @@ async def broker_status(current_user: CurrentUser) -> dict:
     broker = await session_store.get(str(current_user.id))
     if broker is None:
         return {"broker": "simulated", "connected": True, "note": "Using simulated broker"}
+    if broker.name == "zerodha":
+        # A session existing in Redis only means we once had a valid token --
+        # Kite invalidates it once daily regardless of our own TTL, so confirm
+        # it still actually works before reporting "connected".
+        valid = await broker.validate_session()  # type: ignore[attr-defined]
+        if not valid:
+            return {
+                "broker": "zerodha",
+                "connected": False,
+                "note": "Session expired — reconnect required",
+            }
     return {"broker": broker.name, "connected": broker.is_connected}
 
 
@@ -101,6 +113,68 @@ async def upstox_connect(body: UpstoxConnectRequest, current_user: CurrentUser) 
         return {"broker": "upstox", "connected": True}
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Upstox auth failed: {exc}") from exc
+
+
+# ── Alice Blue (ANT) ─────────────────────────────────────────────────────────
+
+
+@router.get("/aliceblue/login-url")
+async def aliceblue_login_url(current_user: CurrentUser) -> dict:
+    if not settings.ALICEBLUE_APP_CODE:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ALICEBLUE_APP_CODE not configured in .env",
+        )
+    from app.infra.brokers.aliceblue import get_login_url
+
+    return {"login_url": get_login_url(settings.ALICEBLUE_APP_CODE)}
+
+
+class AliceBlueConnectRequest(BaseModel):
+    user_id: str
+    auth_code: str
+
+
+@router.post("/aliceblue/connect")
+async def aliceblue_connect(body: AliceBlueConnectRequest, current_user: CurrentUser) -> dict:
+    if not settings.ALICEBLUE_API_SECRET:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ALICEBLUE_API_SECRET not configured",
+        )
+    try:
+        from app.infra.brokers.aliceblue import AliceBlueBroker, generate_session
+
+        user_session = await generate_session(
+            settings.ALICEBLUE_API_SECRET, body.user_id, body.auth_code
+        )
+        broker = AliceBlueBroker(client_id=body.user_id, user_session=user_session)
+        await session_store.set_broker(str(current_user.id), broker)
+        return {"broker": "aliceblue", "connected": True}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Alice Blue auth failed: {exc}") from exc
+
+
+# ── Dhan ─────────────────────────────────────────────────────────────────────
+
+
+class DhanConnectRequest(BaseModel):
+    client_id: str
+    access_token: str
+
+
+@router.post("/dhan/connect")
+async def dhan_connect(body: DhanConnectRequest, current_user: CurrentUser) -> dict:
+    from app.infra.brokers.dhan import DhanBroker, validate_credentials
+
+    if not await validate_credentials(body.client_id, body.access_token):
+        raise HTTPException(
+            status_code=400,
+            detail="Dhan auth failed: invalid client ID or access token",
+        )
+    broker = DhanBroker(client_id=body.client_id, access_token=body.access_token)
+    await session_store.set_broker(str(current_user.id), broker)
+    return {"broker": "dhan", "connected": True}
 
 
 # ── Simulated / Disconnect ────────────────────────────────────────────────────

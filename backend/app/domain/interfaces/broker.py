@@ -12,6 +12,16 @@ class AbstractBroker(ABC):
     @abstractmethod
     def is_connected(self) -> bool: ...
 
+    @property
+    def credentials(self) -> dict[str, str]:
+        """Whatever this broker needs to reconstruct an equivalent session
+        later (access token, client id, etc.) -- used by session_store to
+        persist the session past this process's lifetime. Brokers with
+        nothing worth persisting (e.g. the simulated broker) can leave this
+        as the default empty dict; session_store treats that as "don't
+        bother persisting me"."""
+        return {}
+
     @abstractmethod
     async def place_order(
         self,

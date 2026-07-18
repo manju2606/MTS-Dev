@@ -54,5 +54,13 @@ class Settings(BaseSettings):
     UPSTOX_API_SECRET: str | None = None
     UPSTOX_REDIRECT_URI: str = "http://localhost:3000/broker/upstox/callback"
 
+    # Phase 3 — Alice Blue (ANT)
+    ALICEBLUE_APP_CODE: str | None = None
+    ALICEBLUE_API_SECRET: str | None = None
+    ALICEBLUE_REDIRECT_URI: str = "http://localhost:3000/broker/aliceblue/callback"
+
+    # Phase 3 — Dhan (no app registration; user pastes their own client id +
+    # access token generated at web.dhan.co, so no keys needed here)
+
 
 settings = Settings()

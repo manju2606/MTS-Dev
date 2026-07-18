@@ -3,15 +3,36 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { NavBar } from '@/components/nav-bar'
-import { getBrokerStatus, getZerodhaLoginUrl, connectZerodha, disconnectBroker, activateSimulatedBroker, getUpstoxLoginUrl, connectUpstox } from '@/lib/api'
+import {
+  getBrokerStatus, getZerodhaLoginUrl, connectZerodha,
+  getUpstoxLoginUrl, connectUpstox,
+  getAliceBlueLoginUrl, connectAliceBlue,
+  connectDhan,
+  disconnectBroker, activateSimulatedBroker,
+} from '@/lib/api'
 import type { BrokerStatus } from '@/lib/api'
+
+type BrokerId = 'zerodha' | 'upstox' | 'aliceblue' | 'dhan' | 'simulated'
+
+const BROKERS: { id: BrokerId; label: string; color: string; note: string }[] = [
+  { id: 'zerodha',   label: 'Zerodha',    color: 'bg-blue-600',    note: 'Requires KITE_API_KEY / KITE_API_SECRET in backend/.env' },
+  { id: 'upstox',    label: 'Upstox',     color: 'bg-purple-600',  note: 'Requires UPSTOX_API_KEY / UPSTOX_API_SECRET in backend/.env' },
+  { id: 'aliceblue', label: 'Alice Blue', color: 'bg-amber-600',   note: 'Requires ALICEBLUE_APP_CODE / ALICEBLUE_API_SECRET in backend/.env' },
+  { id: 'dhan',      label: 'Dhan',       color: 'bg-teal-600',    note: 'Generate a token at web.dhan.co → My Profile → Access DhanHQ APIs' },
+  { id: 'simulated', label: 'Simulated',  color: 'bg-zinc-700',    note: 'Executes orders instantly at live yfinance price. No real money.' },
+]
 
 export default function BrokerView() {
   const router = useRouter()
   const tokenRef = useRef('')
   const [status, setStatus] = useState<BrokerStatus | null>(null)
+  const [selected, setSelected] = useState<BrokerId>('zerodha')
   const [requestToken, setRequestToken] = useState('')
   const [upstoxCode, setUpstoxCode] = useState('')
+  const [abUserId, setAbUserId] = useState('')
+  const [abAuthCode, setAbAuthCode] = useState('')
+  const [dhanClientId, setDhanClientId] = useState('')
+  const [dhanAccessToken, setDhanAccessToken] = useState('')
   const [loading, setLoading] = useState(false)
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
   const [authChecked, setAuthChecked] = useState(false)
@@ -20,7 +41,10 @@ export default function BrokerView() {
     const t = localStorage.getItem('mts_token')
     if (!t) { router.replace('/login'); return }
     tokenRef.current = t
-    getBrokerStatus(t).then(setStatus).catch(() => null)
+    getBrokerStatus(t).then(s => {
+      setStatus(s)
+      if (s.broker !== 'simulated') setSelected(s.broker as BrokerId)
+    }).catch(() => null)
     const id = setTimeout(() => setAuthChecked(true), 0)
     return () => clearTimeout(id)
   }, [router])
@@ -36,7 +60,7 @@ export default function BrokerView() {
     } finally { setLoading(false) }
   }
 
-  async function handleConnect() {
+  async function handleZerodhaConnect() {
     if (!requestToken.trim()) return
     setLoading(true); setMsg(null)
     try {
@@ -45,17 +69,6 @@ export default function BrokerView() {
       setMsg({ type: 'ok', text: 'Connected to Zerodha successfully.' })
     } catch (e) {
       setMsg({ type: 'err', text: e instanceof Error ? e.message : 'Connection failed' })
-    } finally { setLoading(false) }
-  }
-
-  async function handleSimulated() {
-    setLoading(true); setMsg(null)
-    try {
-      const s = await activateSimulatedBroker(tokenRef.current)
-      setStatus(s)
-      setMsg({ type: 'ok', text: 'Switched to simulated broker.' })
-    } catch (e) {
-      setMsg({ type: 'err', text: e instanceof Error ? e.message : 'Failed' })
     } finally { setLoading(false) }
   }
 
@@ -82,6 +95,52 @@ export default function BrokerView() {
     } finally { setLoading(false) }
   }
 
+  async function handleAliceBlueLogin() {
+    setLoading(true); setMsg(null)
+    try {
+      const { login_url } = await getAliceBlueLoginUrl(tokenRef.current)
+      window.open(login_url, '_blank')
+      setMsg({ type: 'ok', text: 'Alice Blue login opened. After logging in, paste your User ID and the authCode from the redirect URL below.' })
+    } catch (e) {
+      setMsg({ type: 'err', text: e instanceof Error ? e.message : 'Failed' })
+    } finally { setLoading(false) }
+  }
+
+  async function handleAliceBlueConnect() {
+    if (!abUserId.trim() || !abAuthCode.trim()) return
+    setLoading(true); setMsg(null)
+    try {
+      const s = await connectAliceBlue(tokenRef.current, abUserId.trim(), abAuthCode.trim())
+      setStatus(s); setAbAuthCode('')
+      setMsg({ type: 'ok', text: 'Connected to Alice Blue successfully.' })
+    } catch (e) {
+      setMsg({ type: 'err', text: e instanceof Error ? e.message : 'Connection failed' })
+    } finally { setLoading(false) }
+  }
+
+  async function handleDhanConnect() {
+    if (!dhanClientId.trim() || !dhanAccessToken.trim()) return
+    setLoading(true); setMsg(null)
+    try {
+      const s = await connectDhan(tokenRef.current, dhanClientId.trim(), dhanAccessToken.trim())
+      setStatus(s); setDhanAccessToken('')
+      setMsg({ type: 'ok', text: 'Connected to Dhan successfully.' })
+    } catch (e) {
+      setMsg({ type: 'err', text: e instanceof Error ? e.message : 'Connection failed' })
+    } finally { setLoading(false) }
+  }
+
+  async function handleSimulated() {
+    setLoading(true); setMsg(null)
+    try {
+      const s = await activateSimulatedBroker(tokenRef.current)
+      setStatus(s)
+      setMsg({ type: 'ok', text: 'Switched to simulated broker.' })
+    } catch (e) {
+      setMsg({ type: 'err', text: e instanceof Error ? e.message : 'Failed' })
+    } finally { setLoading(false) }
+  }
+
   async function handleDisconnect() {
     setLoading(true)
     try {
@@ -93,7 +152,8 @@ export default function BrokerView() {
 
   if (!authChecked) return null
 
-  const isLiveBroker = status?.broker === 'zerodha' || status?.broker === 'upstox'
+  const isLiveBroker = status?.broker !== 'simulated' && !!status?.broker
+  const brokerMeta = BROKERS.find(b => b.id === selected)!
 
   return (
     <div className="min-h-full bg-zinc-50 dark:bg-zinc-950">
@@ -101,7 +161,7 @@ export default function BrokerView() {
       <main className="mx-auto max-w-2xl px-4 py-10">
         <h1 className="mb-1 text-lg font-semibold text-zinc-900 dark:text-zinc-50">Broker Setup</h1>
         <p className="mb-8 text-xs text-zinc-400">
-          Connect Zerodha Kite for live trading, or use the simulated broker for paper-like live execution.
+          Connect a broker for live trading, or use the simulated broker for paper-like live execution.
         </p>
 
         {/* Current status */}
@@ -116,6 +176,15 @@ export default function BrokerView() {
               <span className="text-xs text-zinc-400">{status.note}</span>
             )}
           </div>
+          {isLiveBroker && (
+            <button
+              onClick={handleDisconnect}
+              disabled={loading}
+              className="mt-3 text-xs text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+            >
+              Disconnect → switch to Simulated
+            </button>
+          )}
         </div>
 
         {msg && (
@@ -124,94 +193,149 @@ export default function BrokerView() {
           </div>
         )}
 
-        {/* Zerodha section */}
+        {/* Broker picker */}
         <div className="mb-4 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-          <p className="mb-1 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Zerodha Kite</p>
-          <p className="mb-4 text-xs text-zinc-400">
-            Requires KITE_API_KEY and KITE_API_SECRET in backend/.env.
-          </p>
-          <div className="flex flex-col gap-3">
-            <button
-              onClick={handleZerodhaLogin}
-              disabled={loading}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-60"
-            >
-              1. Open Zerodha Login
-            </button>
-            <div className="flex gap-2">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-400">Choose a broker</p>
+          <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
+            {BROKERS.map(b => (
+              <button
+                key={b.id}
+                onClick={() => { setSelected(b.id); setMsg(null) }}
+                className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
+                  selected === b.id
+                    ? `${b.color} text-white`
+                    : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'
+                }`}
+              >
+                {b.label}
+              </button>
+            ))}
+          </div>
+
+          <p className="mb-4 text-xs text-zinc-400">{brokerMeta.note}</p>
+
+          {/* Per-broker connect flow */}
+          {selected === 'zerodha' && (
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={handleZerodhaLogin}
+                disabled={loading}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-60"
+              >
+                1. Open Zerodha Login
+              </button>
+              <div className="flex gap-2">
+                <input
+                  value={requestToken}
+                  onChange={e => setRequestToken(e.target.value)}
+                  placeholder="Paste request_token from Kite redirect URL"
+                  className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                />
+                <button
+                  onClick={handleZerodhaConnect}
+                  disabled={loading || !requestToken.trim()}
+                  className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+                >
+                  2. Connect
+                </button>
+              </div>
+            </div>
+          )}
+
+          {selected === 'upstox' && (
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={handleUpstoxLogin}
+                disabled={loading}
+                className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-500 disabled:opacity-60"
+              >
+                1. Open Upstox Login
+              </button>
+              <div className="flex gap-2">
+                <input
+                  value={upstoxCode}
+                  onChange={e => setUpstoxCode(e.target.value)}
+                  placeholder="Paste authorization code from redirect URL"
+                  className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                />
+                <button
+                  onClick={handleUpstoxConnect}
+                  disabled={loading || !upstoxCode.trim()}
+                  className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+                >
+                  2. Connect
+                </button>
+              </div>
+            </div>
+          )}
+
+          {selected === 'aliceblue' && (
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={handleAliceBlueLogin}
+                disabled={loading}
+                className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-500 disabled:opacity-60"
+              >
+                1. Open Alice Blue Login
+              </button>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <input
+                  value={abUserId}
+                  onChange={e => setAbUserId(e.target.value)}
+                  placeholder="Your Alice Blue User ID"
+                  className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                />
+                <input
+                  value={abAuthCode}
+                  onChange={e => setAbAuthCode(e.target.value)}
+                  placeholder="Paste authCode from redirect URL"
+                  className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                />
+                <button
+                  onClick={handleAliceBlueConnect}
+                  disabled={loading || !abUserId.trim() || !abAuthCode.trim()}
+                  className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+                >
+                  2. Connect
+                </button>
+              </div>
+            </div>
+          )}
+
+          {selected === 'dhan' && (
+            <div className="flex flex-col gap-2 sm:flex-row">
               <input
-                value={requestToken}
-                onChange={e => setRequestToken(e.target.value)}
-                placeholder="Paste request_token from Kite redirect URL"
+                value={dhanClientId}
+                onChange={e => setDhanClientId(e.target.value)}
+                placeholder="Dhan Client ID"
+                className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+              />
+              <input
+                value={dhanAccessToken}
+                onChange={e => setDhanAccessToken(e.target.value)}
+                placeholder="Paste access token"
                 className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
               />
               <button
-                onClick={handleConnect}
-                disabled={loading || !requestToken.trim()}
+                onClick={handleDhanConnect}
+                disabled={loading || !dhanClientId.trim() || !dhanAccessToken.trim()}
                 className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
               >
-                2. Connect
+                Connect
               </button>
             </div>
-          </div>
-        </div>
+          )}
 
-        {/* Upstox section */}
-        <div className="mb-4 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-          <p className="mb-1 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Upstox</p>
-          <p className="mb-4 text-xs text-zinc-400">
-            Requires UPSTOX_API_KEY and UPSTOX_API_SECRET in backend/.env.
-          </p>
-          <div className="flex flex-col gap-3">
+          {selected === 'simulated' && (
             <button
-              onClick={handleUpstoxLogin}
+              onClick={handleSimulated}
               disabled={loading}
-              className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-500 disabled:opacity-60"
+              className="rounded-lg bg-zinc-800 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700 dark:bg-zinc-700 dark:hover:bg-zinc-600 disabled:opacity-60"
             >
-              1. Open Upstox Login
+              Use Simulated Broker
             </button>
-            <div className="flex gap-2">
-              <input
-                value={upstoxCode}
-                onChange={e => setUpstoxCode(e.target.value)}
-                placeholder="Paste authorization code from redirect URL"
-                className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-              />
-              <button
-                onClick={handleUpstoxConnect}
-                disabled={loading || !upstoxCode.trim()}
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
-              >
-                2. Connect
-              </button>
-            </div>
-          </div>
+          )}
         </div>
-
-        {/* Simulated broker */}
-        <div className="mb-4 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-          <p className="mb-1 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Simulated Broker</p>
-          <p className="mb-4 text-xs text-zinc-400">
-            Executes orders instantly at live yfinance price. No real money. Great for testing.
-          </p>
-          <button
-            onClick={handleSimulated}
-            disabled={loading}
-            className="rounded-lg bg-zinc-800 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700 dark:bg-zinc-700 dark:hover:bg-zinc-600 disabled:opacity-60"
-          >
-            Use Simulated Broker
-          </button>
-        </div>
-
-        {isLiveBroker && (
-          <button
-            onClick={handleDisconnect}
-            disabled={loading}
-            className="text-xs text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
-          >
-            Disconnect {status?.broker === 'zerodha' ? 'Zerodha' : 'Upstox'} → switch to Simulated
-          </button>
-        )}
       </main>
     </div>
   )

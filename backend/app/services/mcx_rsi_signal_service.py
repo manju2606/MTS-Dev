@@ -103,10 +103,11 @@ def _serialize(version: str, state: strat.LiveSignalState, trades: list[strat.Li
             if state.last_signal is not None
             else None
         ),
-        # v3.0 filters -- True only when an RSI entry condition is met right
-        # now but held back by the Time or Volatility filter (see
-        # rsi_reversion_v2.RsiReversionParams).
+        # v3.0/v2.1/v2.2 filters -- True only when an RSI entry condition is
+        # met right now but held back by the Time, Regime, or Volatility
+        # filter (see rsi_reversion_v2.RsiReversionParams).
         "blocked_by_time_filter": state.blocked_by_time_filter,
+        "blocked_by_regime_filter": state.blocked_by_regime_filter,
         "blocked_by_volatility_filter": state.blocked_by_volatility_filter,
         # Trades completed within the fetched lookback window (~15 days of
         # 5-min candles, see mcx_service._HISTORY_PERIOD_MAP["5m"]) -- not
@@ -217,7 +218,10 @@ async def _send_blocked_signal_notice(user_id: str, version: str, reason: str) -
     actionable call. Kept as an inline HTML string rather than a dedicated
     report file since it's a single line of content, unlike the multi-field
     signal alert emails."""
-    reason_label = "an upcoming EIA Natural Gas Storage Report" if reason == "TIME_FILTER" else "extreme ATR volatility"
+    reason_label = {
+        "TIME_FILTER": "an upcoming EIA Natural Gas Storage Report",
+        "REGIME_FILTER": "a strongly trending (non-ranging) market",
+    }.get(reason, "extreme ATR volatility")
 
     try:
         from app.infra.notifications.push import fire as notif_fire
@@ -271,16 +275,20 @@ async def sync_and_alert_blocked_signal(
     user_id: str, version: str, alert_repo: RsiSignalAlertRepository, capital: float = 100_000.0
 ) -> bool:
     """Called by the scheduler every 5 min: if an RSI entry condition is
-    firing right now but the Time or Volatility filter (v3.0) is holding it
-    back, notify once per calendar day -- not once per position (there's no
-    position to key on), so a day-granularity dedup key under a distinct
-    "<contract>_BLOCKED" tag reuses RsiSignalAlertRepository without a schema
-    change. Returns True if a new notice was sent."""
+    firing right now but the Time, Regime (v2.1/v2.2), or Volatility (v3.0)
+    filter is holding it back, notify once per calendar day -- not once per
+    position (there's no position to key on), so a day-granularity dedup key
+    under a distinct "<contract>_BLOCKED" tag reuses RsiSignalAlertRepository
+    without a schema change. Returns True if a new notice was sent."""
     state, _ = await _compute(user_id, version, capital)
-    if not (state.blocked_by_time_filter or state.blocked_by_volatility_filter):
+    if not (state.blocked_by_time_filter or state.blocked_by_regime_filter or state.blocked_by_volatility_filter):
         return False
 
-    reason = "TIME_FILTER" if state.blocked_by_time_filter else "VOLATILITY_FILTER"
+    reason = (
+        "TIME_FILTER" if state.blocked_by_time_filter
+        else "REGIME_FILTER" if state.blocked_by_regime_filter
+        else "VOLATILITY_FILTER"
+    )
     day_key = datetime(state.as_of.year, state.as_of.month, state.as_of.day)
     contract_key = f"{RSI_SIGNAL_CONTRACT}_BLOCKED"
 

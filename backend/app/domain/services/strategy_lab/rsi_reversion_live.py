@@ -54,6 +54,8 @@ class LiveSignalState:
     # service alerts on (see mcx_rsi_signal_service.py).
     blocked_by_time_filter: bool = False
     blocked_by_volatility_filter: bool = False
+    # v2.1/v2.2 regime filter, same "last bar only" convention as above.
+    blocked_by_regime_filter: bool = False
 
 
 @dataclass
@@ -90,6 +92,7 @@ def compute_live_state(
     rsi_vals = ind.rsi(closes, p.period)
     atr_vals = ind.atr(highs, lows, closes, 14) if p.atr_filter_enabled else [None] * n
     atr_avg_vals = _rolling_atr_avg(atr_vals, p.atr_avg_period) if p.atr_filter_enabled else [None] * n
+    adx_vals = ind.adx(highs, lows, closes, 14) if p.regime_filter_enabled else [None] * n
     costs = TransactionCosts()
 
     equity = capital
@@ -108,6 +111,7 @@ def compute_live_state(
     trades: list[LiveTrade] = []
     blocked_by_time_filter = False
     blocked_by_volatility_filter = False
+    blocked_by_regime_filter = False
 
     def open_long(i: int, stop_pct: float) -> None:
         nonlocal direction, entry_price, entry_time, qty, stop_price, target_price, trail_price
@@ -209,15 +213,23 @@ def compute_live_state(
                 blocked_time = p.time_filter_enabled and is_near_eia_report(
                     bar.time, p.eia_window_before_minutes, p.eia_window_after_minutes
                 )
+                # Same conservative default as the backtest engine: ADX
+                # unavailable (warmup) counts as "not confirmed non-trending"
+                # and blocks the entry.
+                blocked_regime = p.regime_filter_enabled and (
+                    adx_vals[i] is None or adx_vals[i] >= p.regime_adx_max  # type: ignore[operator]
+                )
                 vol_state = _volatility_state(atr_vals[i], atr_avg_vals[i], p)
-                if blocked_time or vol_state == "skip":
+                if blocked_time or blocked_regime or vol_state == "skip":
                     # Only meaningful for the live/"now" bar -- overwritten
                     # every iteration, so whatever it ends as after the loop
                     # reflects just the final bar, not any historical block.
                     blocked_by_time_filter = blocked_time
-                    blocked_by_volatility_filter = vol_state == "skip" and not blocked_time
+                    blocked_by_regime_filter = blocked_regime
+                    blocked_by_volatility_filter = vol_state == "skip" and not blocked_time and not blocked_regime
                 else:
                     blocked_by_time_filter = False
+                    blocked_by_regime_filter = False
                     blocked_by_volatility_filter = False
                     stop_pct = p.stop_loss_pct * p.atr_widen_factor if vol_state == "widen" else p.stop_loss_pct
                     if wants_long:
@@ -226,6 +238,7 @@ def compute_live_state(
                         open_short(i, stop_pct)
             else:
                 blocked_by_time_filter = False
+                blocked_by_regime_filter = False
                 blocked_by_volatility_filter = False
 
     as_of = candles[-1].time
@@ -256,6 +269,7 @@ def compute_live_state(
             last_signal_price=round(last_signal_price, 4) if last_signal_price is not None else None,
             last_exit_reason=last_exit_reason,
             blocked_by_time_filter=blocked_by_time_filter,
+            blocked_by_regime_filter=blocked_by_regime_filter,
             blocked_by_volatility_filter=blocked_by_volatility_filter,
         )
     return state, trades

@@ -673,38 +673,53 @@ async def _run_mcx_signal_check() -> None:
 
 async def _run_ng_rsi_v2_signal_check() -> None:
     """Every 5 min, 09:00-23:30 IST weekdays: recompute the live RSI-14
-    Reversion v2.0 (long+short) state for Natural Gas Mini per connected
-    user, and send a BUY/SELL + SL/target email+push alert the first time a
-    genuinely new position opens (see
+    Reversion v2.2 (long+short + ADX<30 regime filter) state for Natural Gas
+    Mini per connected user, and send a BUY/SELL + SL/target email+push
+    alert the first time a genuinely new position opens (see
     mcx_rsi_signal_service.sync_and_alert_rsi_signal for the dedup logic --
     a stateless replay recomputed every poll, so without this it would
-    re-alert every 5 min for as long as the position stays open).
+    re-alert every 5 min for as long as the position stays open). Also fires
+    a lower-priority "entry held back" notice once/day when the regime
+    filter blocks a live entry (sync_and_alert_blocked_signal).
 
     v1.0 (long-only, no filters) isn't alerted here -- it's shown live on
     the chart/RSI Strategy tab already (see mcx-view.tsx), same as before
     this job existed.
 
-    v3.0 (long+short + Time/Volatility filters) is NOT live-alerted here on
-    purpose: a real backtest comparison (same NGMINI window as v2.0/v1.0)
-    showed v3.0 worse on every profitability metric -- expectancy Rs495 vs
-    Rs795/trade, profit factor 1.90 vs 2.08, recovery factor 2.56 vs 3.56 --
-    while Monte Carlo showed its 95th-percentile drawdown was actually worse
-    than v2.0's despite the Volatility Filter's whole purpose being to
-    reduce drawdown. v3.0 stays available to view/backtest manually (see the
-    MCX page and AI Strategy Lab's version toggles), just not part of the
-    automated live-alerting pipeline until it beats v2.0 on real evidence."""
+    Promoted v2.0 -> v2.2 as the live default: v2.2 adds a regime filter
+    (no new entries while ADX-14 >= 30, i.e. skip strongly trending markets
+    where mean-reversion tends to fight the trend and lose). An ADX
+    threshold sensitivity sweep (25/30/35) found ADX<30 the most
+    walk-forward-consistent of the three -- train/test profit factor nearly
+    identical (2.46 vs 2.51) on a 25-trade sample, the strongest walk-forward
+    agreement seen in this strategy family so far. v2.1 (ADX<25) had a
+    higher raw profit factor but on a much thinner sample (~83% fewer trades
+    than v2.0) and its Monte Carlo tail-risk edge over v2.2 wasn't judged
+    worth the sample-size tradeoff for live capital. Both v2.1 and v2.2
+    remain available to backtest manually (AI Strategy Lab's version
+    toggle) for anyone who wants to re-litigate that call.
+
+    v3.0/v3.1 (Time/Volatility filters, alone or stacked with the regime
+    filter) are NOT live-alerted here: a real backtest comparison showed
+    v3.0 worse than v2.0 on every profitability metric, and v3.1's
+    "improvement" over v2.1 was an overfit artifact (only 4 test trades with
+    test profit factor higher than train). Both stay available to
+    view/backtest manually, not part of the automated live-alerting
+    pipeline."""
     try:
         from app.infra.brokers import session_store
         from app.infra.db.repositories.mcx_rsi_signal_alert_repo import RsiSignalAlertRepository
-        from app.services.mcx_rsi_signal_service import sync_and_alert_rsi_signal
+        from app.services.mcx_rsi_signal_service import sync_and_alert_blocked_signal, sync_and_alert_rsi_signal
 
         alert_repo = RsiSignalAlertRepository()
         user_ids = await session_store.list_connected_user_ids()
         alerted = 0
         for user_id in user_ids:
             try:
-                if await sync_and_alert_rsi_signal(user_id, "v2.0", alert_repo):
+                if await sync_and_alert_rsi_signal(user_id, "v2.2", alert_repo):
                     alerted += 1
+                else:
+                    await sync_and_alert_blocked_signal(user_id, "v2.2", alert_repo)
             except Exception as exc:
                 log.warning("scheduler.ng_rsi_v2_signal.user_error", user_id=user_id, error=str(exc))
             await asyncio.sleep(0)
@@ -1502,8 +1517,9 @@ def start_scheduler() -> None:
         misfire_grace_time=180,
     )
 
-    # RSI-14 Reversion v2.0 (long+short) live signal alerting, same 5-min
-    # cadence, offset a few seconds so it doesn't fire in the same instant.
+    # RSI-14 Reversion v2.2 (long+short + regime filter) live signal
+    # alerting, same 5-min cadence, offset a few seconds so it doesn't fire
+    # in the same instant.
     _scheduler.add_job(
         _run_ng_rsi_v2_signal_check,
         CronTrigger(
@@ -1511,7 +1527,7 @@ def start_scheduler() -> None:
             timezone="Asia/Kolkata",
         ),
         id="ng_rsi_v2_signal_check",
-        name="MCX NG Mini — RSI Reversion v2.0 Signal Alerting",
+        name="MCX NG Mini — RSI Reversion v2.2 Signal Alerting",
         max_instances=1,
         misfire_grace_time=180,
     )

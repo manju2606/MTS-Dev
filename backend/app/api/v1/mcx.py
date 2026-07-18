@@ -99,8 +99,10 @@ async def ng_rsi_signal(
     (oversold=20/overbought=80, SL 2.5%/target 5.0%/trailing stop 2.0%,
     5-minute candles) -- the AI Strategy Lab's #1 ranked, walk-forward
     validated candidate for Natural Gas Mini specifically. version="v1.0"
-    (long-only, the originally validated logic) or "v2.0" (adds a symmetric
-    short leg). See app/services/mcx_rsi_signal_service.py."""
+    (long-only, the originally validated logic), "v2.0" (adds a symmetric
+    short leg), or "v2.2" (v2.0 + ADX<30 regime filter -- the current live
+    default, see scheduler._run_ng_rsi_v2_signal_check). See
+    app/services/mcx_rsi_signal_service.py."""
     from app.services.mcx_rsi_signal_service import get_live_rsi_signal
     from app.services.mcx_service import McxNotConnectedError
 

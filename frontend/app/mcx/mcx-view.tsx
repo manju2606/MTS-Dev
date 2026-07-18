@@ -71,7 +71,7 @@ function NgChart({ quote, score, contract, period, onPeriodChange }: {
   // "the chart" the user asked to see BUY/SELL signals on -- v1.0 (long-
   // only, display-only) is still one click away. See RsiReversionLiveView's
   // own docstring for why v2.0 isn't a validated profitable edge.
-  const [rsiVersion, setRsiVersion] = useState<'v1.0' | 'v2.0' | 'v3.0'>('v2.0')
+  const [rsiVersion, setRsiVersion] = useState<'v1.0' | 'v2.0' | 'v2.1' | 'v2.2' | 'v3.0'>('v2.2')
 
   // Validated only for Natural Gas Mini (see AI Strategy Lab conversation
   // history: RSI-14 Reversion 20/80 was the #1 ranked, walk-forward-stable
@@ -224,7 +224,7 @@ function NgChart({ quote, score, contract, period, onPeriodChange }: {
       )}
       {isRsiSignalContract && (
         <div className="space-y-2">
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => setRsiVersion('v1.0')}
@@ -233,7 +233,7 @@ function NgChart({ quote, score, contract, period, onPeriodChange }: {
                 rsiVersion === 'v1.0' ? 'bg-emerald-600 text-white' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400',
               )}
             >
-              v1.0 (long-only)
+              v1.0 (long-only, validated)
             </button>
             <button
               type="button"
@@ -243,7 +243,27 @@ function NgChart({ quote, score, contract, period, onPeriodChange }: {
                 rsiVersion === 'v2.0' ? 'bg-zinc-700 text-white' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400',
               )}
             >
-              v2.0 (long+short, email alerts)
+              v2.0 (long+short)
+            </button>
+            <button
+              type="button"
+              onClick={() => setRsiVersion('v2.1')}
+              className={cls(
+                'rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors',
+                rsiVersion === 'v2.1' ? 'bg-zinc-700 text-white' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400',
+              )}
+            >
+              v2.1 (+ regime filter, ADX&lt;25)
+            </button>
+            <button
+              type="button"
+              onClick={() => setRsiVersion('v2.2')}
+              className={cls(
+                'rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors',
+                rsiVersion === 'v2.2' ? 'bg-emerald-600 text-white' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400',
+              )}
+            >
+              v2.2 (+ regime filter, ADX&lt;30 — live, email alerts)
             </button>
             <button
               type="button"

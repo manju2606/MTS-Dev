@@ -8,6 +8,7 @@ import {
   startStrategyLabRun, startTrendPullbackRun, startOrbRun, startRsiReversionRun, startIndexScanRun,
   listStrategyLabRuns, getStrategyLabRun, listStrategyLabResults, getStrategyLabResult, getResultMonteCarlo,
   listIndexScans, getIndexScan, getIndexScanRanking, listIndexUniverses, listMcxContracts, searchStocks,
+  getMe, ApiError,
 } from '@/lib/api'
 import type {
   HistoricalDataInterval, StrategyLabRun, StrategyLabResultSummary, StrategyLabResultDetail, MonteCarloResult,
@@ -373,6 +374,24 @@ export default function StrategyLabView() {
     listIndexScans(t).then(setPastScans).catch(() => {})
     listIndexUniverses(t).then(setIndexUniverses).catch(() => {})
     return () => clearTimeout(id)
+  }, [router])
+
+  // Session-expiry check: a token that exists in localStorage but is no
+  // longer valid (past ACCESS_TOKEN_EXPIRE_MINUTES, no refresh endpoint
+  // exists yet) otherwise leaves every picker on this page silently 401ing
+  // forever with no indication to the user that re-login would fix it --
+  // listMcxContracts/searchStocks both swallow a failed fetch into an empty
+  // array, so an expired token just looks like an empty dropdown (e.g. "NG"
+  // missing) with zero error shown. Same fix as the Historical Data page.
+  useEffect(() => {
+    const t = localStorage.getItem('mts_token')
+    if (!t) return
+    const checkSession = () => {
+      getMe(t).catch(err => { if (err instanceof ApiError && err.status === 401) router.replace('/login') })
+    }
+    checkSession()
+    const id = setInterval(checkSession, 60_000)
+    return () => clearInterval(id)
   }, [router])
 
   useEffect(() => {
@@ -741,7 +760,7 @@ export default function StrategyLabView() {
                     rsiReversionVersion === 'v2.0' ? 'bg-zinc-700 text-white' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400'
                   }`}
                 >
-                  v2.0 (adds short leg — untested)
+                  v2.0 (adds short leg — live, base for v2.1/v2.2)
                 </button>
                 <button
                   type="button"
@@ -768,7 +787,7 @@ export default function StrategyLabView() {
                     rsiReversionVersion === 'v3.0' ? 'bg-zinc-700 text-white' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400'
                   }`}
                 >
-                  v3.0 (+ Time &amp; Volatility filters — untested)
+                  v3.0 (+ Time &amp; Volatility filters — tested, underperforms v2.0)
                 </button>
               </div>
               <p className="rounded-lg bg-indigo-50 px-3 py-2 text-[11px] text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
@@ -779,26 +798,35 @@ export default function StrategyLabView() {
                   Strategy tab) — the baseline to compare v2.0/v3.0 against.</>
                 ) : rsiReversionVersion === 'v2.0' ? (
                   <>Adds a short leg, a symmetric mirror of the long side: short when RSI rises above 80 while flat,
-                  cover on the mirrored stop/trailing-stop/target, or early if RSI drops back below 20. This is
-                  <strong> not yet validated</strong> — run it and check whether P&amp;L improves and drawdown stays
-                  flat-or-better vs v1.0, and always check the walk-forward split (train vs test) below before
-                  trusting a full-period number alone.</>
+                  cover on the mirrored stop/trailing-stop/target, or early if RSI drops back below 20. A real
+                  backtest found this roughly doubles trade count and raw P&amp;L vs v1.0, but per-trade expectancy,
+                  profit factor, and max drawdown all come out <strong>worse</strong> — it was deployed live because
+                  a short leg was explicitly requested, not because it beat v1.0.
+                  <strong> v2.2 (below) is the validated fix</strong> for that weakness and is now the live default
+                  for Natural Gas Mini.</>
                 ) : rsiReversionVersion === 'v2.1' ? (
                   <>Everything in v2.0 (long+short), plus a <strong>regime filter</strong>: no new entries while
                   ADX-14 ≥ 25 (a strongly trending market, where mean-reversion tends to fight the trend and lose).
                   Backtested improvement over v2.0 with better Monte Carlo tail-risk (lower 95th-percentile
-                  drawdown) but fewer trades. <strong>Backtest-only</strong> — not deployed to live alerting.</>
+                  drawdown) but on a much thinner trade sample (~83% fewer trades than v2.0).
+                  <strong> Backtest-only</strong> — v2.2 was promoted to live instead for its larger, more
+                  walk-forward-consistent sample; re-run this to judge the tradeoff yourself.</>
                 ) : rsiReversionVersion === 'v2.2' ? (
                   <>Same idea as v2.1, with a looser regime threshold: no new entries while ADX-14 ≥ 30. More trades
-                  and tighter walk-forward (train vs test) consistency than v2.1, but a higher Monte Carlo
-                  95th-percentile tail drawdown. <strong>Backtest-only</strong> — not deployed to live alerting.</>
+                  and the tightest walk-forward (train vs test) consistency of any variant tested (profit factor
+                  2.46 train vs 2.51 test) — trades off some of v2.1&apos;s Monte Carlo tail-risk edge for that
+                  consistency and sample size. <strong>This is the current live default</strong> for Natural Gas
+                  Mini (see the MCX page&apos;s RSI Strategy tab) — new entries send an email/push alert, and a
+                  held-back entry (regime filter active) sends a once-daily informational notice.</>
                 ) : (
                   <>Everything in v2.0 (long+short), plus two more rules. <strong>Time Filter:</strong> no new entries
                   30min before / 60min after the weekly EIA Natural Gas Storage Report (Thu 10:30 AM ET) — volatility
                   and slippage risk spikes around it; you get a notification when a signal is actually held back for
                   this reason, live. <strong>Volatility Filter:</strong> when ATR ≥ 1.3× its 20-bar average, the stop
-                  widens 1.5×; at ≥ 2.0× the entry is skipped entirely. This is <strong>not yet validated</strong> —
-                  same caveat as v2.0, check the walk-forward split before trusting a full-period number.</>
+                  widens 1.5×; at ≥ 2.0× the entry is skipped entirely. <strong>Tested and rejected</strong> — a real
+                  backtest comparison found it underperforms v2.0 (lower net profit, no drawdown improvement to
+                  justify the extra complexity), so v2.0 was kept live instead. Kept here for reference/comparison,
+                  not recommended.</>
                 )}
               </p>
             </div>

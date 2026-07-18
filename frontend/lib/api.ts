@@ -2191,7 +2191,7 @@ export async function getNgAiScore(
 // position open right now" always reflects the live series, not a stored flag.
 export type NgRsiSignal = {
   contract: string
-  version: 'v1.0' | 'v2.0' | 'v3.0'
+  version: 'v1.0' | 'v2.0' | 'v2.1' | 'v2.2' | 'v3.0'
   strategy: string
   interval: string
   status: 'FLAT' | 'IN_POSITION'
@@ -2225,14 +2225,17 @@ export type NgRsiSignal = {
     pnl: number
     pnl_pct: number
   }[]
-  // v3.0 filters -- true only when an RSI entry condition is met right now
-  // but the Time (EIA report window) or Volatility (extreme ATR) filter is
-  // holding it back.
+  // v3.0/v2.1/v2.2 filters -- true only when an RSI entry condition is met
+  // right now but the Time (EIA report window), Regime (ADX trend filter),
+  // or Volatility (extreme ATR) filter is holding it back.
   blocked_by_time_filter: boolean
+  blocked_by_regime_filter: boolean
   blocked_by_volatility_filter: boolean
 }
 
-export async function getNgRsiSignal(token: string, capital = 100000, version: 'v1.0' | 'v2.0' | 'v3.0' = 'v1.0'): Promise<NgRsiSignal> {
+export async function getNgRsiSignal(
+  token: string, capital = 100000, version: 'v1.0' | 'v2.0' | 'v2.1' | 'v2.2' | 'v3.0' = 'v1.0',
+): Promise<NgRsiSignal> {
   const res = await fetch(`${BASE}/api/v1/mcx/ng/rsi-signal?capital=${capital}&version=${version}`, {
     headers: authHeaders(token),
   })

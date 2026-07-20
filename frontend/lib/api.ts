@@ -2138,6 +2138,7 @@ export type NgAiScore = {
   points_nominal_total: number
   categories: NgScoreCategory[]
   entry: {
+    as_of: string
     entry_price: number
     stop_loss: number
     stop_loss_distance: number

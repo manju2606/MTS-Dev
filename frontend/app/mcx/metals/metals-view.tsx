@@ -1258,6 +1258,7 @@ function AiSignalPanel({ onUseTrade, score, onScoreChange, contract }: {
                 <div className="flex justify-between"><dt className="text-zinc-500">Target 2 (40%)</dt><dd className="font-mono font-semibold text-emerald-600">₹{score.entry.target_2.toFixed(2)}</dd></div>
               </dl>
               <p className="mt-2 text-[11px] text-zinc-400">{score.entry.trail_remainder_note}</p>
+              <p className="mt-1 text-[11px] text-zinc-400">As of {fmtSignalDateTime(score.entry.as_of)} IST</p>
             </div>
 
             <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">

@@ -611,6 +611,7 @@ async def compute_ng_ai_score(
         "points_nominal_total": 100,
         "categories": categories,
         "entry": {
+            "as_of": ist_now().isoformat(),
             "entry_price": price,
             "stop_loss": stop_loss,
             "stop_loss_distance": sl_distance,

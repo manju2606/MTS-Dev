@@ -38,7 +38,7 @@ from app.services.mcx_ai_score_service import (
     _score_volume,
     build_reasoning,
 )
-from app.services.mcx_service import get_zerodha_broker
+from app.services.mcx_service import get_zerodha_broker, ist_now
 
 # Which correlation-ticker family each contract code belongs to -- several
 # codes (e.g. every Gold variant) share the same underlying spot/futures
@@ -279,6 +279,7 @@ async def compute_metal_ai_score(
         "points_nominal_total": 100,
         "categories": categories,
         "entry": {
+            "as_of": ist_now().isoformat(),
             "entry_price": price,
             "stop_loss": stop_loss,
             "stop_loss_distance": sl_distance,

@@ -24,6 +24,7 @@ from datetime import datetime, timedelta
 
 from app.infra.mcx import ng_indicators as ind
 from app.services.mcx_ai_score_service import (
+    NgAiScoreParams,
     _category,
     _check,
     _classify,
@@ -219,14 +220,15 @@ async def compute_metal_ai_score(
     family = _METAL_FAMILY[contract.upper()]
     corr = _fetch_metal_correlation_sync(family)
     news_items = await _recent_metals_news()
+    params = NgAiScoreParams()  # metals has no tuned variant of its own -- reuse NG's v1.0 defaults
 
     categories = [
         _score_trend(c, direction),
-        _score_momentum(h, low, c, direction),
+        _score_momentum(h, low, c, direction, params),
         _score_volume(candles, direction),
         _score_price_action(candles, direction),
         _score_order_flow(candles, direction),
-        _score_volatility(candles, direction),
+        _score_volatility(candles, direction, params),
         _score_metal_correlation(corr, direction, family),
         _score_metal_news(news_items, direction),
     ]
@@ -234,7 +236,7 @@ async def compute_metal_ai_score(
     earned = sum(cat["earned"] for cat in categories)
     available = sum(cat["available"] for cat in categories)
     score_pct = round(earned / available * 100, 1) if available else 0.0
-    verdict = _classify(score_pct)
+    verdict = _classify(score_pct, params)
 
     price = c[-1]
     atr = ind.atr(h, low, c) or 0.0

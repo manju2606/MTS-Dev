@@ -36,6 +36,7 @@ from app.services.mcx_ai_score_service import (
     _score_trend,
     _score_volatility,
     _score_volume,
+    build_reasoning,
 )
 from app.services.mcx_service import get_zerodha_broker
 
@@ -308,4 +309,5 @@ async def compute_metal_ai_score(
         },
         "candles_used": len(candles),
         "correlation_inputs": corr,
+        "reasoning": build_reasoning(categories, direction, price, stop_loss),
     }

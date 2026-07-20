@@ -424,6 +424,98 @@ def _classify(score_pct: float, params: NgAiScoreParams) -> str:
     return "NO_TRADE"
 
 
+def _summarize_checks(checks: list[dict]) -> tuple[list[str], list[str]]:
+    def _label(c: dict) -> str:
+        return c["label"] + (f" ({c['note']})" if c.get("note") else "")
+
+    passed = [_label(c) for c in checks if c["passed"]]
+    failed = [_label(c) for c in checks if not c["passed"] and c["max"] > 0]
+    return passed, failed
+
+
+def _reason_for(
+    categories: list[dict], names: list[str], label: str, caveat: str | None = None
+) -> str:
+    """Renders the already-computed category checks as a plain-language
+    paragraph, grouped under one of the spec's four reason buckets
+    (Technical/Fundamental/Sentiment/Macro) -- no new data, no LLM call,
+    just an honest readout of what the score already checked, in the same
+    spirit as every other "excluded, no data source" note elsewhere in this
+    file: never state a reason the underlying check didn't actually make."""
+    cats = [c for c in categories if c["name"] in names]
+    if not cats:
+        return f"No {label.lower()} data source configured for this contract."
+
+    all_checks = [chk for c in cats for chk in c["checks"]]
+    passed, failed = _summarize_checks(all_checks)
+    earned = sum(c["earned"] for c in cats)
+    available = sum(c["available"] for c in cats)
+    pct = round(earned / available * 100) if available else 0
+
+    parts = [f"{label}: {pct}% ({earned:.1f}/{available:.1f} pts)."]
+    if passed:
+        parts.append("Supporting: " + "; ".join(passed) + ".")
+    if failed:
+        parts.append("Against: " + "; ".join(failed) + ".")
+    if caveat:
+        parts.append(caveat)
+    return " ".join(parts)
+
+
+def build_reasoning(
+    categories: list[dict], direction: str, price: float, stop_loss: float
+) -> dict:
+    """Technical/Fundamental/Sentiment/Macro reasons + an alternative
+    scenario + an invalidation level, all derived from the same category
+    checks compute_ng_ai_score()/compute_metal_ai_score() already ran --
+    the mapping: Technical <- Trend/Momentum/Volume/Price Action/Volatility
+    (pure price & indicator checks), Macro <- Correlation (cross-asset
+    alignment: crude/Henry Hub or per-metal futures, USD/INR, DXY),
+    Sentiment <- News Filter. There's no earnings/balance-sheet data source
+    for commodity futures, so Fundamental instead reads Order Flow (OI
+    positioning) as the closest real proxy for supply/demand pressure this
+    app can actually measure -- flagged as a proxy rather than presented as
+    if it were equity-style fundamentals."""
+    technical = _reason_for(
+        categories, ["Trend", "Momentum", "Volume", "Price Action", "Volatility"], "Technical"
+    )
+    macro = _reason_for(categories, ["Correlation"], "Macro")
+    sentiment = _reason_for(categories, ["News Filter"], "Sentiment")
+    fundamental = _reason_for(
+        categories, ["Order Flow"], "Fundamental",
+        caveat=(
+            "No earnings/balance-sheet data applies to commodity futures -- "
+            "showing Open Interest positioning as the closest available supply/demand proxy."
+        ),
+    )
+
+    opposite = "SELL" if direction == "BUY" else "BUY"
+    sl_distance = abs(round(price - stop_loss, 2))
+    bull = direction == "BUY"
+    mirrored_target = round(price - sl_distance, 2) if bull else round(price + sl_distance, 2)
+    mirrored_stop = round(price + sl_distance, 2) if bull else round(price - sl_distance, 2)
+    alternative_scenario = (
+        f"If this {direction} thesis is wrong and price instead moves like a {opposite} setup, "
+        f"the mirrored case (same ATR-based distance) would target ~{mirrored_target} with its "
+        f"own stop near {mirrored_stop} -- not a second signal, just what the opposite read "
+        "looks like."
+    )
+    invalidation_level = (
+        f"Invalidated on a close beyond {stop_loss} (the same 1.5x ATR stop used for position "
+        "sizing) -- the technical/momentum alignment behind this score no longer holds past "
+        "that level."
+    )
+
+    return {
+        "technical_reason": technical,
+        "fundamental_reason": fundamental,
+        "sentiment_reason": sentiment,
+        "macro_reason": macro,
+        "alternative_scenario": alternative_scenario,
+        "invalidation_level": invalidation_level,
+    }
+
+
 async def compute_ng_ai_score(
     user_id: str,
     direction: str,
@@ -549,4 +641,5 @@ async def compute_ng_ai_score(
         },
         "candles_used": len(candles),
         "correlation_inputs": corr,
+        "reasoning": build_reasoning(categories, direction, price, stop_loss),
     }

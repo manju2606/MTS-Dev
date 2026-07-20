@@ -1520,6 +1520,38 @@ function CategoryRow({ cat }: { cat: NgAiScore['categories'][number] }) {
   )
 }
 
+function ReasoningCard({ reasoning }: { reasoning: NgAiScore['reasoning'] }) {
+  const rows: { label: string; text: string }[] = [
+    { label: 'Technical', text: reasoning.technical_reason },
+    { label: 'Fundamental', text: reasoning.fundamental_reason },
+    { label: 'Sentiment', text: reasoning.sentiment_reason },
+    { label: 'Macro', text: reasoning.macro_reason },
+  ]
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+      <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-400">AI Reasoning</p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {rows.map(r => (
+          <div key={r.label}>
+            <p className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">{r.label}</p>
+            <p className="mt-0.5 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{r.text}</p>
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 space-y-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+        <div>
+          <p className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">Alternative Scenario</p>
+          <p className="mt-0.5 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{reasoning.alternative_scenario}</p>
+        </div>
+        <div>
+          <p className="text-xs font-semibold text-red-600 dark:text-red-400">Invalidation Level</p>
+          <p className="mt-0.5 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{reasoning.invalidation_level}</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function AiSignalPanel({ onUseTrade, score, onScoreChange, contract }: {
   onUseTrade: (p: TradePrefill) => void
   score: NgAiScore | null
@@ -1617,6 +1649,8 @@ function AiSignalPanel({ onUseTrade, score, onScoreChange, contract }: {
             <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-400">Category Breakdown</p>
             {score.categories.map(cat => <CategoryRow key={cat.name} cat={cat} />)}
           </div>
+
+          <ReasoningCard reasoning={score.reasoning} />
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">

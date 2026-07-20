@@ -2165,6 +2165,19 @@ export type NgAiScore = {
   }
   candles_used: number
   correlation_inputs: Record<string, number | null>
+  // Plain-language readout of the categories above, grouped into the four
+  // reason buckets, plus what invalidates the call and what the mirrored
+  // opposite-direction case would look like -- see build_reasoning() in
+  // mcx_ai_score_service.py (backend). No new data/LLM call: this is the
+  // same category checks already in `categories`, just synthesized as text.
+  reasoning: {
+    technical_reason: string
+    fundamental_reason: string
+    sentiment_reason: string
+    macro_reason: string
+    alternative_scenario: string
+    invalidation_level: string
+  }
 }
 
 export async function getNgAiScore(

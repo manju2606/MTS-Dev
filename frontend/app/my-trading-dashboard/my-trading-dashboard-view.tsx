@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NavBar } from '@/components/nav-bar'
 import { McxDaySummaryPanel } from '@/components/mcx-day-summary-panel'
-import { getMyTradingDashboard } from '@/lib/api'
-import type { McxDashboardRow, McxRankedDashboard } from '@/lib/api'
+import { getMyTradingDashboard, getAllMcxSignals } from '@/lib/api'
+import type { McxDashboardRow, McxRankedDashboard, McxAllSignalsResponse } from '@/lib/api'
 import { readPageCache, writePageCache } from '@/lib/page-cache'
 
 const DASHBOARD_CACHE_KEY = 'my-trading-dashboard:data'
@@ -188,7 +188,154 @@ const SORT_COLUMNS: { key: SortKey; label: string }[] = [
   { key: 'change_pct', label: 'Chg%' },
 ]
 
+const SIGNALS_CACHE_KEY = 'my-trading-dashboard:signals'
+const SIGNALS_POLL_MS = 60_000
+
+function fmtSignalDateTime(iso: string): string {
+  return new Date(iso).toLocaleString('en-IN', {
+    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata',
+  })
+}
+
+function changeColor(pct: number | null): string {
+  if (pct === null) return '#64748b'
+  return pct > 0 ? '#22c55e' : pct < 0 ? '#ef4444' : '#94a3b8'
+}
+
+function ChangeCell({ pct }: { pct: number | null }) {
+  if (pct === null) return <span style={{ color: '#64748b' }}>—</span>
+  return <span style={{ color: changeColor(pct) }}>{pct >= 0 ? '+' : ''}{pct.toFixed(2)}%</span>
+}
+
+const RESULT_BADGE: Record<string, { bg: string; fg: string; label: string }> = {
+  WIN: { bg: '#065f46', fg: '#4ade80', label: 'WIN' },
+  LOSS: { bg: '#450a0a', fg: '#fca5a5', label: 'LOSS' },
+  EXPIRED: { bg: '#3f3f46', fg: '#a1a1aa', label: 'EXPIRED' },
+  OPEN: { bg: '#1e3a8a', fg: '#93c5fd', label: 'OPEN' },
+}
+
+function ResultBadge({ result }: { result: string | null }) {
+  const b = RESULT_BADGE[result ?? 'OPEN']
+  return (
+    <span className="rounded-full px-2.5 py-0.5 text-[10px] font-bold" style={{ background: b.bg, color: b.fg }}>
+      {b.label}
+    </span>
+  )
+}
+
+// All AI-generated trade signals (mcx_trade_signals) across every tracked
+// contract, each row's entry price compared against the current LTP and the
+// underlying contract's own 1d/1w/1m price change -- see
+// mcx_my_dashboard_service.py:get_all_signals (backend). Sibling to
+// mcx-view.tsx's TradeSignalsTable, just combined across every contract
+// instead of scoped to one.
+function AllSignalsTable() {
+  const [data, setData] = useState<McxAllSignalsResponse | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    const t = localStorage.getItem('mts_token') ?? ''
+    if (!t) return
+    const cached = readPageCache<McxAllSignalsResponse>(SIGNALS_CACHE_KEY)
+    if (cached) Promise.resolve().then(() => setData(cached))
+    function load() {
+      getAllMcxSignals(t, 200)
+        .then(r => { setData(r); writePageCache(SIGNALS_CACHE_KEY, r); setErr(null) })
+        .catch(e => setErr(e instanceof Error ? e.message : 'Failed to load trade signals'))
+    }
+    load()
+    const id = setInterval(load, SIGNALS_POLL_MS)
+    return () => clearInterval(id)
+  }, [])
+
+  const signals = data?.signals ?? []
+
+  return (
+    <>
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
+        <p className="text-sm" style={{ color: '#cbd5e1' }}>
+          Every AI-generated trade signal (Natural Gas + Metals combined) — logged automatically whenever the AI
+          score hits verdict TRADE, compared against the current LTP.
+        </p>
+        {data && (
+          <p className="text-right text-xs" style={{ color: '#64748b' }}>
+            Refreshes every {SIGNALS_POLL_MS / 1000}s &middot; updated {timeAgo(data.generated_at)} &middot; {signals.length} signals
+          </p>
+        )}
+      </div>
+
+      {err && (
+        <div className="mb-4 rounded-xl px-4 py-3 text-xs" style={{ background: '#450a0a', color: '#fca5a5' }}>
+          {err}
+        </div>
+      )}
+
+      {data === null && !err ? (
+        <div className="flex justify-center py-16">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
+        </div>
+      ) : signals.length === 0 ? (
+        <div className="rounded-xl px-4 py-10 text-center text-sm" style={{ background: '#141d33', color: '#94a3b8' }}>
+          No trade signals yet — a new row is logged automatically whenever the AI score hits TRADE (&ge;85) for
+          BUY or SELL, one open signal per direction at a time, across every tracked contract.
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-xl" style={{ background: '#141d33' }}>
+          <table className="w-full text-xs">
+            <thead>
+              <tr style={{ background: '#1e3a8a' }}>
+                {['Contract', 'Generated', 'Direction', 'Entry', 'LTP', 'vs Entry', '1D', '1W', '1M', 'Result'].map(h => (
+                  <th key={h} className="whitespace-nowrap px-3 py-2 text-left font-semibold">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {signals.map((s, i) => (
+                <tr key={i} className="border-t" style={{ borderColor: '#1e293b' }}>
+                  <td className="whitespace-nowrap px-3 py-2.5">{s.icon} {s.name}</td>
+                  <td className="whitespace-nowrap px-3 py-2.5 font-mono" style={{ color: '#94a3b8' }}>
+                    {fmtSignalDateTime(s.generated_at)}
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <span
+                      className="rounded px-2 py-0.5 text-[10px] font-bold"
+                      style={{ background: s.direction === 'BUY' ? '#065f46' : '#450a0a', color: s.direction === 'BUY' ? '#4ade80' : '#fca5a5' }}
+                    >
+                      {s.direction}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5 font-mono">{fmtPrice(s.entry_price)}</td>
+                  <td className="px-3 py-2.5 font-mono">{fmtPrice(s.ltp)}</td>
+                  <td className="px-3 py-2.5 font-mono"><ChangeCell pct={s.change_vs_entry_pct} /></td>
+                  <td className="px-3 py-2.5 font-mono"><ChangeCell pct={s.change_1d_pct} /></td>
+                  <td className="px-3 py-2.5 font-mono"><ChangeCell pct={s.change_1w_pct} /></td>
+                  <td className="px-3 py-2.5 font-mono"><ChangeCell pct={s.change_1m_pct} /></td>
+                  <td className="px-3 py-2.5"><ResultBadge result={s.status === 'OPEN' ? null : s.result} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <p className="mt-4 text-xs" style={{ color: '#64748b' }}>
+        &ldquo;vs Entry&rdquo; is the plain price move from the signal&apos;s entry price to the current LTP (not
+        direction-adjusted P&amp;L). 1D/1W/1M are the underlying contract&apos;s own price change over that window,
+        independent of any specific signal. Closes WIN (target hit), LOSS (stop-loss hit), or EXPIRED after 5
+        trading days with neither.
+      </p>
+    </>
+  )
+}
+
+type MainTab = 'heatmap' | 'signals'
+const MAIN_TABS: { id: MainTab; label: string }[] = [
+  { id: 'heatmap', label: 'AI Heat Map' },
+  { id: 'signals', label: 'All Trade Signals' },
+]
+
 export default function MyTradingDashboardView() {
+  const [tab, setTab] = useState<MainTab>('heatmap')
   const [data, setData] = useState<McxRankedDashboard | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [sortKey, setSortKey] = useState<SortKey | null>(null)
@@ -262,6 +409,23 @@ export default function MyTradingDashboardView() {
       </div>
 
       <div className="mx-auto max-w-7xl px-4 py-6">
+        <div className="mb-6 flex items-center gap-1">
+          {MAIN_TABS.map(t => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className="rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-colors"
+              style={tab === t.id ? { background: '#4f46e5', color: '#fff' } : { background: '#1e293b', color: '#94a3b8' }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'signals' && <AllSignalsTable />}
+
+        {tab === 'heatmap' && (
+        <>
         <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
           <p className="text-sm" style={{ color: '#cbd5e1' }}>
             Every tracked MCX contract (Natural Gas + Base &amp; Precious Metals), ranked together by AI Strength.
@@ -350,6 +514,8 @@ export default function MyTradingDashboardView() {
               page for full accuracy tracking. A dash (—) means not enough candle history yet for that timeframe.
             </p>
           </>
+        )}
+        </>
         )}
       </div>
     </div>

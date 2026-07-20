@@ -27,11 +27,13 @@ an uncached contract can never make the ranked list anyway.
 from __future__ import annotations
 
 import asyncio
+from datetime import timedelta
 
 from app.infra.db.repositories.mcx_prediction_repo import McxPredictionRepository
 from app.infra.db.repositories.mcx_score_cache_repo import McxScoreCacheRepository
+from app.infra.db.repositories.mcx_signal_repo import McxSignalRepository
 from app.services.mcx_metals_service import TRACKED_MCX_METALS_CONTRACTS, get_metal_quote
-from app.services.mcx_service import get_quote, ist_now
+from app.services.mcx_service import get_quote, get_zerodha_broker, ist_now
 
 PREDICTION_PERIODS = ("1m", "5m", "15m", "30m", "1h", "4h", "6h", "8h")
 
@@ -65,6 +67,15 @@ def _icon_for(contract: str) -> str:
         if contract.startswith(prefix):
             return _FAMILY_ICONS[prefix]
     return "📦"
+
+
+def _is_metal_map() -> dict[str, bool]:
+    # Only the evergreen front-month "NG"/"NGMINI" -- NOT get_tracked_mcx_contracts()'s
+    # specific NG_<MON> variants (JUL/AUG/etc, tracked in the background for the
+    # /mcx page's month picker).
+    out: dict[str, bool] = {c: False for c in ("NG", "NGMINI")}
+    out.update({c: True for c in TRACKED_MCX_METALS_CONTRACTS})
+    return out
 
 
 # Kite's live-quote endpoint rate-limits at a few requests/second (seen
@@ -111,13 +122,10 @@ async def get_ranked_dashboard(user_id: str, limit: int = 10) -> dict:
         if c not in best_by_contract or row["score_pct"] > best_by_contract[c]["score_pct"]:
             best_by_contract[c] = row
 
-    # Only the evergreen front-month "NG"/"NGMINI" -- NOT get_tracked_mcx_contracts()'s
-    # specific NG_<MON> variants (JUL/AUG/etc, tracked in the background for the
-    # /mcx page's month picker). This dashboard shows one row per commodity,
-    # same as metals (never "Gold (Aug)"); including every tracked NG month
-    # here would show up to 6 near-duplicate Natural Gas rows instead of one.
-    is_metal_by_contract = {c: False for c in ("NG", "NGMINI")}
-    is_metal_by_contract.update({c: True for c in TRACKED_MCX_METALS_CONTRACTS})
+    # This dashboard shows one row per commodity, same as metals (never
+    # "Gold (Aug)"); including every tracked NG month here would show up to
+    # 6 near-duplicate Natural Gas rows instead of one.
+    is_metal_by_contract = _is_metal_map()
 
     # Only fetch a live quote for contracts that already have a cached
     # score -- an uncached one (signal-check job hasn't reached it yet)
@@ -178,3 +186,118 @@ async def get_ranked_dashboard(user_id: str, limit: int = 10) -> dict:
         "total_tracked": len(rows),
         "total_contracts": len(is_metal_by_contract),
     }
+
+
+# ── All Trade Signals tab ───────────────────────────────────────────────────
+# Combined view of every AI-generated signal (mcx_trade_signals -- both NG's
+# and metals' signal services write to this same collection) across every
+# contract, with each row's entry price compared to the current LTP and the
+# underlying contract's own 1d/1w/1m price change. Unlike get_ranked_dashboard
+# above, LTP here is fetched for every contract that has ANY signal (not just
+# top-N by score), since a table of past signals needs to show all of them.
+
+# Kite's historical-data endpoint throttles harder than quotes.
+_HISTORY_CONCURRENCY = asyncio.Semaphore(3)
+# Comfortably covers the 30-day lookback plus weekends/holidays.
+_DAILY_HISTORY_LOOKBACK_DAYS = 40
+
+
+async def _daily_history_or_none(user_id: str, contract: str, is_metal: bool) -> list[dict] | None:
+    async with _HISTORY_CONCURRENCY:
+        try:
+            broker = await get_zerodha_broker(user_id)
+            if is_metal:
+                from app.services.mcx_metals_service import resolve_metal_contract
+
+                info = await resolve_metal_contract(broker, contract)
+            else:
+                from app.services.mcx_service import resolve_contract
+
+                info = await resolve_contract(broker, contract, allow_expired=True)
+            to_dt = ist_now()
+            from_dt = to_dt - timedelta(days=_DAILY_HISTORY_LOOKBACK_DAYS)
+            candles = await broker.get_historical_candles(
+                info["instrument_token"], "day",
+                from_dt.strftime("%Y-%m-%d %H:%M:%S"), to_dt.strftime("%Y-%m-%d %H:%M:%S"),
+            )
+            # Kite returns candles oldest-first, so this stays chronologically ascending.
+            return [{"date": c["date"], "close": float(c["close"])} for c in candles]
+        except Exception:
+            return None
+
+
+def _closest_close_before(history: list[dict], cutoff) -> float | None:
+    """Close of the daily candle nearest at-or-before `cutoff` -- walks
+    backward through whatever trading days actually exist, so weekends/
+    holidays just fall through to the last trading day before them."""
+    candidates = [h for h in history if h["date"] <= cutoff]
+    return candidates[-1]["close"] if candidates else None
+
+
+def _pct_change(current: float | None, past: float | None) -> float | None:
+    if current is None or past is None or past == 0:
+        return None
+    return round((current - past) / past * 100, 2)
+
+
+async def get_all_signals(user_id: str, limit: int = 200) -> dict:
+    from app.services.mcx_signal_service import _serialize_signal
+
+    signals = await McxSignalRepository().list_all_signals(user_id, limit)
+    is_metal_by_contract = _is_metal_map()
+
+    unique_contracts = sorted(
+        {s["contract"] for s in signals if s["contract"] in is_metal_by_contract}
+    )
+
+    quotes = await asyncio.gather(
+        *[_quote_or_none(user_id, c, is_metal_by_contract[c]) for c in unique_contracts]
+    )
+    quote_by_contract = dict(zip(unique_contracts, quotes, strict=True))
+
+    histories = await asyncio.gather(
+        *[_daily_history_or_none(user_id, c, is_metal_by_contract[c]) for c in unique_contracts]
+    )
+    history_by_contract = dict(zip(unique_contracts, histories, strict=True))
+
+    now = ist_now()
+    change_1d: dict[str, float | None] = {}
+    change_1w: dict[str, float | None] = {}
+    change_1m: dict[str, float | None] = {}
+    for c in unique_contracts:
+        hist = history_by_contract[c]
+        quote = quote_by_contract[c]
+        ltp = quote.get("last_price") if quote else None
+        if hist:
+            close_1d = _closest_close_before(hist, now - timedelta(days=1))
+            close_1w = _closest_close_before(hist, now - timedelta(days=7))
+            close_1m = _closest_close_before(hist, now - timedelta(days=30))
+        else:
+            close_1d = close_1w = close_1m = None
+        change_1d[c] = _pct_change(ltp, close_1d)
+        change_1w[c] = _pct_change(ltp, close_1w)
+        change_1m[c] = _pct_change(ltp, close_1m)
+
+    rows = []
+    for s in signals:
+        contract = s["contract"]
+        if contract not in is_metal_by_contract:
+            continue
+        quote = quote_by_contract.get(contract)
+        ltp = quote.get("last_price") if quote else None
+        rows.append(
+            {
+                **_serialize_signal(s),
+                "contract": contract,
+                "name": _DISPLAY_NAMES.get(contract, contract),
+                "icon": _icon_for(contract),
+                "market": "metals" if is_metal_by_contract[contract] else "ng",
+                "ltp": ltp,
+                "change_vs_entry_pct": _pct_change(ltp, s["entry_price"]),
+                "change_1d_pct": change_1d[contract],
+                "change_1w_pct": change_1w[contract],
+                "change_1m_pct": change_1m[contract],
+            }
+        )
+
+    return {"generated_at": now.isoformat(), "signals": rows}

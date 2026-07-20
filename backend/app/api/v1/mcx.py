@@ -283,6 +283,17 @@ async def my_trading_dashboard(current_user: CurrentUser, limit: int = 10) -> di
     return await get_ranked_dashboard(str(current_user.id), limit)
 
 
+@router.get("/my-dashboard/signals")
+async def my_trading_dashboard_signals(current_user: CurrentUser, limit: int = 200) -> dict:
+    """Every AI-generated trade signal (mcx_trade_signals) across every MCX
+    contract, each compared against its current LTP and the underlying
+    contract's own 1d/1w/1m price change -- see
+    app/services/mcx_my_dashboard_service.py:get_all_signals."""
+    from app.services.mcx_my_dashboard_service import get_all_signals
+
+    return await get_all_signals(str(current_user.id), limit)
+
+
 @router.get("/backtest", dependencies=[Depends(require_role(UserRole.ADMIN))])
 async def mcx_backtest(current_user: CurrentUser) -> dict:
     """AI signal-scorer backtest across trailing 1m/3m/6m/12m/1y/3y/5y

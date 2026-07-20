@@ -86,6 +86,14 @@ class McxSignalRepository:
         )
         return [d async for d in cursor]
 
+    async def list_all_signals(self, user_id: str, limit: int = 200) -> list[dict]:
+        """Every signal for this user across every contract (NG + Metals
+        share this collection) -- for My Trading Dashboard's combined
+        signals table, unlike list_signals() above which is scoped to one
+        contract at a time for the per-contract MCX page tables."""
+        cursor = self._col.find({"user_id": user_id}).sort("generated_at", -1).limit(limit)
+        return [d async for d in cursor]
+
     async def list_closed_signals_since(self, since: datetime) -> list[dict]:
         """Every CLOSED signal (WIN/LOSS/EXPIRED) across all users, closed on
         or after `since` -- for backtest reporting, which evaluates the

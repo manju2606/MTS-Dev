@@ -1547,6 +1547,48 @@ export async function getMyTradingDashboard(token: string, limit = 10): Promise<
   return res.json()
 }
 
+// Every AI-generated trade signal (mcx_trade_signals -- same collection the
+// per-contract MCX page's "Trade Signals" tab reads) across every tracked
+// contract, each compared against its current LTP and the underlying
+// contract's own 1d/1w/1m price change -- see
+// mcx_my_dashboard_service.py:get_all_signals (backend). Superset of
+// NgTradeSignal's fields, so the two intentionally stay in sync.
+export type McxAllSignalRow = {
+  contract: string
+  name: string
+  icon: string
+  market: 'ng' | 'metals'
+  tradingsymbol: string | null
+  direction: 'BUY' | 'SELL'
+  score_pct: number | null
+  generated_at: string
+  entry_price: number
+  stop_loss: number
+  target_1: number
+  target_2: number | null
+  status: 'OPEN' | 'CLOSED'
+  result: 'WIN' | 'LOSS' | 'EXPIRED' | null
+  exit_price: number | null
+  pnl: number | null
+  closed_at: string | null
+  days_to_close: number | null
+  ltp: number | null
+  change_vs_entry_pct: number | null
+  change_1d_pct: number | null
+  change_1w_pct: number | null
+  change_1m_pct: number | null
+}
+export type McxAllSignalsResponse = { generated_at: string; signals: McxAllSignalRow[] }
+
+export async function getAllMcxSignals(token: string, limit = 200): Promise<McxAllSignalsResponse> {
+  const res = await fetch(`${BASE}/api/v1/mcx/my-dashboard/signals?limit=${limit}`, { headers: authHeaders(token) })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch MCX trade signals')
+  }
+  return res.json()
+}
+
 // Crisp end-of-day-style trading summary for one MCX contract -- see
 // mcx_day_summary_service.py (backend). `market` picks NG's vs Metals'
 // identical-shape route, so this one type/pair of functions covers every

@@ -35,6 +35,53 @@ RSI_SIGNAL_CONTRACT = "NGMINI"
 # Quick kill switch, mirroring mcx_signal_service.MCX_SIGNAL_ALERT_EMAILS_ENABLED.
 RSI_SIGNAL_ALERT_EMAILS_ENABLED = True
 
+# get_live_rsi_signal() replays ~15 days of 5-min candles (fetched fresh from
+# Kite) on every call -- fine for the scheduler's single poll every 5 min,
+# but the AI Strategy Lab / MCX page's RSI Strategy tab calls this on every
+# load and every version switch, so it was paying that full fetch+replay
+# cost repeatedly. Cached the same way mcx_service._cache_quote() caches
+# quotes: short flat TTL in Redis, fail-open on any cache error. 60s just
+# absorbs repeat loads/tab switches within the same minute -- candles are
+# 5-min bars so nothing meaningful changes faster than that anyway.
+_RSI_SIGNAL_CACHE_PREFIX = "rsi_signal_cache:"
+_RSI_SIGNAL_CACHE_TTL = 60
+
+
+def _rsi_signal_cache_key(user_id: str, version: str, capital: float) -> str:
+    return f"{_RSI_SIGNAL_CACHE_PREFIX}{user_id}:{version}:{capital}"
+
+
+async def _cache_rsi_signal(user_id: str, version: str, capital: float, payload: dict) -> None:
+    try:
+        import json
+
+        import redis.asyncio as aioredis
+
+        from app.core.config import settings
+
+        r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+        await r.set(_rsi_signal_cache_key(user_id, version, capital), json.dumps(payload), ex=_RSI_SIGNAL_CACHE_TTL)
+        await r.aclose()
+    except Exception as exc:
+        log.warning("mcx.rsi_signal_cache.write_failed", error=str(exc))
+
+
+async def _get_cached_rsi_signal(user_id: str, version: str, capital: float) -> dict | None:
+    try:
+        import json
+
+        import redis.asyncio as aioredis
+
+        from app.core.config import settings
+
+        r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+        raw = await r.get(_rsi_signal_cache_key(user_id, version, capital))
+        await r.aclose()
+        return json.loads(raw) if raw else None
+    except Exception as exc:
+        log.warning("mcx.rsi_signal_cache.read_failed", error=str(exc))
+        return None
+
 
 def _to_candles(bars: list[dict]) -> list[HistoricalCandle]:
     return [
@@ -127,8 +174,14 @@ async def _compute(user_id: str, version: str, capital: float) -> tuple[strat.Li
 
 
 async def get_live_rsi_signal(user_id: str, capital: float = 100_000.0, version: str = "v1.0") -> dict:
+    cached = await _get_cached_rsi_signal(user_id, version, capital)
+    if cached is not None:
+        return cached
+
     state, trades = await _compute(user_id, version, capital)
-    return _serialize(version, state, trades)
+    payload = _serialize(version, state, trades)
+    await _cache_rsi_signal(user_id, version, capital, payload)
+    return payload
 
 
 async def _send_rsi_signal_alert(user_id: str, version: str, state: strat.LiveSignalState) -> None:

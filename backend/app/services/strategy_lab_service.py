@@ -24,6 +24,7 @@ from app.domain.models.strategy_lab import (
     StrategyCandidate,
     StrategyLabResult,
     StrategyLabRun,
+    SymbolSweepRun,
     WalkForwardSplit,
 )
 from app.domain.services.strategy_lab.engine import run_backtest
@@ -895,6 +896,157 @@ async def _backtest_rsi_reversion(
         )
 
     return await asyncio.to_thread(work)
+
+
+# ── Symbol Sweep (inverse of Index Scan -- every strategy, one symbol) ─────
+
+# Ordered so the fast hand-designed strategies (ORB, Trend Pullback, RSI
+# Reversion -- one backtest each) complete before the slow 392-candidate
+# generated sweep, so a live-updating leaderboard (get_symbol_comparison,
+# polled the same way get_index_scan_ranking already is) fills in early
+# rows quickly instead of waiting on the slowest step first.
+def _symbol_sweep_steps() -> list[str]:
+    return (
+        ["opening_range_breakout"]
+        + [f"trend_pullback_{v}" for v in TREND_PULLBACK_VERSIONS]
+        + [f"rsi_reversion_{v}" for v in RSI_REVERSION_VERSIONS]
+        + ["generated"]
+    )
+
+
+async def start_symbol_sweep_run(
+    user_id: str,
+    symbol: str,
+    exchange: str,
+    interval: str,
+    from_date: str,
+    to_date: str,
+    capital: float,
+) -> str:
+    steps = _symbol_sweep_steps()
+    repo = StrategyLabRepository()
+    await repo.ensure_indexes()
+
+    sweep = SymbolSweepRun(
+        id=SymbolSweepRun.new_id(),
+        user_id=user_id,
+        symbol=symbol,
+        exchange=exchange.upper(),
+        interval=interval,
+        from_date=from_date,
+        to_date=to_date,
+        capital=capital,
+        status="pending",
+        total_strategies=len(steps),
+    )
+    await repo.create_symbol_sweep(sweep)
+    asyncio.create_task(
+        _process_symbol_sweep(
+            sweep.id, user_id, symbol, exchange, interval, from_date, to_date, capital, steps,
+        )
+    )
+    return sweep.id
+
+
+async def _start_sweep_step_run(
+    strategy_key: str,
+    user_id: str,
+    symbol: str,
+    exchange: str,
+    interval: str,
+    from_date: str,
+    to_date: str,
+    capital: float,
+) -> str:
+    """Kicks off the one existing start_*_run this strategy_key maps to --
+    every step reuses the exact same single-run pipeline (and StrategyLabRun
+    record) a user would get triggering it individually, so results are
+    indistinguishable from a manually-run backtest of that same strategy."""
+    if strategy_key == "generated":
+        return await start_run(user_id, symbol, exchange, interval, from_date, to_date, capital)
+    if strategy_key == "opening_range_breakout":
+        return await start_orb_run(
+            user_id, symbol, exchange, "5minute", from_date, to_date, capital,
+        )
+    if strategy_key.startswith("trend_pullback_"):
+        version = strategy_key.removeprefix("trend_pullback_")
+        return await start_trend_pullback_run(
+            user_id, symbol, exchange, from_date, to_date, capital, version,
+        )
+    if strategy_key.startswith("rsi_reversion_"):
+        version = strategy_key.removeprefix("rsi_reversion_")
+        return await start_rsi_reversion_run(
+            user_id, symbol, exchange, from_date, to_date, capital, version,
+        )
+    raise ValueError(f"Unknown symbol sweep strategy_key '{strategy_key}'")
+
+
+async def _process_symbol_sweep(
+    sweep_id: str,
+    user_id: str,
+    symbol: str,
+    exchange: str,
+    interval: str,
+    from_date: str,
+    to_date: str,
+    capital: float,
+    steps: list[str],
+) -> None:
+    """Runs every strategy in `steps` against `symbol`, sequentially -- not
+    concurrently, same reasoning as _process_index_scan (avoids hammering
+    the historical-data API / spiking CPU across every strategy at once).
+    Each step's own start_*_run creates its own ordinary StrategyLabRun, so
+    get_symbol_comparison (unchanged) already picks all of them up once
+    completed -- this record only tracks progress through the strategy
+    list, it doesn't compute or store any ranking itself."""
+    repo = StrategyLabRepository()
+
+    try:
+        await repo.update_symbol_sweep(sweep_id, status="running")
+        child_run_ids: dict[str, str] = {}
+        failed_strategies: list[str] = []
+
+        for completed, strategy_key in enumerate(steps, start=1):
+            try:
+                child_run_id = await _start_sweep_step_run(
+                    strategy_key, user_id, symbol, exchange, interval, from_date, to_date, capital,
+                )
+                child_run_ids[strategy_key] = child_run_id
+
+                # Poll the child run to completion before starting the next
+                # strategy -- each start_*_run's own processing is its own
+                # asyncio.create_task, so without waiting here every
+                # strategy would kick off at once.
+                while True:
+                    child = await repo.get_run(child_run_id)
+                    if child is None or child.status in ("completed", "failed"):
+                        break
+                    await asyncio.sleep(2)
+
+                if child is None or child.status == "failed":
+                    failed_strategies.append(strategy_key)
+                    log.warning(
+                        "strategy_lab.symbol_sweep.strategy_failed",
+                        sweep_id=sweep_id, strategy_key=strategy_key,
+                        error=child.error if child else "run not found",
+                    )
+            except Exception as exc:
+                failed_strategies.append(strategy_key)
+                log.warning(
+                    "strategy_lab.symbol_sweep.strategy_error",
+                    sweep_id=sweep_id, strategy_key=strategy_key, error=str(exc),
+                )
+
+            await repo.update_symbol_sweep(
+                sweep_id, completed_strategies=completed, child_run_ids=child_run_ids,
+                failed_strategies=failed_strategies,
+            )
+
+        await repo.update_symbol_sweep(sweep_id, status="completed", completed_at=datetime.utcnow())
+
+    except Exception as exc:
+        log.error("strategy_lab.symbol_sweep.failed", sweep_id=sweep_id, error=str(exc))
+        await repo.update_symbol_sweep(sweep_id, status="failed", error=str(exc))
 
 
 def _symbol_family_key(symbol: str) -> str:

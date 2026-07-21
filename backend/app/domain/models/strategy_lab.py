@@ -121,6 +121,39 @@ class IndexScanRun:
 
 
 @dataclass
+class SymbolSweepRun:
+    """The inverse of IndexScanRun: runs every strategy family/version
+    (generated sweep, ORB, every Trend Pullback version, every RSI Reversion
+    version -- see services/strategy_lab_service.SYMBOL_SWEEP_STEPS) against
+    one symbol, one full StrategyLabRun per strategy -- child_run_ids maps
+    strategy_key -> that run's id, same reuse-the-existing-machinery approach
+    as IndexScanRun. The ranked comparison a caller wants is just
+    services/strategy_lab_service.get_symbol_comparison (unchanged) -- this
+    record only tracks progress through the strategy list."""
+
+    id: str
+    user_id: str
+    symbol: str
+    exchange: str
+    interval: str  # only used for the "generated" step; others use their own fixed interval
+    from_date: str
+    to_date: str
+    capital: float
+    status: str  # pending | running | completed | failed
+    total_strategies: int = 0
+    completed_strategies: int = 0
+    child_run_ids: dict[str, str] = field(default_factory=dict)  # strategy_key -> StrategyLabRun.id
+    failed_strategies: list[str] = field(default_factory=list)
+    error: str | None = None
+    created_at: datetime = field(default_factory=datetime.utcnow)
+    completed_at: datetime | None = None
+
+    @staticmethod
+    def new_id() -> str:
+        return uuid4().hex[:12]
+
+
+@dataclass
 class StrategyLabRun:
     id: str
     user_id: str

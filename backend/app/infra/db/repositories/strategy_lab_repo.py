@@ -19,6 +19,7 @@ from app.domain.models.strategy_lab import (
     StrategyCandidate,
     StrategyLabResult,
     StrategyLabRun,
+    SymbolSweepRun,
     TradeRecord,
     WalkForwardSplit,
 )
@@ -46,6 +47,10 @@ class StrategyLabRepository:
     def _index_scans(self) -> motor.motor_asyncio.AsyncIOMotorCollection:  # type: ignore[type-arg]
         return _get_db()["strategy_lab_index_scans"]
 
+    @property
+    def _symbol_sweeps(self) -> motor.motor_asyncio.AsyncIOMotorCollection:  # type: ignore[type-arg]
+        return _get_db()["strategy_lab_symbol_sweeps"]
+
     async def ensure_indexes(self) -> None:
         await self._runs.create_index([("id", 1)], unique=True)
         await self._runs.create_index([("user_id", 1), ("created_at", -1)])
@@ -53,6 +58,8 @@ class StrategyLabRepository:
         await self._results.create_index([("run_id", 1), ("composite_score", -1)])
         await self._index_scans.create_index([("id", 1)], unique=True)
         await self._index_scans.create_index([("user_id", 1), ("created_at", -1)])
+        await self._symbol_sweeps.create_index([("id", 1)], unique=True)
+        await self._symbol_sweeps.create_index([("user_id", 1), ("created_at", -1)])
 
     # ── Runs ─────────────────────────────────────────────────────────────────
 
@@ -176,3 +183,23 @@ class StrategyLabRepository:
             .limit(limit)
         )
         return [IndexScanRun(**doc) async for doc in cursor]
+
+    # ── Symbol sweeps (inverse of index scans -- every strategy, one symbol) ─
+
+    async def create_symbol_sweep(self, sweep: SymbolSweepRun) -> None:
+        await self._symbol_sweeps.insert_one(dataclasses.asdict(sweep))
+
+    async def update_symbol_sweep(self, sweep_id: str, **fields: object) -> None:
+        await self._symbol_sweeps.update_one({"id": sweep_id}, {"$set": fields})
+
+    async def get_symbol_sweep(self, sweep_id: str) -> SymbolSweepRun | None:
+        doc = await self._symbol_sweeps.find_one({"id": sweep_id}, {"_id": 0})
+        return SymbolSweepRun(**doc) if doc else None
+
+    async def list_symbol_sweeps(self, user_id: str, limit: int = 20) -> list[SymbolSweepRun]:
+        cursor = (
+            self._symbol_sweeps.find({"user_id": user_id}, {"_id": 0})
+            .sort("created_at", -1)
+            .limit(limit)
+        )
+        return [SymbolSweepRun(**doc) async for doc in cursor]

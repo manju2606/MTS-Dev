@@ -4830,6 +4830,59 @@ export async function getIndexScanRanking(token: string, scanId: string): Promis
   return res.json()
 }
 
+// ── Symbol Sweep -- the inverse of Index Scan: runs every strategy
+// family/version (ORB, both Trend Pullback versions, every RSI Reversion
+// version, the generated sweep) against one symbol, one full StrategyLabRun
+// per strategy, then the existing getSymbolComparison ranks them all since
+// each step is an ordinary StrategyLabRun. ─────────────────────────────────
+
+export type SymbolSweepRun = {
+  id: string
+  user_id: string
+  symbol: string
+  exchange: string
+  interval: string
+  from_date: string
+  to_date: string
+  capital: number
+  status: 'pending' | 'running' | 'completed' | 'failed'
+  total_strategies: number
+  completed_strategies: number
+  child_run_ids: Record<string, string>
+  failed_strategies: string[]
+  error: string | null
+  created_at: string
+  completed_at: string | null
+}
+
+export async function startSymbolSweepRun(token: string, body: {
+  symbol: string
+  exchange: string
+  interval: HistoricalDataInterval
+  from_date: string
+  to_date: string
+  capital: number
+}): Promise<{ sweep_id: string }> {
+  const res = await fetch(`${BASE}/api/v1/strategy-lab/symbol-sweep`, {
+    method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Failed to start symbol sweep') }
+  return res.json()
+}
+
+export async function listSymbolSweeps(token: string): Promise<SymbolSweepRun[]> {
+  const res = await fetch(`${BASE}/api/v1/strategy-lab/symbol-sweep`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error('Failed to fetch symbol sweeps')
+  return res.json()
+}
+
+export async function getSymbolSweep(token: string, sweepId: string): Promise<SymbolSweepRun> {
+  const res = await fetch(`${BASE}/api/v1/strategy-lab/symbol-sweep/${sweepId}`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error('Failed to fetch symbol sweep')
+  return res.json()
+}
+
 export async function startRsiReversionRun(token: string, body: {
   symbol: string
   exchange: string

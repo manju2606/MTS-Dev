@@ -257,6 +257,58 @@ async def list_runs(
     return {"runs": [dataclasses.asdict(r) for r in runs], "total": total}
 
 
+class StartSymbolSweepRequest(BaseModel):
+    symbol: str
+    exchange: str = "NSE"
+    interval: str = "day"  # only used for the "generated" step; others use their own fixed interval
+    from_date: str  # "YYYY-MM-DD"
+    to_date: str  # "YYYY-MM-DD"
+    capital: float = 100_000.0
+
+
+@router.post("/symbol-sweep", status_code=status.HTTP_202_ACCEPTED)
+async def start_symbol_sweep(body: StartSymbolSweepRequest, current_user: CurrentUser) -> dict:
+    """Runs every strategy family/version (ORB, both Trend Pullback versions,
+    every RSI Reversion version, the generated sweep) against one symbol,
+    one full StrategyLabRun per strategy, processed sequentially -- see
+    strategy_lab_service.start_symbol_sweep_run. The inverse of Index Scan
+    (one strategy, many symbols); ranking is the existing GET /compare/{symbol},
+    unchanged, since every step's run is an ordinary StrategyLabRun."""
+    if body.exchange.upper() not in _EXCHANGES:
+        raise HTTPException(status_code=422, detail=f"exchange must be one of {sorted(_EXCHANGES)}")
+    if body.interval not in _INTERVALS:
+        raise HTTPException(status_code=422, detail=f"interval must be one of {sorted(_INTERVALS)}")
+    if body.capital <= 0:
+        raise HTTPException(status_code=422, detail="capital must be positive")
+
+    sweep_id = await strategy_lab_service.start_symbol_sweep_run(
+        user_id=str(current_user.id),
+        symbol=body.symbol.strip().upper(),
+        exchange=body.exchange.upper(),
+        interval=body.interval,
+        from_date=body.from_date,
+        to_date=body.to_date,
+        capital=body.capital,
+    )
+    return {"sweep_id": sweep_id}
+
+
+@router.get("/symbol-sweep")
+async def list_symbol_sweeps(current_user: CurrentUser) -> list[dict]:
+    repo = StrategyLabRepository()
+    sweeps = await repo.list_symbol_sweeps(str(current_user.id))
+    return [dataclasses.asdict(s) for s in sweeps]
+
+
+@router.get("/symbol-sweep/{sweep_id}")
+async def get_symbol_sweep(sweep_id: str, current_user: CurrentUser) -> dict:
+    repo = StrategyLabRepository()
+    sweep = await repo.get_symbol_sweep(sweep_id)
+    if sweep is None or sweep.user_id != str(current_user.id):
+        raise HTTPException(status_code=404, detail="Symbol sweep not found")
+    return dataclasses.asdict(sweep)
+
+
 @router.get("/compare/{symbol}")
 async def compare_symbol_strategies(symbol: str, current_user: CurrentUser, limit: int = 10) -> dict:
     """Top `limit` completed backtest runs for `symbol` (any strategy

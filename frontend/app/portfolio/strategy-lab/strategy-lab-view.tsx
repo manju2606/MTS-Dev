@@ -8,12 +8,12 @@ import {
   startStrategyLabRun, startTrendPullbackRun, startOrbRun, startRsiReversionRun, startIndexScanRun,
   listStrategyLabRuns, getStrategyLabRun, listStrategyLabResults, getStrategyLabResult, getResultMonteCarlo,
   listIndexScans, getIndexScan, getIndexScanRanking, listIndexUniverses, listMcxContracts, searchStocks,
-  getMe, ApiError, getSymbolComparison,
+  getMe, ApiError, getSymbolComparison, startSymbolSweepRun, getSymbolSweep,
 } from '@/lib/api'
 import type {
   HistoricalDataInterval, StrategyLabRun, StrategyLabResultSummary, StrategyLabResultDetail, MonteCarloResult,
   IndexScanRun, IndexScanRankingRow, IndexUniverseOption, McxContractOption, StockSearchResult, RunSortBy,
-  SymbolComparison,
+  SymbolComparison, SymbolSweepRun,
 } from '@/lib/api'
 
 const EXCHANGES = ['NSE', 'BSE', 'NFO', 'MCX']
@@ -22,6 +22,7 @@ const INTERVALS: HistoricalDataInterval[] = [
 ]
 const ACTIVE_STATUSES = new Set(['pending', 'downloading', 'generating', 'running'])
 const ACTIVE_SCAN_STATUSES = new Set(['pending', 'running'])
+const ACTIVE_SWEEP_STATUSES = new Set(['pending', 'running'])
 
 // Friendly display labels for INDEX_UNIVERSES keys (see backend
 // strategy_lab_service.py) -- the API itself only returns the raw key,
@@ -41,7 +42,12 @@ const INDEX_LABELS: Record<string, string> = {
 // #1 ranked of 392 candidates for Natural Gas Mini). 'index_scan' runs the
 // full generated sweep against every symbol in an index (see
 // strategy_lab_service.start_index_scan_run) instead of a single symbol.
-type Mode = 'generated' | 'trend_pullback' | 'orb' | 'rsi_reversion' | 'index_scan' | 'rsi_live' | 'compare'
+// 'symbol_sweep' is the inverse: every strategy family/version against one
+// symbol (see strategy_lab_service.start_symbol_sweep_run), then reuses the
+// same ranked view as 'compare' underneath its own progress panel.
+type Mode =
+  | 'generated' | 'trend_pullback' | 'orb' | 'rsi_reversion' | 'index_scan' | 'rsi_live' | 'compare'
+  | 'symbol_sweep'
 
 type SortKey = 'score' | 'cagr' | 'sharpe' | 'max_dd' | 'win_rate' | 'pf' | 'trades' | 'stability'
 type SortDir = 'asc' | 'desc'
@@ -388,6 +394,63 @@ function IndexScanPanel({ scan, ranking, sortKey, sortDir, onSort, onOpenSymbol 
   )
 }
 
+// ── Symbol Sweep -- inverse of Index Scan: every strategy, one symbol ──────
+
+function sweepStepLabel(key: string): string {
+  if (key === 'generated') return 'Generate & Backtest (392 candidates)'
+  if (key === 'opening_range_breakout') return 'Opening Range Breakout'
+  if (key.startsWith('trend_pullback_')) return `Trend Pullback ${key.replace('trend_pullback_', '')}`
+  if (key.startsWith('rsi_reversion_')) return `RSI Reversion ${key.replace('rsi_reversion_', '')}`
+  return key
+}
+
+function SymbolSweepPanel({ sweep }: { sweep: SymbolSweepRun | null }) {
+  if (!sweep) return null
+  const progressPct = sweep.total_strategies > 0
+    ? Math.round((sweep.completed_strategies / sweep.total_strategies) * 100) : 0
+  const doneKeys = Object.keys(sweep.child_run_ids)
+
+  return (
+    <div className="mb-6 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+          {sweep.symbol} · {sweep.exchange}
+        </p>
+        <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${
+          sweep.status === 'completed' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+          : sweep.status === 'failed' ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300'
+          : 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
+        }`}>
+          {sweep.status}
+        </span>
+      </div>
+      {ACTIVE_SWEEP_STATUSES.has(sweep.status) && (
+        <div className="mt-2">
+          <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+            <div className="h-full bg-indigo-500 transition-all" style={{ width: `${progressPct}%` }} />
+          </div>
+          <p className="mt-1 text-[11px] text-zinc-400">
+            {sweep.completed_strategies}/{sweep.total_strategies} strategies run
+          </p>
+        </div>
+      )}
+      {sweep.status === 'failed' && (
+        <p className="mt-2 text-xs text-red-600 dark:text-red-400">{sweep.error}</p>
+      )}
+      {doneKeys.length > 0 && (
+        <p className="mt-3 text-[11px] text-zinc-400">
+          Done: {doneKeys.map(sweepStepLabel).join(', ')}
+        </p>
+      )}
+      {sweep.failed_strategies.length > 0 && (
+        <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-400">
+          Failed (no usable data or backtest error): {sweep.failed_strategies.map(sweepStepLabel).join(', ')}
+        </p>
+      )}
+    </div>
+  )
+}
+
 // ── Main view ─────────────────────────────────────────────────────────────
 
 export default function StrategyLabView() {
@@ -441,6 +504,9 @@ export default function StrategyLabView() {
   const [scanRanking, setScanRanking] = useState<IndexScanRankingRow[] | null>(null)
   const [pastScans, setPastScans] = useState<IndexScanRun[]>([])
   const scanPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const [activeSweep, setActiveSweep] = useState<SymbolSweepRun | null>(null)
+  const sweepPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   function handleSort(key: SortKey) {
     if (sortKey === key) setSortDir(d => d === 'desc' ? 'asc' : 'desc')
@@ -515,6 +581,29 @@ export default function StrategyLabView() {
   useEffect(() => {
     return () => { if (scanPollRef.current) clearInterval(scanPollRef.current) }
   }, [])
+
+  useEffect(() => {
+    return () => { if (sweepPollRef.current) clearInterval(sweepPollRef.current) }
+  }, [])
+
+  function watchSweep(sweepId: string, sweepSymbol: string) {
+    if (sweepPollRef.current) clearInterval(sweepPollRef.current)
+    sweepPollRef.current = setInterval(async () => {
+      try {
+        const sweep = await getSymbolSweep(tokenRef.current, sweepId)
+        setActiveSweep(sweep)
+        // Live-updating ranked comparison -- safe to poll while still
+        // running, same reasoning as Index Scan's ranking poll: each
+        // completed step is an ordinary StrategyLabRun already picked up by
+        // get_symbol_comparison, so this just reflects whatever has
+        // finished so far.
+        getSymbolComparison(tokenRef.current, sweepSymbol, 10).then(setCompareResult).catch(() => {})
+        if (!ACTIVE_SWEEP_STATUSES.has(sweep.status) && sweepPollRef.current) {
+          clearInterval(sweepPollRef.current)
+        }
+      } catch { /* transient poll failure, try again next tick */ }
+    }, 3000)
+  }
 
   function watchScan(scanId: string) {
     if (scanPollRef.current) clearInterval(scanPollRef.current)
@@ -596,13 +685,15 @@ export default function StrategyLabView() {
     setMode(next)
     setMsg(null)
     if (next === 'trend_pullback' || next === 'rsi_reversion') {
-      // MCX futures roll monthly and Kite only lists the current contract,
-      // so a long lookback isn't achievable -- default to a realistic window.
+      // Both were originally validated on MCX (Natural Gas Mini) and MCX
+      // futures roll monthly with only the current contract retained, so a
+      // long lookback isn't achievable there -- default to a realistic
+      // window. Not exchange-locked though: either strategy runs against any
+      // exchange the backend accepts (NSE/BSE/NFO/MCX), so the exchange
+      // picker below stays a free choice instead of forcing MCX.
       setFromDate(daysAgoStr(180))
-      // Both strategies only trade MCX contracts -- lock the exchange so the
-      // symbol picker shows the MCX contract dropdown (e.g. NG) instead of
-      // silently staying on whatever exchange was last selected (NSE search).
-      if (exchange !== 'MCX') handleExchangeChange('MCX')
+    } else if (next === 'symbol_sweep') {
+      setFromDate(daysAgoStr(90))
     } else {
       setFromDate(daysAgoStr(next === 'orb' ? 90 : 730))
     }
@@ -638,6 +729,16 @@ export default function StrategyLabView() {
         setActiveScan(scan)
         watchScan(scan_id)
         listIndexScans(tokenRef.current).then(setPastScans).catch(() => {})
+        return
+      }
+      if (mode === 'symbol_sweep') {
+        setActiveSweep(null); setCompareResult(null); setCompareError(null)
+        const { sweep_id } = await startSymbolSweepRun(tokenRef.current, {
+          symbol, exchange, interval, from_date: fromDate, to_date: toDate, capital,
+        })
+        const sweep = await getSymbolSweep(tokenRef.current, sweep_id)
+        setActiveSweep(sweep)
+        watchSweep(sweep_id, symbol)
         return
       }
       const { run_id } = mode === 'trend_pullback'
@@ -798,6 +899,15 @@ export default function StrategyLabView() {
               }`}
             >
               RSI Reversion (Backtest)
+            </button>
+            <button
+              type="button"
+              onClick={() => handleModeChange('symbol_sweep')}
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                mode === 'symbol_sweep' ? 'bg-indigo-600 text-white' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400'
+              }`}
+            >
+              Run All Strategies
             </button>
             <button
               type="button"
@@ -992,10 +1102,6 @@ export default function StrategyLabView() {
                 <div className="flex h-[30px] w-full items-center rounded-lg border border-zinc-200 bg-zinc-50 px-2 text-xs text-zinc-500 dark:border-zinc-800 dark:bg-zinc-800/50 dark:text-zinc-400">
                   {(indexUniverses.find(u => u.index === indexScanIndex)?.exchange ?? '…')} (fixed by index)
                 </div>
-              ) : mode === 'trend_pullback' || mode === 'rsi_reversion' ? (
-                <div className="flex h-[30px] w-full items-center rounded-lg border border-zinc-200 bg-zinc-50 px-2 text-xs text-zinc-500 dark:border-zinc-800 dark:bg-zinc-800/50 dark:text-zinc-400">
-                  MCX (fixed — MCX-only strategy)
-                </div>
               ) : (
                 <select value={exchange} onChange={e => handleExchangeChange(e.target.value)}
                   className="w-full rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100">
@@ -1101,6 +1207,14 @@ export default function StrategyLabView() {
           {symbol && exchange !== 'MCX' && (
             <p className="-mt-2 mb-3 text-[11px] text-emerald-600 dark:text-emerald-400">Selected: {symbolLabel}</p>
           )}
+          {mode === 'symbol_sweep' && (
+            <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+              Runs every strategy against this symbol, one at a time — Opening Range Breakout, both Trend Pullback
+              versions, every RSI Reversion version, then the generated 392-candidate sweep last (it&apos;s the
+              slowest). Progress and a live-updating ranked comparison appear below once started; you can navigate
+              away and come back.
+            </p>
+          )}
           </>
           )}
 
@@ -1118,13 +1232,16 @@ export default function StrategyLabView() {
               disabled={
                 mode === 'compare'
                   ? compareLoading || !symbol
-                  : starting || (mode !== 'index_scan' && !symbol) || (activeRun !== null && ACTIVE_STATUSES.has(activeRun.status)) || (activeScan !== null && ACTIVE_SCAN_STATUSES.has(activeScan.status))
+                  : starting || (mode !== 'index_scan' && !symbol)
+                    || (activeRun !== null && ACTIVE_STATUSES.has(activeRun.status))
+                    || (activeScan !== null && ACTIVE_SCAN_STATUSES.has(activeScan.status))
+                    || (activeSweep !== null && ACTIVE_SWEEP_STATUSES.has(activeSweep.status))
               }
               className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-60"
             >
               {mode === 'compare'
                 ? (compareLoading ? 'Comparing…' : 'Compare Strategies')
-                : starting ? 'Starting…' : mode === 'trend_pullback' ? 'Run Trend Pullback Backtest' : mode === 'orb' ? 'Run Opening Range Breakout Backtest' : mode === 'rsi_reversion' ? `Run RSI Reversion ${rsiReversionVersion} Backtest` : mode === 'index_scan' ? `Scan ${INDEX_LABELS[indexScanIndex] ?? indexScanIndex}` : 'Generate & Backtest'}
+                : starting ? 'Starting…' : mode === 'trend_pullback' ? 'Run Trend Pullback Backtest' : mode === 'orb' ? 'Run Opening Range Breakout Backtest' : mode === 'rsi_reversion' ? `Run RSI Reversion ${rsiReversionVersion} Backtest` : mode === 'index_scan' ? `Scan ${INDEX_LABELS[indexScanIndex] ?? indexScanIndex}` : mode === 'symbol_sweep' ? 'Run All Strategies' : 'Generate & Backtest'}
             </button>
           </div>
           </>
@@ -1183,7 +1300,14 @@ export default function StrategyLabView() {
           </>
         )}
 
-        {mode !== 'rsi_live' && mode !== 'index_scan' && (
+        {mode === 'symbol_sweep' && (
+          <>
+            <SymbolSweepPanel sweep={activeSweep} />
+            <SymbolComparisonView result={compareResult} loading={false} error={null} />
+          </>
+        )}
+
+        {mode !== 'rsi_live' && mode !== 'index_scan' && mode !== 'symbol_sweep' && (
         <>
         {msg && (
           <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-800 dark:bg-red-950 dark:text-red-300">

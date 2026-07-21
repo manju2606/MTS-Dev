@@ -23,6 +23,13 @@ function fmtPrice(n: number, sym?: string) {
   return n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+// picks can come from mts_dashboard_cache (localStorage), which may hold a
+// stale StockScore shape from a previous app version -- guard numeric
+// .toFixed() calls on it rather than trusting the current StockScore type.
+function fmtNum(n: number | null | undefined, digits = 2): string {
+  return n != null ? n.toFixed(digits) : '—'
+}
+
 function chgColor(pct: number) {
   return pct >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'
 }
@@ -988,9 +995,9 @@ export default function DashboardView() {
                     </thead>
                     <tbody>
                       {displayed.map((s, i) => {
-                        const t1 = s.targets[0], t2 = s.targets[1]
-                        const t1pct = t1 ? `+${(((t1 - s.entry_price) / s.entry_price) * 100).toFixed(1)}%` : ''
-                        const t2pct = t2 ? `+${(((t2 - s.entry_price) / s.entry_price) * 100).toFixed(1)}%` : ''
+                        const t1 = s.targets?.[0], t2 = s.targets?.[1]
+                        const t1pct = t1 && s.entry_price ? `+${(((t1 - s.entry_price) / s.entry_price) * 100).toFixed(1)}%` : ''
+                        const t2pct = t2 && s.entry_price ? `+${(((t2 - s.entry_price) / s.entry_price) * 100).toFixed(1)}%` : ''
                         return (
                           <tr key={s.id} className={`border-b border-zinc-50 dark:border-zinc-800/50 ${i % 2 === 0 ? 'bg-zinc-50/30 dark:bg-zinc-800/10' : ''}`}>
                             <td className="px-3 py-2 text-xs text-zinc-400">{i + 1}</td>
@@ -1006,12 +1013,12 @@ export default function DashboardView() {
                             <td className="px-3 py-2">
                               <div className="flex items-center gap-1.5">
                                 <div className="h-1.5 w-10 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
-                                  <div className={`h-full rounded-full ${s.score >= 70 ? 'bg-emerald-500' : s.score >= 50 ? 'bg-amber-400' : 'bg-red-400'}`} style={{ width: `${s.score}%` }} />
+                                  <div className={`h-full rounded-full ${s.score >= 70 ? 'bg-emerald-500' : s.score >= 50 ? 'bg-amber-400' : 'bg-red-400'}`} style={{ width: `${s.score ?? 0}%` }} />
                                 </div>
-                                <span className="text-[10px] font-bold text-zinc-600 dark:text-zinc-300">{s.score.toFixed(0)}</span>
+                                <span className="text-[10px] font-bold text-zinc-600 dark:text-zinc-300">{fmtNum(s.score, 0)}</span>
                               </div>
                             </td>
-                            <td className="px-3 py-2 font-mono text-xs text-zinc-700 dark:text-zinc-300">₹{s.entry_price.toFixed(2)}</td>
+                            <td className="px-3 py-2 font-mono text-xs text-zinc-700 dark:text-zinc-300">₹{fmtNum(s.entry_price)}</td>
                             <td className="px-3 py-2 text-xs">
                               {ltps[s.symbol] ? (
                                 <>
@@ -1022,7 +1029,7 @@ export default function DashboardView() {
                                 </>
                               ) : <span className="text-zinc-300 dark:text-zinc-600">—</span>}
                             </td>
-                            <td className="px-3 py-2 font-mono text-xs text-red-600 dark:text-red-400">₹{s.stop_loss.toFixed(2)}</td>
+                            <td className="px-3 py-2 font-mono text-xs text-red-600 dark:text-red-400">₹{fmtNum(s.stop_loss)}</td>
                             <td className="px-3 py-2 font-mono text-xs text-emerald-700 dark:text-emerald-400">
                               {t1 ? <><span className="block">₹{t1.toFixed(2)}</span><span className="text-[10px] text-zinc-500">{t1pct}</span></> : '—'}
                             </td>
@@ -1030,7 +1037,7 @@ export default function DashboardView() {
                               {t2 ? <><span className="block">₹{t2.toFixed(2)}</span><span className="text-[10px] text-zinc-500">{t2pct}</span></> : '—'}
                             </td>
                             <td className={`px-3 py-2 text-xs font-bold ${s.risk_reward_ratio >= 2 ? 'text-emerald-700 dark:text-emerald-400' : s.risk_reward_ratio >= 1.5 ? 'text-amber-700 dark:text-amber-400' : 'text-red-600 dark:text-red-400'}`}>
-                              {s.risk_reward_ratio.toFixed(2)}
+                              {fmtNum(s.risk_reward_ratio)}
                             </td>
                             <td className="px-3 py-2 text-xs text-zinc-400">{s.holding_period}</td>
                             <td className="px-3 py-2">

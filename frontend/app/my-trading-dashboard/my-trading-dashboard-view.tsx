@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NavBar } from '@/components/nav-bar'
 import { McxDaySummaryPanel } from '@/components/mcx-day-summary-panel'
 import { getMyTradingDashboard, getAllMcxSignals } from '@/lib/api'
-import type { McxDashboardRow, McxRankedDashboard, McxAllSignalsResponse } from '@/lib/api'
+import type { McxDashboardRow, McxRankedDashboard, McxAllSignalsResponse, McxAllSignalRow } from '@/lib/api'
 import { readPageCache, writePageCache } from '@/lib/page-cache'
 
 const DASHBOARD_CACHE_KEY = 'my-trading-dashboard:data'
@@ -197,6 +197,16 @@ function fmtSignalDateTime(iso: string): string {
   })
 }
 
+// Groups signals by IST calendar day (not UTC / browser-local day) so "today"
+// lines up with the trading day the signal was actually generated on.
+function istDateKey(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+}
+
+function isSignalFromToday(iso: string): boolean {
+  return istDateKey(iso) === istDateKey(new Date().toISOString())
+}
+
 function changeColor(pct: number | null): string {
   if (pct === null) return '#64748b'
   return pct > 0 ? '#22c55e' : pct < 0 ? '#ef4444' : '#94a3b8'
@@ -220,6 +230,61 @@ function ResultBadge({ result }: { result: string | null }) {
     <span className="rounded-full px-2.5 py-0.5 text-[10px] font-bold" style={{ background: b.bg, color: b.fg }}>
       {b.label}
     </span>
+  )
+}
+
+// target_2 is an optional second (extended) target some signals carry
+// alongside the primary target_1 -- shown as a dimmer "/ t2" suffix when set.
+function TargetCell({ t1, t2 }: { t1: number; t2: number | null }) {
+  return (
+    <span className="font-mono">
+      {fmtPrice(t1)}
+      {t2 !== null && <span style={{ color: '#64748b' }}> / {fmtPrice(t2)}</span>}
+    </span>
+  )
+}
+
+const SIGNALS_TABLE_HEADERS = ['Contract', 'Generated', 'Direction', 'Entry', 'LTP', 'Target', 'vs Entry', '1D', '1W', '1M', 'Result']
+
+function SignalsTable({ signals }: { signals: McxAllSignalRow[] }) {
+  return (
+    <div className="overflow-x-auto rounded-xl" style={{ background: '#141d33' }}>
+      <table className="w-full text-xs">
+        <thead>
+          <tr style={{ background: '#1e3a8a' }}>
+            {SIGNALS_TABLE_HEADERS.map(h => (
+              <th key={h} className="whitespace-nowrap px-3 py-2 text-left font-semibold">{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {signals.map((s, i) => (
+            <tr key={i} className="border-t" style={{ borderColor: '#1e293b' }}>
+              <td className="whitespace-nowrap px-3 py-2.5">{s.icon} {s.name}</td>
+              <td className="whitespace-nowrap px-3 py-2.5 font-mono" style={{ color: '#94a3b8' }}>
+                {fmtSignalDateTime(s.generated_at)}
+              </td>
+              <td className="px-3 py-2.5">
+                <span
+                  className="rounded px-2 py-0.5 text-[10px] font-bold"
+                  style={{ background: s.direction === 'BUY' ? '#065f46' : '#450a0a', color: s.direction === 'BUY' ? '#4ade80' : '#fca5a5' }}
+                >
+                  {s.direction}
+                </span>
+              </td>
+              <td className="px-3 py-2.5 font-mono">{fmtPrice(s.entry_price)}</td>
+              <td className="px-3 py-2.5 font-mono">{fmtPrice(s.ltp)}</td>
+              <td className="px-3 py-2.5"><TargetCell t1={s.target_1} t2={s.target_2} /></td>
+              <td className="px-3 py-2.5 font-mono"><ChangeCell pct={s.change_vs_entry_pct} /></td>
+              <td className="px-3 py-2.5 font-mono"><ChangeCell pct={s.change_1d_pct} /></td>
+              <td className="px-3 py-2.5 font-mono"><ChangeCell pct={s.change_1w_pct} /></td>
+              <td className="px-3 py-2.5 font-mono"><ChangeCell pct={s.change_1m_pct} /></td>
+              <td className="px-3 py-2.5"><ResultBadge result={s.status === 'OPEN' ? null : s.result} /></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
@@ -249,6 +314,8 @@ function AllSignalsTable() {
   }, [])
 
   const signals = data?.signals ?? []
+  const todaySignals = useMemo(() => signals.filter(s => isSignalFromToday(s.generated_at)), [signals])
+  const historySignals = useMemo(() => signals.filter(s => !isSignalFromToday(s.generated_at)), [signals])
 
   return (
     <>
@@ -259,7 +326,7 @@ function AllSignalsTable() {
         </p>
         {data && (
           <p className="text-right text-xs" style={{ color: '#64748b' }}>
-            Refreshes every {SIGNALS_POLL_MS / 1000}s &middot; updated {timeAgo(data.generated_at)} &middot; {signals.length} signals
+            Refreshes every {SIGNALS_POLL_MS / 1000}s &middot; updated {timeAgo(data.generated_at)} &middot; {todaySignals.length} today, {historySignals.length} history
           </p>
         )}
       </div>
@@ -280,49 +347,34 @@ function AllSignalsTable() {
           BUY or SELL, one open signal per direction at a time, across every tracked contract.
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl" style={{ background: '#141d33' }}>
-          <table className="w-full text-xs">
-            <thead>
-              <tr style={{ background: '#1e3a8a' }}>
-                {['Contract', 'Generated', 'Direction', 'Entry', 'LTP', 'vs Entry', '1D', '1W', '1M', 'Result'].map(h => (
-                  <th key={h} className="whitespace-nowrap px-3 py-2 text-left font-semibold">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {signals.map((s, i) => (
-                <tr key={i} className="border-t" style={{ borderColor: '#1e293b' }}>
-                  <td className="whitespace-nowrap px-3 py-2.5">{s.icon} {s.name}</td>
-                  <td className="whitespace-nowrap px-3 py-2.5 font-mono" style={{ color: '#94a3b8' }}>
-                    {fmtSignalDateTime(s.generated_at)}
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <span
-                      className="rounded px-2 py-0.5 text-[10px] font-bold"
-                      style={{ background: s.direction === 'BUY' ? '#065f46' : '#450a0a', color: s.direction === 'BUY' ? '#4ade80' : '#fca5a5' }}
-                    >
-                      {s.direction}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2.5 font-mono">{fmtPrice(s.entry_price)}</td>
-                  <td className="px-3 py-2.5 font-mono">{fmtPrice(s.ltp)}</td>
-                  <td className="px-3 py-2.5 font-mono"><ChangeCell pct={s.change_vs_entry_pct} /></td>
-                  <td className="px-3 py-2.5 font-mono"><ChangeCell pct={s.change_1d_pct} /></td>
-                  <td className="px-3 py-2.5 font-mono"><ChangeCell pct={s.change_1w_pct} /></td>
-                  <td className="px-3 py-2.5 font-mono"><ChangeCell pct={s.change_1m_pct} /></td>
-                  <td className="px-3 py-2.5"><ResultBadge result={s.status === 'OPEN' ? null : s.result} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <h2 className="mb-3 text-base font-bold">🟢 Today&apos;s Calls</h2>
+          {todaySignals.length === 0 ? (
+            <div className="mb-8 rounded-xl px-4 py-8 text-center text-sm" style={{ background: '#141d33', color: '#94a3b8' }}>
+              No signals generated yet today.
+            </div>
+          ) : (
+            <div className="mb-8">
+              <SignalsTable signals={todaySignals} />
+            </div>
+          )}
+
+          <h2 className="mb-3 text-base font-bold">🕘 History Calls</h2>
+          {historySignals.length === 0 ? (
+            <div className="rounded-xl px-4 py-8 text-center text-sm" style={{ background: '#141d33', color: '#94a3b8' }}>
+              No earlier signals yet.
+            </div>
+          ) : (
+            <SignalsTable signals={historySignals} />
+          )}
+        </>
       )}
 
       <p className="mt-4 text-xs" style={{ color: '#64748b' }}>
         &ldquo;vs Entry&rdquo; is the plain price move from the signal&apos;s entry price to the current LTP (not
         direction-adjusted P&amp;L). 1D/1W/1M are the underlying contract&apos;s own price change over that window,
         independent of any specific signal. Closes WIN (target hit), LOSS (stop-loss hit), or EXPIRED after 5
-        trading days with neither.
+        trading days with neither. &ldquo;Today&rdquo; and &ldquo;History&rdquo; split by IST calendar day.
       </p>
     </>
   )

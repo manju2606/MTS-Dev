@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { NavBar } from '@/components/nav-bar'
 import { McxDaySummaryPanel } from '@/components/mcx-day-summary-panel'
 import { getMyTradingDashboard, getAllMcxSignals } from '@/lib/api'
@@ -244,6 +244,31 @@ function TargetCell({ t1, t2 }: { t1: number; t2: number | null }) {
   )
 }
 
+// Collapsed/expanded state resets on remount (not persisted) -- today's
+// calls default open since that's what you'd check first, history default
+// collapsed to keep the page short.
+function CollapsibleSection({ title, count, defaultOpen, children }: {
+  title: string
+  count: number
+  defaultOpen: boolean
+  children: ReactNode
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div className="mb-8">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="mb-3 flex w-full items-center gap-2 text-left text-base font-bold"
+      >
+        <span className="inline-block w-3 text-xs" style={{ opacity: 0.6 }}>{open ? '▼' : '▶'}</span>
+        {title}
+        <span className="text-xs font-normal" style={{ color: '#64748b' }}>({count})</span>
+      </button>
+      {open && children}
+    </div>
+  )
+}
+
 const SIGNALS_TABLE_HEADERS = ['Contract', 'Generated', 'Direction', 'Entry', 'LTP', 'Target', 'vs Entry', '1D', '1W', '1M', 'Result']
 
 function SignalsTable({ signals }: { signals: McxAllSignalRow[] }) {
@@ -348,25 +373,25 @@ function AllSignalsTable() {
         </div>
       ) : (
         <>
-          <h2 className="mb-3 text-base font-bold">🟢 Today&apos;s Calls</h2>
-          {todaySignals.length === 0 ? (
-            <div className="mb-8 rounded-xl px-4 py-8 text-center text-sm" style={{ background: '#141d33', color: '#94a3b8' }}>
-              No signals generated yet today.
-            </div>
-          ) : (
-            <div className="mb-8">
+          <CollapsibleSection title="🟢 Today's Calls" count={todaySignals.length} defaultOpen={true}>
+            {todaySignals.length === 0 ? (
+              <div className="rounded-xl px-4 py-8 text-center text-sm" style={{ background: '#141d33', color: '#94a3b8' }}>
+                No signals generated yet today.
+              </div>
+            ) : (
               <SignalsTable signals={todaySignals} />
-            </div>
-          )}
+            )}
+          </CollapsibleSection>
 
-          <h2 className="mb-3 text-base font-bold">🕘 History Calls</h2>
-          {historySignals.length === 0 ? (
-            <div className="rounded-xl px-4 py-8 text-center text-sm" style={{ background: '#141d33', color: '#94a3b8' }}>
-              No earlier signals yet.
-            </div>
-          ) : (
-            <SignalsTable signals={historySignals} />
-          )}
+          <CollapsibleSection title="🕘 History Calls" count={historySignals.length} defaultOpen={false}>
+            {historySignals.length === 0 ? (
+              <div className="rounded-xl px-4 py-8 text-center text-sm" style={{ background: '#141d33', color: '#94a3b8' }}>
+                No earlier signals yet.
+              </div>
+            ) : (
+              <SignalsTable signals={historySignals} />
+            )}
+          </CollapsibleSection>
         </>
       )}
 

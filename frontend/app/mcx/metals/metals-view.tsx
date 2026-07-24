@@ -1118,7 +1118,39 @@ function CategoryRow({ cat }: { cat: NgAiScore['categories'][number] }) {
   )
 }
 
+// Browser-native text-to-speech for the reasoning card -- no backend, no API
+// key, no per-use cost (unlike a real voice assistant, which needs an LLM
+// chat behind it -- see the AI Copilot cost estimate this was chosen over).
+function speakReasoning(reasoning: NgAiScore['reasoning'], onEnd: () => void) {
+  window.speechSynthesis.cancel()
+  const text = [
+    `Technical: ${reasoning.technical_reason}`,
+    `Fundamental: ${reasoning.fundamental_reason}`,
+    `Sentiment: ${reasoning.sentiment_reason}`,
+    `Macro: ${reasoning.macro_reason}`,
+    `Alternative scenario: ${reasoning.alternative_scenario}`,
+    `Invalidation level: ${reasoning.invalidation_level}`,
+  ].join('. ')
+  const utterance = new SpeechSynthesisUtterance(text)
+  utterance.onend = onEnd
+  utterance.onerror = onEnd
+  window.speechSynthesis.speak(utterance)
+}
+
 function ReasoningCard({ reasoning }: { reasoning: NgAiScore['reasoning'] }) {
+  const [speaking, setSpeaking] = useState(false)
+  const speechSupported = typeof window !== 'undefined' && 'speechSynthesis' in window
+
+  function toggleSpeak() {
+    if (speaking) {
+      window.speechSynthesis.cancel()
+      setSpeaking(false)
+      return
+    }
+    setSpeaking(true)
+    speakReasoning(reasoning, () => setSpeaking(false))
+  }
+
   const rows: { label: string; text: string }[] = [
     { label: 'Technical', text: reasoning.technical_reason },
     { label: 'Fundamental', text: reasoning.fundamental_reason },
@@ -1127,7 +1159,30 @@ function ReasoningCard({ reasoning }: { reasoning: NgAiScore['reasoning'] }) {
   ]
   return (
     <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-      <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-400">AI Reasoning</p>
+      <div className="mb-3 flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">AI Reasoning</p>
+        {speechSupported && (
+          <button
+            onClick={toggleSpeak}
+            className="flex items-center gap-1.5 rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:bg-indigo-950/70"
+          >
+            {speaking ? (
+              <>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1" /></svg>
+                Stop
+              </>
+            ) : (
+              <>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M11 5 6 9H2v6h4l5 4V5z" />
+                  <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+                </svg>
+                Read aloud
+              </>
+            )}
+          </button>
+        )}
+      </div>
       <div className="grid gap-3 sm:grid-cols-2">
         {rows.map(r => (
           <div key={r.label}>

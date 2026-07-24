@@ -181,10 +181,11 @@ const COMPARE_FAMILY_LABELS: Record<string, string> = {
   rsi_reversion_v2: 'RSI Reversion',
 }
 
-function SymbolComparisonView({ result, loading, error }: {
+function SymbolComparisonView({ result, loading, error, onOpenResult }: {
   result: SymbolComparison | null
   loading: boolean
   error: string | null
+  onOpenResult: (runId: string) => void
 }) {
   if (loading) {
     return (
@@ -252,9 +253,17 @@ function SymbolComparisonView({ result, loading, error }: {
                     </span>
                   )}
                 </div>
-                <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">
-                  {row.composite_score.toFixed(1)}/100
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">
+                    {row.composite_score.toFixed(1)}/100
+                  </span>
+                  <button
+                    onClick={() => onOpenResult(row.run_id)}
+                    className="text-[11px] font-semibold text-indigo-600 hover:underline dark:text-indigo-400"
+                  >
+                    Details &amp; Monte Carlo →
+                  </button>
+                </div>
               </div>
               <div className="mb-2 h-2 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
                 <div
@@ -795,6 +804,32 @@ export default function StrategyLabView() {
     }
   }
 
+  // Opens a Compare/Symbol Sweep row's run and jumps straight to its own
+  // top-scoring result's full detail (equity/drawdown/trades) -- same
+  // 'generated' mode trick as openIndexScanSymbol so the existing detail
+  // panel (which is where the "Run Monte Carlo Simulations" button lives)
+  // renders regardless of that run's actual strategy family.
+  async function openComparisonResult(runId: string) {
+    setMode('generated')
+    setDetail(null)
+    setMonteCarlo(null); setMonteCarloError(null)
+    const run = await getStrategyLabRun(tokenRef.current, runId)
+    setActiveRun(run)
+    if (run.status !== 'completed') {
+      setResults(null)
+      return
+    }
+    const res = await listStrategyLabResults(tokenRef.current, runId)
+    setResults(res)
+    if (res.length > 0) {
+      setDetailLoading(true)
+      try {
+        const d = await getStrategyLabResult(tokenRef.current, runId, res[0].id)
+        setDetail(d)
+      } catch { /* ignore */ } finally { setDetailLoading(false) }
+    }
+  }
+
   async function openPastRun(run: StrategyLabRun) {
     setActiveRun(run)
     setDetail(null)
@@ -1251,7 +1286,10 @@ export default function StrategyLabView() {
         {mode === 'rsi_live' && <RsiReversionLiveView />}
 
         {mode === 'compare' && (
-          <SymbolComparisonView result={compareResult} loading={compareLoading} error={compareError} />
+          <SymbolComparisonView
+            result={compareResult} loading={compareLoading} error={compareError}
+            onOpenResult={openComparisonResult}
+          />
         )}
 
         {mode === 'index_scan' && (
@@ -1303,7 +1341,10 @@ export default function StrategyLabView() {
         {mode === 'symbol_sweep' && (
           <>
             <SymbolSweepPanel sweep={activeSweep} />
-            <SymbolComparisonView result={compareResult} loading={false} error={null} />
+            <SymbolComparisonView
+              result={compareResult} loading={false} error={null}
+              onOpenResult={openComparisonResult}
+            />
           </>
         )}
 

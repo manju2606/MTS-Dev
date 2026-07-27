@@ -1,4 +1,4 @@
-.PHONY: dev dev-build dev-down prod prod-build prod-down logs ps
+.PHONY: dev dev-build dev-down prod prod-build prod-down logs ps monitoring monitoring-down
 
 dev:
 	docker compose -f docker-compose.yml -f docker-compose.dev.yml up
@@ -17,6 +17,15 @@ prod-build:
 
 prod-down:
 	docker compose -f docker-compose.yml -f docker-compose.prod.yml down
+
+# Local-only observability (Prometheus/Grafana/cAdvisor/exporters + kind
+# cluster metrics). Requires a running kind cluster (see k8s-* targets) —
+# not for cloud deploys, so it's not part of `prod`.
+monitoring:
+	docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.monitoring.yml up -d prometheus node-exporter grafana cadvisor postgres-exporter redis-exporter mongodb-exporter alertmanager
+
+monitoring-down:
+	docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.monitoring.yml down
 
 logs:
 	docker compose logs -f

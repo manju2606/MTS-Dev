@@ -1,53 +1,58 @@
-variable "tenancy_ocid" {
-  description = "OCI tenancy OCID (Profile menu → Tenancy: <name>)"
+variable "do_token" {
+  description = "DigitalOcean API token (Account → API → Generate New Token, read+write)"
+  type        = string
+  sensitive   = true
+}
+
+variable "dns_zone" {
+  description = "Domain already added under DigitalOcean's Networking → Domains (e.g. example.com)"
   type        = string
 }
 
-variable "user_ocid" {
-  description = "OCI user OCID (Profile menu → My profile)"
+variable "app_hostname" {
+  description = "Record name relative to dns_zone — \"@\" for the apex domain, or e.g. \"app\" for app.example.com"
   type        = string
+  default     = "@"
 }
 
-variable "fingerprint" {
-  description = "Fingerprint of the API signing key added under My profile → API keys"
-  type        = string
-}
-
-variable "private_key_path" {
-  description = "Path to the private key of the API signing key (NOT your SSH key)"
-  type        = string
-}
-
-variable "region" {
-  description = "OCI region, e.g. us-ashburn-1 — must match the Home Region you picked at signup"
-  type        = string
-}
-
-variable "compartment_ocid" {
-  description = "Compartment to create resources in — the tenancy OCID works fine for a single-app setup"
+variable "letsencrypt_email" {
+  description = "Email Let's Encrypt sends expiry/security notices to"
   type        = string
 }
 
 variable "ssh_public_key_path" {
-  description = "Path to the SSH public key that will be allowed to log into the instance"
+  description = "Path to the SSH public key allowed to log into the droplet"
   type        = string
   default     = "~/.ssh/id_rsa.pub"
 }
 
-variable "instance_display_name" {
-  description = "Name shown in the OCI console for this instance"
+variable "droplet_region" {
+  description = "DigitalOcean region slug — blr1 (Bangalore) for lowest latency to NSE/Indian broker APIs"
   type        = string
-  default     = "mts-prod"
+  default     = "blr1"
 }
 
-variable "instance_ocpus" {
-  description = "Ampere A1 OCPUs — Always Free covers up to 4 total across all A1 instances"
-  type        = number
-  default     = 4
+variable "droplet_size" {
+  description = "DigitalOcean droplet size slug — s-2vcpu-4gb comfortably fits postgres+redis+mongo+backend+frontend+nginx"
+  type        = string
+  default     = "s-2vcpu-4gb"
 }
 
-variable "instance_memory_gb" {
-  description = "Ampere A1 memory in GB — Always Free covers up to 24GB total across all A1 instances"
-  type        = number
-  default     = 24
+variable "repo_url" {
+  description = "Public HTTPS git URL to clone on first boot"
+  type        = string
+  default     = "https://github.com/manju2606/MTS-Dev.git"
+}
+
+variable "repo_branch" {
+  description = "Branch to check out on first boot"
+  type        = string
+  default     = "main"
+}
+
+variable "anthropic_api_key" {
+  description = "AI Analysis / signal generation — leave blank to skip AI features for now"
+  type        = string
+  sensitive   = true
+  default     = ""
 }

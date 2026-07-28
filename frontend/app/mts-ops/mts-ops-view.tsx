@@ -6,7 +6,17 @@ import { NavBar } from '@/components/nav-bar'
 
 const OPS_URL = process.env.NEXT_PUBLIC_OPS_DASHBOARD_URL || 'http://localhost:4600'
 
-type Status = 'checking' | 'up' | 'down'
+type Status = 'checking' | 'up' | 'down' | 'unavailable'
+
+// The ops-dashboard container only ever runs on the machine you're developing
+// on — this fetch happens in the browser, so on any deployed domain it would
+// otherwise try (and fail) to reach localhost:4600 on the viewer's own
+// machine. Skip the check there and say so plainly instead of showing a
+// misleading "down".
+function isLocalDevHost(): boolean {
+  if (typeof window === 'undefined') return false
+  return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+}
 
 // Most endpoints return { status: 'up' | 'down', ... }. /api/monitoring/status
 // instead returns one status per service ({ grafana: {...}, prometheus: {...}, ... }) —
@@ -20,6 +30,7 @@ function extractStatus(data: Record<string, unknown>): Status {
 }
 
 async function fetchStatus(path: string): Promise<Status> {
+  if (!isLocalDevHost()) return 'unavailable'
   const controller = new AbortController()
   const t = setTimeout(() => controller.abort(), 4000)
   try {
@@ -36,8 +47,15 @@ async function fetchStatus(path: string): Promise<Status> {
 
 function StatusDot({ status }: { status: Status }) {
   const color =
-    status === 'up' ? 'bg-emerald-500' : status === 'down' ? 'bg-red-500' : 'bg-zinc-400'
-  const label = status === 'up' ? 'up' : status === 'down' ? 'down' : 'checking…'
+    status === 'up' ? 'bg-emerald-500'
+    : status === 'down' ? 'bg-red-500'
+    : status === 'unavailable' ? 'bg-zinc-300 dark:bg-zinc-600'
+    : 'bg-zinc-400'
+  const label =
+    status === 'up' ? 'up'
+    : status === 'down' ? 'down'
+    : status === 'unavailable' ? 'local only'
+    : 'checking…'
   return (
     <span className="inline-flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
       <span className={`h-2 w-2 shrink-0 rounded-full ${color}`} />

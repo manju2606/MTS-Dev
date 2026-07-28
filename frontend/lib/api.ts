@@ -3579,7 +3579,11 @@ export function createPriceStream(token: string, onMessage: (msg: PriceStreamMes
   unsubscribe: () => void
   close: () => void
 } {
-  const wsBase = BASE.replace(/^http/, 'ws') || (typeof window !== 'undefined' ? `ws://${window.location.host}` : 'ws://localhost')
+  const wsBase = BASE
+    ? BASE.replace(/^http/, 'ws')
+    : typeof window !== 'undefined'
+      ? `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`
+      : 'ws://localhost'
   const ws = new WebSocket(`${wsBase}/api/v1/ws/prices?token=${encodeURIComponent(token)}`)
 
   ws.onmessage = (e) => {

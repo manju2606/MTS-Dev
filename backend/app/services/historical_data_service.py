@@ -183,11 +183,15 @@ async def download_batch(
 
 
 async def get_zerodha_broker(user_id: str) -> ZerodhaBroker:
-    broker = await session_store.get(user_id)
+    """Historical candle data is the same for every user -- served from the
+    shared market-data broker session (session_store.get_market_data_broker)
+    rather than requiring `user_id` to have their own Zerodha connection.
+    See mcx_service.get_zerodha_broker for the identical rationale."""
+    broker = await session_store.get_market_data_broker()
     if not isinstance(broker, ZerodhaBroker):
         raise NotConnectedError(
-            "Connect your Zerodha account (Broker settings) to download historical data "
-            "via the official API."
+            "Historical data isn't available yet -- an admin needs to connect a "
+            "Zerodha account (Broker settings) as the shared market-data source."
         )
     return broker
 

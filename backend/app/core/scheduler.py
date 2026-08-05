@@ -75,6 +75,22 @@ def last_scan_info() -> tuple[datetime | None, int]:
     return _last_scan_at, _last_scan_count
 
 
+async def _run_golden_egg() -> None:
+    """09:15 IST weekdays, right at market open: send the single-stock
+    "Golden Egg" pick email (see services/golden_egg_service.py) -- a
+    cash-equity-only intraday idea sized to net roughly ₹1000, with a risk
+    disclaimer. Runs its own fresh Golden Stock Intraday scan rather than
+    waiting on golden_stock_scan_open's 09:30 run, and is fully independent
+    of it -- no shared state, no double-emailing."""
+    try:
+        from app.services.golden_egg_service import send_golden_egg_email
+
+        pick = await send_golden_egg_email(target_profit=1000.0)
+        log.info("scheduler.golden_egg.done", symbol=pick.symbol if pick else None)
+    except Exception as exc:
+        log.error("scheduler.golden_egg.error", error=str(exc))
+
+
 async def _run_golden_stock_scan() -> None:
     """Every 15 min, 09:30-15:00 IST weekdays: run Golden Stock Intraday scan."""
     try:
@@ -1015,6 +1031,28 @@ async def _run_usa_stocks_prediction_prewarm() -> None:
         log.error("scheduler.usa_stocks_prewarm.error", error=str(exc))
 
 
+async def _run_zerodha_auto_login() -> None:
+    """08:00 IST weekdays, 45 min ahead of _run_zerodha_token_check: attempt
+    unattended login for every user who's opted into it (see
+    zerodha_token_service.run_scheduled_auto_login and
+    infra/brokers/zerodha_autologin.py). Deliberately runs before the
+    validity check/reminder job so a successful auto-login here means that
+    job sees an already-valid session and skips the reminder; a failed one
+    still gets the safety-net reminder at 08:45."""
+    try:
+        from app.services.zerodha_token_service import run_scheduled_auto_login
+
+        attempted, succeeded, failed = await run_scheduled_auto_login()
+        log.info(
+            "scheduler.zerodha_auto_login.done",
+            attempted=attempted,
+            succeeded=succeeded,
+            failed=failed,
+        )
+    except Exception as exc:
+        log.error("scheduler.zerodha_auto_login.error", error=str(exc))
+
+
 async def _run_zerodha_token_check() -> None:
     """08:45 IST weekdays, before market open: validate every connected
     user's Zerodha session against Kite (not just "we have a token cached"
@@ -1290,6 +1328,17 @@ def start_scheduler() -> None:
         name="Resolve Forecast Accuracy",
         max_instances=1,
         misfire_grace_time=None,
+    )
+
+    # Golden Egg — single-stock 09:15 pick email, ahead of Golden Stock
+    # Intraday's own first scan at 09:30 (see _run_golden_egg's docstring).
+    _scheduler.add_job(
+        _run_golden_egg,
+        CronTrigger(day_of_week="mon-fri", hour=9, minute=15, second=0, timezone="Asia/Kolkata"),
+        id="golden_egg",
+        name="Golden Egg — Daily Pick Email (09:15)",
+        max_instances=1,
+        misfire_grace_time=600,
     )
 
     # Golden Stock Intraday scan every 15 min, 09:30-15:00 IST (Mon-Fri)
@@ -1582,6 +1631,19 @@ def start_scheduler() -> None:
         name="MCX Metals — AI Trade Signal Logging + Resolution",
         max_instances=1,
         misfire_grace_time=180,
+    )
+
+    # Zerodha unattended auto-login at 08:00 IST weekdays -- opt-in, ahead of
+    # the 08:45 validity check below so a successful auto-login here means
+    # that job has nothing to remind about (see _run_zerodha_auto_login's
+    # own docstring).
+    _scheduler.add_job(
+        _run_zerodha_auto_login,
+        CronTrigger(day_of_week="mon-fri", hour=8, minute=0, second=0, timezone="Asia/Kolkata"),
+        id="zerodha_auto_login",
+        name="Zerodha — Unattended TOTP Auto-Login",
+        max_instances=1,
+        misfire_grace_time=1800,
     )
 
     # Zerodha daily token-validity check at 08:45 IST weekdays, ahead of the

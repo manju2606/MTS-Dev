@@ -123,3 +123,30 @@ async def list_connected_user_ids() -> list[str]:
         return [k[len(_REDIS_PREFIX) :] for k in keys]
     except Exception:
         return []
+
+
+async def get_market_data_broker() -> AbstractBroker | None:
+    """The single shared broker session used to serve market data (MCX/NSE
+    quotes, candles, predictions) to every app user -- these are identical
+    regardless of whose Kite login fetches them, so requiring each user to
+    connect their own Zerodha account just to *view* data was pure friction.
+    Live trading is unaffected: order placement always uses the placing
+    user's own connected broker (see api/v1/live.py), never this function.
+
+    Resolution order:
+      1. settings.MARKET_DATA_BROKER_USER_ID, if set and that user actually
+         has a live session right now.
+      2. Otherwise, whichever connected user's session comes back first from
+         list_connected_user_ids() -- in the common case there's only one
+         real Zerodha-connected account (the admin's), so this "just works"
+         without any config.
+    Returns None if nobody is connected at all."""
+    if settings.MARKET_DATA_BROKER_USER_ID:
+        broker = await get(settings.MARKET_DATA_BROKER_USER_ID)
+        if broker is not None:
+            return broker
+
+    user_ids = await list_connected_user_ids()
+    if not user_ids:
+        return None
+    return await get(user_ids[0])

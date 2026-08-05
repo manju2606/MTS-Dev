@@ -308,6 +308,36 @@ class ApiKeyORM(Base):
         )
 
 
+class ZerodhaAutoLoginCredentialORM(Base):
+    """Stores one row per user who's opted into unattended Zerodha
+    auto-login. `encrypted_payload` is a Fernet-encrypted JSON blob of
+    {kite_user_id, password, totp_secret} -- see app/core/crypto.py.
+    Encryption/decryption happens in the repository layer (like
+    SQLApiKeyRepository hashes, not this ORM class), so this class never
+    sees plaintext credentials."""
+
+    __tablename__ = "zerodha_auto_login_credentials"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    encrypted_payload: Mapped[str] = mapped_column(Text, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+    last_auto_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_auto_login_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
+
 class AlertORM(Base):
     __tablename__ = "alerts"
 

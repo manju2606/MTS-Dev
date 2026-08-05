@@ -150,11 +150,20 @@ async def _get_cached_quote(user_id: str, contract: str) -> dict | None:
 
 
 async def get_zerodha_broker(user_id: str) -> ZerodhaBroker:
-    broker = await session_store.get(user_id)
+    """MCX prices are the same for every user, so this no longer requires
+    `user_id` specifically to have a Zerodha connection -- it's served from
+    whichever account is the shared market-data session (see
+    session_store.get_market_data_broker; typically just the admin's
+    account, kept fresh via TOTP auto-login). `user_id` stays in the
+    signature since every call site already passes it and it's still useful
+    for logging/paper-trade records elsewhere -- it just no longer
+    determines *which* broker session answers the quote."""
+    broker = await session_store.get_market_data_broker()
     if not isinstance(broker, ZerodhaBroker):
         raise McxNotConnectedError(
-            "Connect your Zerodha account (Broker settings) to view live MCX "
-            "Natural Gas prices and trade -- MCX has no free public data feed."
+            "MCX market data isn't available yet -- an admin needs to connect a "
+            "Zerodha account (Broker settings) as the shared market-data source. "
+            "MCX has no free public data feed."
         )
     return broker
 
@@ -535,7 +544,10 @@ async def place_ng_trade(
 
 
 async def list_ng_trades(user_id: str, repo, trade_status: TradeStatus | None = None) -> list[dict]:
-    broker = await session_store.get(user_id)
+    # Only used below to resolve lot_size (instrument metadata, same for
+    # everyone) -- the trade list itself is still this user's own paper
+    # trades, fetched by user_id from `repo` a few lines down.
+    broker = await session_store.get_market_data_broker()
     trades = await repo.list_by_user(UUID(user_id), trade_status)
     ng_names = set(MCX_CONTRACTS.values())
     mcx_trades = [

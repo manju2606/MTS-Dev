@@ -15,7 +15,9 @@ def zerodha_token_reminder_html() -> str:
   <div style="padding:24px 32px;">
     <p style="margin:0 0 16px;font-size:14px;color:#374151;line-height:1.6;">
       Zerodha invalidates yesterday's access token every day, so today's session
-      needs a fresh login before MCX quotes, predictions, and trade signals can run.
+      needs a fresh login before you can place live trades on your own account.
+      If your account is the one serving shared MCX/NSE market data to other
+      users, reconnect promptly to keep that data fresh too.
     </p>
     <a href="{reconnect_url}" style="display:inline-block;background:#0891b2;color:#fff;
       text-decoration:none;font-weight:700;font-size:14px;padding:12px 24px;border-radius:8px;">
@@ -25,7 +27,9 @@ def zerodha_token_reminder_html() -> str:
   <div style="padding:16px 32px 24px;border-top:1px solid #f3f4f6;">
     <p style="margin:0;font-size:10px;color:#9ca3af;line-height:1.6;">
       You're receiving this because your Zerodha session on Manju Trade AI Pro
-      needs daily reauthorization. This app never stores your Zerodha password or TOTP secret.
+      needs daily reauthorization. This app stores your Zerodha password/TOTP secret
+      only if you've opted into auto-login on the Broker page (encrypted at rest) --
+      otherwise nothing beyond your session token is ever stored.
     </p>
   </div>
 </div>

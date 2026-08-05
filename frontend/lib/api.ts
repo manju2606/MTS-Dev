@@ -2541,6 +2541,49 @@ export async function activateSimulatedBroker(token: string): Promise<BrokerStat
   return res.json()
 }
 
+// ── Zerodha unattended auto-login (opt-in) ──────────────────────────────────
+
+export type ZerodhaAutoLoginStatus = {
+  configured: boolean
+  enabled: boolean
+  kite_user_id?: string
+  last_auto_login_at?: string | null
+  last_auto_login_ok?: boolean | null
+}
+
+export async function getZerodhaAutoLoginStatus(token: string): Promise<ZerodhaAutoLoginStatus> {
+  const res = await fetch(`${BASE}/api/v1/broker/zerodha/auto-login`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error('Failed to fetch auto-login status')
+  return res.json()
+}
+
+export async function saveZerodhaAutoLogin(token: string, body: {
+  kite_user_id: string; password: string; totp_secret: string
+}): Promise<{ configured: boolean; enabled: boolean }> {
+  const res = await fetch(`${BASE}/api/v1/broker/zerodha/auto-login`, {
+    method: 'POST', headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Save failed') }
+  return res.json()
+}
+
+export async function testZerodhaAutoLogin(token: string): Promise<{ connected: boolean }> {
+  const res = await fetch(`${BASE}/api/v1/broker/zerodha/auto-login/test`, {
+    method: 'POST', headers: authHeaders(token),
+  })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Test failed') }
+  return res.json()
+}
+
+export async function deleteZerodhaAutoLogin(token: string): Promise<{ configured: boolean }> {
+  const res = await fetch(`${BASE}/api/v1/broker/zerodha/auto-login`, {
+    method: 'DELETE', headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error('Failed to remove auto-login credentials')
+  return res.json()
+}
+
 export async function getUpstoxLoginUrl(token: string): Promise<{ login_url: string; redirect_uri: string }> {
   const res = await fetch(`${BASE}/api/v1/broker/upstox/login-url`, { headers: authHeaders(token) })
   if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Failed') }

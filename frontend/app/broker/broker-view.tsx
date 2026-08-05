@@ -5,12 +5,13 @@ import { useRouter } from 'next/navigation'
 import { NavBar } from '@/components/nav-bar'
 import {
   getBrokerStatus, getZerodhaLoginUrl, connectZerodha,
+  getZerodhaAutoLoginStatus, saveZerodhaAutoLogin, testZerodhaAutoLogin, deleteZerodhaAutoLogin,
   getUpstoxLoginUrl, connectUpstox,
   getAliceBlueLoginUrl, connectAliceBlue,
   connectDhan,
   disconnectBroker, activateSimulatedBroker,
 } from '@/lib/api'
-import type { BrokerStatus } from '@/lib/api'
+import type { BrokerStatus, ZerodhaAutoLoginStatus } from '@/lib/api'
 
 type BrokerId = 'zerodha' | 'upstox' | 'aliceblue' | 'dhan' | 'simulated'
 
@@ -37,6 +38,13 @@ export default function BrokerView() {
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
   const [authChecked, setAuthChecked] = useState(false)
 
+  const [autoLoginStatus, setAutoLoginStatus] = useState<ZerodhaAutoLoginStatus | null>(null)
+  const [showAutoLoginForm, setShowAutoLoginForm] = useState(false)
+  const [alKiteUserId, setAlKiteUserId] = useState('')
+  const [alPassword, setAlPassword] = useState('')
+  const [alTotpSecret, setAlTotpSecret] = useState('')
+  const [alLoading, setAlLoading] = useState(false)
+
   useEffect(() => {
     const t = localStorage.getItem('mts_token')
     if (!t) { router.replace('/login'); return }
@@ -45,9 +53,51 @@ export default function BrokerView() {
       setStatus(s)
       if (s.broker !== 'simulated') setSelected(s.broker as BrokerId)
     }).catch(() => null)
+    getZerodhaAutoLoginStatus(t).then(setAutoLoginStatus).catch(() => null)
     const id = setTimeout(() => setAuthChecked(true), 0)
     return () => clearTimeout(id)
   }, [router])
+
+  async function handleSaveAutoLogin() {
+    if (!alKiteUserId.trim() || !alPassword.trim() || !alTotpSecret.trim()) return
+    setAlLoading(true); setMsg(null)
+    try {
+      await saveZerodhaAutoLogin(tokenRef.current, {
+        kite_user_id: alKiteUserId.trim(), password: alPassword, totp_secret: alTotpSecret.trim(),
+      })
+      const s = await getZerodhaAutoLoginStatus(tokenRef.current)
+      setAutoLoginStatus(s)
+      setAlPassword(''); setAlTotpSecret(''); setShowAutoLoginForm(false)
+      setMsg({ type: 'ok', text: 'Auto-login credentials saved. Runs automatically at 08:00 IST on trading days — use "Test now" to verify first.' })
+    } catch (e) {
+      setMsg({ type: 'err', text: e instanceof Error ? e.message : 'Save failed' })
+    } finally { setAlLoading(false) }
+  }
+
+  async function handleTestAutoLogin() {
+    setAlLoading(true); setMsg(null)
+    try {
+      await testZerodhaAutoLogin(tokenRef.current)
+      const [s, al] = await Promise.all([getBrokerStatus(tokenRef.current), getZerodhaAutoLoginStatus(tokenRef.current)])
+      setStatus(s); setAutoLoginStatus(al)
+      setMsg({ type: 'ok', text: 'Auto-login succeeded — Zerodha connected.' })
+    } catch (e) {
+      const al = await getZerodhaAutoLoginStatus(tokenRef.current).catch(() => null)
+      if (al) setAutoLoginStatus(al)
+      setMsg({ type: 'err', text: e instanceof Error ? e.message : 'Auto-login test failed' })
+    } finally { setAlLoading(false) }
+  }
+
+  async function handleRemoveAutoLogin() {
+    setAlLoading(true); setMsg(null)
+    try {
+      await deleteZerodhaAutoLogin(tokenRef.current)
+      setAutoLoginStatus({ configured: false, enabled: false })
+      setMsg({ type: 'ok', text: 'Auto-login credentials removed.' })
+    } catch (e) {
+      setMsg({ type: 'err', text: e instanceof Error ? e.message : 'Failed to remove' })
+    } finally { setAlLoading(false) }
+  }
 
   async function handleZerodhaLogin() {
     setLoading(true); setMsg(null)
@@ -238,6 +288,92 @@ export default function BrokerView() {
                 >
                   2. Connect
                 </button>
+              </div>
+
+              {/* Unattended auto-login (opt-in) */}
+              <div className="mt-2 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                  Auto-login (optional)
+                </p>
+                <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+                  Runs Kite&apos;s login automatically at 08:00 IST every trading day, so you never have to click reconnect. Requires storing your Zerodha password and TOTP secret, encrypted on the server. Skips Kite&apos;s official API and can break if Zerodha changes their login page — the manual flow above always works as a fallback.
+                </p>
+
+                {autoLoginStatus?.configured ? (
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300">
+                      <span className={`h-2 w-2 rounded-full ${autoLoginStatus.last_auto_login_ok ? 'bg-emerald-500' : autoLoginStatus.last_auto_login_ok === false ? 'bg-red-400' : 'bg-zinc-300'}`} />
+                      <span>Configured for <span className="font-semibold">{autoLoginStatus.kite_user_id}</span></span>
+                      {autoLoginStatus.last_auto_login_at && (
+                        <span className="text-zinc-400">
+                          · last run {autoLoginStatus.last_auto_login_ok ? 'succeeded' : 'failed'} at {new Date(autoLoginStatus.last_auto_login_at).toLocaleString('en-IN')}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleTestAutoLogin}
+                        disabled={alLoading}
+                        className="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-700 disabled:opacity-60 dark:bg-zinc-700 dark:hover:bg-zinc-600"
+                      >
+                        Test now
+                      </button>
+                      <button
+                        onClick={handleRemoveAutoLogin}
+                        disabled={alLoading}
+                        className="rounded-lg px-3 py-1.5 text-xs font-semibold text-red-600 hover:text-red-800 disabled:opacity-60 dark:text-red-400 dark:hover:text-red-300"
+                      >
+                        Remove credentials
+                      </button>
+                    </div>
+                  </div>
+                ) : showAutoLoginForm ? (
+                  <div className="flex flex-col gap-2">
+                    <input
+                      value={alKiteUserId}
+                      onChange={e => setAlKiteUserId(e.target.value)}
+                      placeholder="Kite user ID (e.g. AB1234)"
+                      className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                    />
+                    <input
+                      value={alPassword}
+                      onChange={e => setAlPassword(e.target.value)}
+                      type="password"
+                      placeholder="Zerodha password"
+                      className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                    />
+                    <input
+                      value={alTotpSecret}
+                      onChange={e => setAlTotpSecret(e.target.value)}
+                      type="password"
+                      placeholder="TOTP secret (from Kite 2FA setup, not a 6-digit code)"
+                      className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleSaveAutoLogin}
+                        disabled={alLoading || !alKiteUserId.trim() || !alPassword.trim() || !alTotpSecret.trim()}
+                        className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => setShowAutoLoginForm(false)}
+                        disabled={alLoading}
+                        className="rounded-lg px-3 py-1.5 text-xs font-semibold text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setShowAutoLoginForm(true)}
+                    className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  >
+                    Set up auto-login
+                  </button>
+                )}
               </div>
             </div>
           )}

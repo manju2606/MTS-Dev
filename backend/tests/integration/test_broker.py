@@ -82,3 +82,47 @@ async def test_zerodha_connect_no_key(client: AsyncClient, token: str) -> None:
 async def test_broker_unauthenticated(client: AsyncClient) -> None:
     r = await client.get(BASE + "/status")
     assert r.status_code in (401, 403)
+
+
+# ── Zerodha auto-login ──────────────────────────────────────────────────────
+
+
+async def test_zerodha_auto_login_status_unconfigured(client: AsyncClient, token: str) -> None:
+    r = await client.get(BASE + "/zerodha/auto-login", headers=_headers(token))
+    assert r.status_code == 200
+    body = r.json()
+    assert body["configured"] is False
+    assert body["enabled"] is False
+
+
+async def test_zerodha_auto_login_save_requires_encryption_key(
+    client: AsyncClient, token: str
+) -> None:
+    r = await client.post(
+        BASE + "/zerodha/auto-login",
+        json={"kite_user_id": "AB1234", "password": "secret", "totp_secret": "JBSWY3DPEHPK3PXP"},
+        headers=_headers(token),
+    )
+    # 503 when ZERODHA_CREDS_ENCRYPTION_KEY isn't configured in the test env,
+    # 200 if it happens to be set -- either way the endpoint must not 500.
+    assert r.status_code in (200, 503)
+
+
+async def test_zerodha_auto_login_test_no_saved_credentials(
+    client: AsyncClient, token: str
+) -> None:
+    r = await client.post(BASE + "/zerodha/auto-login/test", headers=_headers(token))
+    # 404 (no saved credentials) or 503 (KITE_API_KEY unset) -- either is a
+    # correctly-handled "not ready" response, never a 500.
+    assert r.status_code in (404, 503)
+
+
+async def test_zerodha_auto_login_delete_when_none_saved(client: AsyncClient, token: str) -> None:
+    r = await client.delete(BASE + "/zerodha/auto-login", headers=_headers(token))
+    assert r.status_code == 200
+    assert r.json()["configured"] is False
+
+
+async def test_zerodha_auto_login_unauthenticated(client: AsyncClient) -> None:
+    r = await client.get(BASE + "/zerodha/auto-login")
+    assert r.status_code in (401, 403)

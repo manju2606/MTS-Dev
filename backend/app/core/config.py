@@ -62,5 +62,28 @@ class Settings(BaseSettings):
     # Phase 3 — Dhan (no app registration; user pastes their own client id +
     # access token generated at web.dhan.co, so no keys needed here)
 
+    # Phase 3 — Zerodha TOTP auto-login (optional). Lets the scheduler
+    # replay Kite's own web login every morning instead of requiring a
+    # manual click-through (see app/infra/brokers/zerodha_autologin.py).
+    # Only takes effect for users who've saved credentials via
+    # POST /broker/zerodha/auto-login -- those credentials are encrypted at
+    # rest with this key, which must never be committed or reused across
+    # environments. Generate one with:
+    #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    ZERODHA_CREDS_ENCRYPTION_KEY: str | None = None
+
+    # Phase 3 — Shared market-data broker session. MCX/NSE quotes, candles,
+    # and predictions are identical for every user, so there's no reason
+    # every app user needs their own Zerodha login just to view them -- one
+    # connected session (typically the admin's, kept fresh via TOTP
+    # auto-login above) serves market data to everyone. Live order
+    # placement is unaffected and still always uses the placing user's own
+    # connected broker (see app/api/v1/live.py). Optional: if unset, the
+    # first currently-connected user's session is used instead (see
+    # app/infra/brokers/session_store.get_market_data_broker) -- set this
+    # explicitly if more than one real account might be connected at once
+    # and you want to pin which one serves market data.
+    MARKET_DATA_BROKER_USER_ID: str | None = None
+
 
 settings = Settings()

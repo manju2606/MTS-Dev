@@ -333,7 +333,10 @@ async def place_metal_trade(
 async def list_metal_trades(
     user_id: str, repo, trade_status: TradeStatus | None = None
 ) -> list[dict]:
-    broker = await session_store.get(user_id)
+    # Only used below to resolve lot_size (instrument metadata, same for
+    # everyone) -- the trade list itself is still this user's own paper
+    # trades, fetched by user_id from `repo` a few lines down.
+    broker = await session_store.get_market_data_broker()
     trades = await repo.list_by_user(UUID(user_id), trade_status)
     metal_symbols = set(MCX_METALS_CONTRACTS.values())
     metals_trades = [

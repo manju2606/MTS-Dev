@@ -277,10 +277,19 @@ async def my_trading_dashboard(current_user: CurrentUser, limit: int = 10) -> di
     """AI-Strength-ranked view across every tracked MCX contract (NG +
     Metals combined) -- see app/services/mcx_my_dashboard_service.py. AI
     score/verdict come from a 5-min-refreshed cache, not computed live, so
-    this is fast enough to poll."""
+    this is fast enough to poll.
+
+    That cache is written only under whichever user_id the scheduler finds
+    connected (session_store.list_connected_user_ids() -- in practice the
+    shared market-data account), never under an arbitrary viewer's own id,
+    so reads resolve the same shared id rather than current_user.id -- an
+    admin's-account-only cache doesn't become invisible to every other
+    logged-in user (see session_store.get_market_data_user_id)."""
+    from app.infra.brokers import session_store
     from app.services.mcx_my_dashboard_service import get_ranked_dashboard
 
-    return await get_ranked_dashboard(str(current_user.id), limit)
+    data_user_id = await session_store.get_market_data_user_id() or str(current_user.id)
+    return await get_ranked_dashboard(data_user_id, limit)
 
 
 @router.get("/my-dashboard/signals")
@@ -288,10 +297,14 @@ async def my_trading_dashboard_signals(current_user: CurrentUser, limit: int = 2
     """Every AI-generated trade signal (mcx_trade_signals) across every MCX
     contract, each compared against its current LTP and the underlying
     contract's own 1d/1w/1m price change -- see
-    app/services/mcx_my_dashboard_service.py:get_all_signals."""
+    app/services/mcx_my_dashboard_service.py:get_all_signals. Same shared
+    user_id resolution as my_trading_dashboard above, and for the same
+    reason: signals are only ever logged under the connected account."""
+    from app.infra.brokers import session_store
     from app.services.mcx_my_dashboard_service import get_all_signals
 
-    return await get_all_signals(str(current_user.id), limit)
+    data_user_id = await session_store.get_market_data_user_id() or str(current_user.id)
+    return await get_all_signals(data_user_id, limit)
 
 
 @router.get("/backtest", dependencies=[Depends(require_role(UserRole.ADMIN))])

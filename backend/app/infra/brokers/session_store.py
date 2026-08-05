@@ -125,13 +125,13 @@ async def list_connected_user_ids() -> list[str]:
         return []
 
 
-async def get_market_data_broker() -> AbstractBroker | None:
-    """The single shared broker session used to serve market data (MCX/NSE
-    quotes, candles, predictions) to every app user -- these are identical
-    regardless of whose Kite login fetches them, so requiring each user to
-    connect their own Zerodha account just to *view* data was pure friction.
-    Live trading is unaffected: order placement always uses the placing
-    user's own connected broker (see api/v1/live.py), never this function.
+async def get_market_data_user_id() -> str | None:
+    """The user_id backing get_market_data_broker() below -- exposed
+    separately because scheduler jobs persist AI scores/signals/predictions
+    keyed by *this* user_id (session_store.list_connected_user_ids() is who
+    they iterate), so any read path serving that cached data to other users
+    (e.g. My Trading Dashboard) needs the same id to look it up, not the
+    broker instance itself.
 
     Resolution order:
       1. settings.MARKET_DATA_BROKER_USER_ID, if set and that user actually
@@ -144,9 +144,21 @@ async def get_market_data_broker() -> AbstractBroker | None:
     if settings.MARKET_DATA_BROKER_USER_ID:
         broker = await get(settings.MARKET_DATA_BROKER_USER_ID)
         if broker is not None:
-            return broker
+            return settings.MARKET_DATA_BROKER_USER_ID
 
     user_ids = await list_connected_user_ids()
-    if not user_ids:
+    return user_ids[0] if user_ids else None
+
+
+async def get_market_data_broker() -> AbstractBroker | None:
+    """The single shared broker session used to serve market data (MCX/NSE
+    quotes, candles, predictions) to every app user -- these are identical
+    regardless of whose Kite login fetches them, so requiring each user to
+    connect their own Zerodha account just to *view* data was pure friction.
+    Live trading is unaffected: order placement always uses the placing
+    user's own connected broker (see api/v1/live.py), never this function.
+    See get_market_data_user_id() above for the resolution order."""
+    user_id = await get_market_data_user_id()
+    if user_id is None:
         return None
-    return await get(user_ids[0])
+    return await get(user_id)

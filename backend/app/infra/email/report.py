@@ -204,8 +204,8 @@ def build_report_html(picks: list, scanned_count: int) -> str:
   <div style="margin:0 32px 24px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb;padding:16px;">
     <p style="margin:0 0 8px;font-size:12px;font-weight:700;color:#374151;">Score Breakdown</p>
     <div style="display:flex;flex-wrap:wrap;gap:16px;font-size:11px;color:#6b7280;">
-      <span>🔵 Technical (40%) — RSI, MACD, volume, Bollinger Bands</span>
-      <span>🟡 News (30%) — sentiment from 20+ Indian financial sources</span>
+      <span>🔵 Technical (25%) — RSI, MACD, volume, Bollinger Bands</span>
+      <span>🟡 News (45%) — sentiment from 20+ Indian financial sources</span>
       <span>🟣 ML Model (20%) — price prediction signal</span>
       <span>⚪ Social (10%) — stub (X, Reddit, YouTube)</span>
     </div>

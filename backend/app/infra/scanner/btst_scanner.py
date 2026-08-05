@@ -348,56 +348,65 @@ def _score_candidate(
     news_mentions = news[1] if news else 0
     fo_bullish = pcr is not None and pcr < 1.0
 
-    # ── Breakout / technical score (0-40) ─────────────────────────────────────
+    # ── Breakout / technical score (0-25) ─────────────────────────────────────
+    # Trimmed from 40 -- still the required hard filter below (a BTST pick
+    # still needs a real breakout), just weighted less among the *ranking*
+    # signals in favour of news/F&O, which have more chance of leading price
+    # instead of confirming a move that already happened.
     breakout_score = 0
     if breakout:
-        breakout_score += 20
+        breakout_score += 13
     if above_sma20 and sma20 > sma50:
-        breakout_score += 8
-    if 55 <= rsi <= 75:
-        breakout_score += 7
-    if macd_bullish:
         breakout_score += 5
-    breakout_score = min(breakout_score, 40)
+    if 55 <= rsi <= 75:
+        breakout_score += 4
+    if macd_bullish:
+        breakout_score += 3
+    breakout_score = min(breakout_score, 25)
 
-    # ── Relative strength vs Nifty (0-20) ─────────────────────────────────────
+    # ── Relative strength vs Nifty (0-15) ─────────────────────────────────────
     rel_score = 0
     if rel_5d > 3:
-        rel_score += 10
+        rel_score += 8
     elif rel_5d > 1:
-        rel_score += 5
+        rel_score += 4
     if rel_20d > 5:
-        rel_score += 10
+        rel_score += 7
     elif rel_20d > 2:
-        rel_score += 5
-    rel_score = min(rel_score, 20)
+        rel_score += 3
+    rel_score = min(rel_score, 15)
 
-    # ── Volume / delivery proxy (0-15) ────────────────────────────────────────
+    # ── Volume / delivery proxy (0-10) ────────────────────────────────────────
     vol_score = 0
     if volume_ratio >= 2.5:
-        vol_score = 15
-    elif volume_ratio >= 2.0:
         vol_score = 10
+    elif volume_ratio >= 2.0:
+        vol_score = 7
     elif volume_ratio >= 1.5:
-        vol_score = 6
+        vol_score = 4
 
-    # ── News sentiment (0-15) ─────────────────────────────────────────────────
+    # ── News sentiment (0-30) ─────────────────────────────────────────────────
+    # Doubled from 15 -- a real RSS feed + sentiment score, the one input
+    # here that can move ahead of price instead of confirming it after.
     news_score = 0
     if news_sentiment is not None and news_mentions > 0:
         if news_sentiment > 0.3:
-            news_score = 15
+            news_score = 30
         elif news_sentiment > 0.1:
-            news_score = 8
+            news_score = 16
         elif news_sentiment > 0:
-            news_score = 4
+            news_score = 8
 
-    # ── F&O positioning (0-10) ────────────────────────────────────────────────
+    # ── F&O positioning (0-20) ────────────────────────────────────────────────
+    # Doubled from 10 -- options Put/Call OI can front-run price, unlike the
+    # breakout/technical signals above which require the move to already be
+    # underway.
     fo_score = 0
     if pcr is not None:
         if pcr < 0.7:
-            fo_score = 10
+            fo_score = 20
         elif pcr < 1.0:
-            fo_score = 6
+            fo_score = 12
 
     total_score = breakout_score + rel_score + vol_score + news_score + fo_score
 

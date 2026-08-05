@@ -1,10 +1,16 @@
 """Weighted scoring engine — produces a 0-100 composite StockScore.
 
 Weights:
-  technical  40 %
-  news       30 %
+  technical  25 %
+  news       45 %
   ml         20 %
   social     10 %
+
+Technical (RSI/MACD/SMA/ATR) and ML (a RandomForest trained on that same
+lagging price/volume history) are both confirmatory by construction -- they
+can't score a move until it's already underway. News is the one component
+here with a real chance of leading price, so it carries the largest weight;
+technical gave up the share it lost.
 """
 
 import asyncio
@@ -22,8 +28,8 @@ from app.infra.market_data.yfinance_client import YFinanceClient
 
 log = structlog.get_logger()
 
-_W_TECHNICAL = 0.40
-_W_NEWS = 0.30
+_W_TECHNICAL = 0.25
+_W_NEWS = 0.45
 _W_ML = 0.20
 _W_SOCIAL = 0.10
 

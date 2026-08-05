@@ -100,8 +100,8 @@ function ExpandedRow({ s, onClose }: { s: StockScore; onClose: () => void }) {
             <p className="mb-2 text-xs font-semibold text-zinc-400">Score Breakdown</p>
             <div className="space-y-2 text-xs">
               {[
-                { label: 'Technical (40%)', value: s.technical_score, color: 'bg-indigo-500' },
-                { label: 'News (30%)',       value: s.news_score,      color: 'bg-amber-400' },
+                { label: 'Technical (25%)', value: s.technical_score, color: 'bg-indigo-500' },
+                { label: 'News (45%)',       value: s.news_score,      color: 'bg-amber-400' },
                 { label: 'ML Model (20%)',   value: s.ml_score,        color: 'bg-violet-500' },
                 { label: 'Social (10%)',     value: s.social_score,    color: 'bg-zinc-400' },
               ].map(({ label, value, color }) => (

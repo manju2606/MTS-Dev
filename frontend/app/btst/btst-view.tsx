@@ -110,23 +110,23 @@ function PickCard({ pick, token, watchlists }: { pick: BTSTPick; token: string; 
         <div className="mt-2 space-y-1">
           <div className="flex items-center justify-between text-[10px] text-zinc-500">
             <span>Breakout</span>
-            <ScoreBar value={pick.breakout_score} max={40} color="#4f46e5" />
+            <ScoreBar value={pick.breakout_score} max={25} color="#4f46e5" />
           </div>
           <div className="flex items-center justify-between text-[10px] text-zinc-500">
             <span>Rel. Strength</span>
-            <ScoreBar value={pick.relative_strength_score} max={20} color="#0891b2" />
+            <ScoreBar value={pick.relative_strength_score} max={15} color="#0891b2" />
           </div>
           <div className="flex items-center justify-between text-[10px] text-zinc-500">
             <span>Volume</span>
-            <ScoreBar value={pick.volume_score} max={15} color="#059669" />
+            <ScoreBar value={pick.volume_score} max={10} color="#059669" />
           </div>
           <div className="flex items-center justify-between text-[10px] text-zinc-500">
             <span>News</span>
-            <ScoreBar value={pick.news_score} max={15} color="#d97706" />
+            <ScoreBar value={pick.news_score} max={30} color="#d97706" />
           </div>
           <div className="flex items-center justify-between text-[10px] text-zinc-500">
             <span>F&amp;O</span>
-            <ScoreBar value={pick.fo_score} max={10} color="#7c3aed" />
+            <ScoreBar value={pick.fo_score} max={20} color="#7c3aed" />
           </div>
         </div>
       </div>

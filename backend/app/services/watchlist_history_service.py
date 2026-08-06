@@ -31,14 +31,14 @@ IST = timezone(timedelta(hours=5, minutes=30))
 
 async def ingest_todays_picks() -> dict:
     """Create new watchlist_history_picks docs for today's SotD/BTST/Golden
-    Stock picks. Idempotent — a symbol already ingested for a source+date is
-    left untouched (create_if_new)."""
+    Stock/Golden Egg picks. Idempotent — a symbol already ingested for a
+    source+date is left untouched (create_if_new)."""
     repo = WatchlistHistoryRepository()
     await repo.ensure_indexes()
     today = datetime.now(IST).strftime("%Y-%m-%d")
 
-    created = {"SOTD": 0, "BTST": 0, "GOLDEN_STOCK": 0}
-    skipped = {"SOTD": 0, "BTST": 0, "GOLDEN_STOCK": 0}
+    created = {"SOTD": 0, "BTST": 0, "GOLDEN_STOCK": 0, "GOLDEN_EGG": 0}
+    skipped = {"SOTD": 0, "BTST": 0, "GOLDEN_STOCK": 0, "GOLDEN_EGG": 0}
 
     try:
         from app.infra.db.repositories.stock_of_day_repo import StockOfDayRepository
@@ -116,6 +116,40 @@ async def ingest_todays_picks() -> dict:
                     skipped["GOLDEN_STOCK"] += 1
     except Exception as exc:
         log.error("watchlist_history.ingest.golden_stock.error", error=str(exc))
+
+    try:
+        from app.infra.db.repositories.golden_egg_repo import GoldenEggRepository
+
+        # A day can have several Golden Egg runs (scheduled 09:15 + any
+        # manual re-trigger) -- ingest every one of them, not just the
+        # latest, so a symbol picked on an earlier run isn't dropped just
+        # because a later run picked something else. create_if_new's
+        # (source, symbol, announced_date) key still dedupes the same
+        # symbol picked twice in one day down to a single tracked entry.
+        runs = await GoldenEggRepository().get_all_for_date(today)
+        for run in runs:
+            cand = run.get("pick")
+            if not cand:
+                continue
+            pick = WatchlistHistoryPick(
+                source="GOLDEN_EGG",
+                symbol=cand["symbol"],
+                name=cand.get("name", cand["symbol"]),
+                sector=cand.get("sector", ""),
+                announced_date=today,
+                announced_at=run.get("created_at", today),
+                buy_price=cand["entry_price"],
+                stop_loss=cand.get("stop_loss"),
+                target=cand.get("target_1"),
+                source_ref_id=run.get("id"),
+                source_score=cand.get("confidence_score"),
+            )
+            if await repo.create_if_new(pick):
+                created["GOLDEN_EGG"] += 1
+            else:
+                skipped["GOLDEN_EGG"] += 1
+    except Exception as exc:
+        log.error("watchlist_history.ingest.golden_egg.error", error=str(exc))
 
     return {"date": today, "created": created, "skipped_existing": skipped}
 

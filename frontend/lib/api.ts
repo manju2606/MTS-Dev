@@ -4264,7 +4264,7 @@ export async function getGoldenEgg1hPrediction(token: string): Promise<GoldenEgg
 
 // ── Watchlist History (SotD / BTST / Golden Stock pick tracking) ────────────
 
-export type WatchlistHistorySource = 'SOTD' | 'BTST' | 'GOLDEN_STOCK'
+export type WatchlistHistorySource = 'SOTD' | 'BTST' | 'GOLDEN_STOCK' | 'GOLDEN_EGG'
 
 export type WatchlistHistorySnapshot = {
   date: string

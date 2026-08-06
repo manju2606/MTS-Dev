@@ -12,6 +12,7 @@ const SOURCE_LABEL: Record<WatchlistHistorySource, string> = {
   SOTD: 'Stock of the Day',
   BTST: 'BTST',
   GOLDEN_STOCK: 'Golden Stock — Intraday',
+  GOLDEN_EGG: 'Golden Egg',
 }
 
 const SOURCE_FILTERS: { id: WatchlistHistorySource | 'ALL'; label: string }[] = [
@@ -19,6 +20,7 @@ const SOURCE_FILTERS: { id: WatchlistHistorySource | 'ALL'; label: string }[] = 
   { id: 'SOTD', label: 'Stock of the Day' },
   { id: 'BTST', label: 'BTST' },
   { id: 'GOLDEN_STOCK', label: 'Golden Stock — Intraday' },
+  { id: 'GOLDEN_EGG', label: 'Golden Egg' },
 ]
 
 type Period = 'DAY' | 'WEEK' | 'MONTH'
@@ -107,7 +109,7 @@ export default function WatchlistHistoryView() {
       <div className="shrink-0 border-b border-zinc-200 bg-white px-6 py-3 dark:border-zinc-800 dark:bg-zinc-900">
         <h1 className="text-sm font-bold text-zinc-900 dark:text-zinc-50">Watchlist History</h1>
         <p className="text-[11px] text-zinc-400">
-          Stock of the Day · BTST · Golden Stock picks tracked daily since announcement, up to 30 trading days
+          Stock of the Day · BTST · Golden Stock · Golden Egg picks tracked daily since announcement, up to 30 trading days
         </p>
         <div className="mt-2 flex gap-1">
           <Link
@@ -162,7 +164,7 @@ export default function WatchlistHistoryView() {
           <p className="py-12 text-center text-xs text-red-500">{error}</p>
         ) : rows.length === 0 ? (
           <p className="py-12 text-center text-xs text-zinc-400">
-            No tracked picks yet — this fills in once Stock of the Day, BTST, or Golden Stock generate a pick and the daily ingest job runs (~15:40 IST).
+            No tracked picks yet — this fills in once Stock of the Day, BTST, Golden Stock, or Golden Egg generate a pick and the daily ingest job runs (~15:40 IST).
           </p>
         ) : (
           <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">

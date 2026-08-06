@@ -77,6 +77,14 @@ class GoldenEggRepository:
         cursor = self._col.find({}).sort("created_at", -1).limit(limit)
         return [_clean(doc) async for doc in cursor]
 
+    async def get_all_for_date(self, date_str: str) -> list[dict]:
+        """Every run for `date_str` (oldest first) -- unlike get_by_date
+        (latest only), used by watchlist_history_service.ingest_todays_picks
+        so a symbol picked on an earlier same-day run isn't missed just
+        because a later run picked something else."""
+        cursor = self._col.find({"scan_date": date_str}).sort("created_at", 1)
+        return [_clean(doc) async for doc in cursor]
+
 
 def _clean(doc: dict) -> dict:
     doc["id"] = str(doc.pop("_id"))

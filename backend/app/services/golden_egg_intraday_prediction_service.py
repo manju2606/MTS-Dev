@@ -1,22 +1,27 @@
-"""1-hour price forecast for the day's Golden Egg pick -- the same EMA20-
-slope + ROC-momentum + ATR-cone heuristic as mcx_prediction_service.py
+"""Multi-timeframe price forecast for the day's Golden Egg pick -- the same
+EMA20-slope + ROC-momentum + ATR-cone heuristic as mcx_prediction_service.py
 (see that module's docstring for why this isn't literally TimesFM), applied
-to NSE cash-equity hourly candles (yfinance) instead of MCX Kite candles.
+to NSE cash-equity candles (yfinance) at whichever timeframe the chart is
+showing: 5m/15m/30m/1h/2h/4h intraday, or 1D/1W/1M.
 
-day/week/month forecasts for the same symbol come from the existing, more
-sophisticated ML ensemble (forecast_service.generate_forecast, already
-seeded by golden_egg_service.send_golden_egg_email) -- this module only
-fills the one horizon that doesn't: within-the-session, hour-by-hour.
-forecast_service's shortest horizon is "day" (1 full trading day ahead), not
-useful for "will this move in the next couple of hours".
+day/week/month-scale ML forecasts for the same symbol come from the
+existing, more sophisticated ensemble (forecast_service.generate_forecast,
+already seeded by golden_egg_service.send_golden_egg_email) -- this module
+exists for the chart's own short-horizon overlay at whichever timeframe is
+selected, not to duplicate that.
+
+Also returns day/month high-low so the chart can draw them as reference
+lines -- day high/low comes from the live quote (today's own candle isn't
+closed yet), month high/low from daily candle history, the same sourcing
+as mcx_service.get_range_stats uses for MCX contracts.
 
 Predictions/accuracy persist via the existing McxPredictionRepository under
-a pseudo-user ("golden_egg") with the picked symbol as `contract` and
-period "1h" -- the same reuse pattern as mcx_prediction_service's own
-get_global_prediction() for Henry Hub: this data isn't tied to anyone's
-Zerodha session (yfinance is the same feed for everyone), and the
-repository is keyed on plain (user_id, contract, period) strings, so this
-can't collide with any real MCX contract's predictions.
+a pseudo-user ("golden_egg") with the picked symbol as `contract` -- the
+same reuse pattern as mcx_prediction_service's own get_global_prediction:
+this data isn't tied to anyone's Zerodha session (yfinance is the same feed
+for everyone), and the repository is keyed on plain (user_id, contract,
+period) strings, so this can't collide with any real MCX contract's own
+predictions.
 """
 
 from __future__ import annotations
@@ -30,21 +35,51 @@ from app.infra.mcx import ng_indicators as ind
 IST = timezone(timedelta(hours=5, minutes=30))
 
 GOLDEN_EGG_PREDICTION_USER = "golden_egg"
-_PERIOD = "1h"
-_BUCKET_SECONDS = 3600
 MIN_CANDLES = 20
-# Fixed lookahead rather than clipping to NSE's 15:30 close like MCX's
-# _buckets_until_market_close -- this chart is also useful to check outside
-# market hours (e.g. planning for tomorrow's open), so a few hours ahead of
-# the last real candle is shown regardless of where that candle falls.
-HORIZON_HOURS = 6
+
+# yfinance interval/lookback per period, the real bucket width in seconds,
+# how many future buckets to project, and (2h/4h only, which yfinance has
+# no native interval for -- 60m is its finest above 30m) how many
+# consecutive 60m bars to merge into one.
+_PERIOD_CONFIG: dict[str, dict] = {
+    "5m": {"yf_interval": "5m", "yf_period": "60d", "bucket_seconds": 300, "horizon": 12},
+    "15m": {"yf_interval": "15m", "yf_period": "60d", "bucket_seconds": 900, "horizon": 12},
+    "30m": {"yf_interval": "30m", "yf_period": "60d", "bucket_seconds": 1800, "horizon": 12},
+    "1h": {"yf_interval": "60m", "yf_period": "730d", "bucket_seconds": 3600, "horizon": 8},
+    "2h": {"yf_interval": "60m", "yf_period": "730d", "bucket_seconds": 7200, "horizon": 8, "merge": 2},
+    "4h": {"yf_interval": "60m", "yf_period": "730d", "bucket_seconds": 14400, "horizon": 8, "merge": 4},
+    "1D": {"yf_interval": "1d", "yf_period": "2y", "bucket_seconds": 86400, "horizon": 10},
+    "1W": {"yf_interval": "1wk", "yf_period": "5y", "bucket_seconds": 604800, "horizon": 8},
+    "1M": {"yf_interval": "1mo", "yf_period": "10y", "bucket_seconds": 2_592_000, "horizon": 6},
+}
+DEFAULT_PERIOD = "1h"
 
 
-async def _fetch_hourly_candles(symbol: str) -> list[dict]:
+def _merge_candles(candles: list[dict], n: int) -> list[dict]:
+    """Aggregate every `n` consecutive candles into one OHLC bar."""
+    out = []
+    for i in range(0, len(candles) - n + 1, n):
+        chunk = candles[i : i + n]
+        out.append(
+            {
+                "time": chunk[0]["time"],
+                "open": chunk[0]["open"],
+                "high": max(c["high"] for c in chunk),
+                "low": min(c["low"] for c in chunk),
+                "close": chunk[-1]["close"],
+                "volume": sum(c.get("volume", 0) for c in chunk),
+            }
+        )
+    return out
+
+
+async def _fetch_candles(symbol: str, period: str) -> list[dict]:
     import yfinance as yf
 
+    cfg = _PERIOD_CONFIG[period]
+
     def _sync() -> list[dict]:
-        df = yf.Ticker(symbol).history(period="7d", interval="60m")
+        df = yf.Ticker(symbol).history(period=cfg["yf_period"], interval=cfg["yf_interval"])
         candles = []
         for idx, row in df.iterrows():
             candles.append(
@@ -59,7 +94,9 @@ async def _fetch_hourly_candles(symbol: str) -> list[dict]:
             )
         return candles
 
-    return await asyncio.to_thread(_sync)
+    candles = await asyncio.to_thread(_sync)
+    merge = cfg.get("merge")
+    return _merge_candles(candles, merge) if merge else candles
 
 
 def _slope_momentum_atr(candles: list[dict]) -> tuple[float, float, float, float]:
@@ -95,24 +132,62 @@ def _serialize_history(docs: list[dict]) -> list[dict]:
     ]
 
 
-async def get_1h_prediction(symbol: str, repo: McxPredictionRepository) -> dict:
-    candles = await _fetch_hourly_candles(symbol)
+async def _range_stats(symbol: str, period: str, candles: list[dict]) -> dict:
+    """Day high/low (from the live quote -- today's own candle isn't closed
+    yet) and month high/low (from daily candle history) -- same sourcing as
+    mcx_service.get_range_stats, adapted for an NSE equity via yfinance
+    instead of a live Kite session."""
+    from app.infra.market_data.yfinance_client import YFinanceClient
 
-    await repo.resolve_pending(GOLDEN_EGG_PREDICTION_USER, symbol, _PERIOD, candles)
-    accuracy = await repo.get_accuracy_stats(GOLDEN_EGG_PREDICTION_USER, symbol, _PERIOD)
+    try:
+        quote = await YFinanceClient().get_quote(symbol)
+        day_high, day_low = quote.day_high, quote.day_low
+    except Exception:
+        day_high, day_low = None, None
+
+    daily = candles if period == "1D" else await _fetch_candles(symbol, "1D")
+
+    today = datetime.now(IST).date()
+    month_start = today.replace(day=1)
+    month_candles = [
+        c for c in daily if datetime.fromtimestamp(c["time"], tz=IST).date() >= month_start
+    ]
+
+    highs = [c["high"] for c in month_candles] + ([day_high] if day_high else [])
+    lows = [c["low"] for c in month_candles if c["low"] > 0] + ([day_low] if day_low else [])
+
+    return {
+        "day_high": round(day_high, 2) if day_high else None,
+        "day_low": round(day_low, 2) if day_low else None,
+        "month_high": round(max(highs), 2) if highs else None,
+        "month_low": round(min(lows), 2) if lows else None,
+    }
+
+
+async def get_prediction(symbol: str, period: str, repo: McxPredictionRepository) -> dict:
+    if period not in _PERIOD_CONFIG:
+        period = DEFAULT_PERIOD
+    cfg = _PERIOD_CONFIG[period]
+
+    candles = await _fetch_candles(symbol, period)
+
+    await repo.resolve_pending(GOLDEN_EGG_PREDICTION_USER, symbol, period, candles)
+    accuracy = await repo.get_accuracy_stats(GOLDEN_EGG_PREDICTION_USER, symbol, period)
+    range_stats = await _range_stats(symbol, period, candles)
 
     if len(candles) < MIN_CANDLES:
         return {
             "symbol": symbol,
-            "period": _PERIOD,
+            "period": period,
             "candles": candles,
             "predicted": [],
             "history": _serialize_history(
-                await repo.get_recent(GOLDEN_EGG_PREDICTION_USER, symbol, _PERIOD)
+                await repo.get_recent(GOLDEN_EGG_PREDICTION_USER, symbol, period)
             ),
             "accuracy": accuracy,
+            **range_stats,
             "method": "ema20-slope + roc-momentum + atr-cone (local heuristic, not TimesFM)",
-            "note": f"Need at least {MIN_CANDLES} hourly candles for a forecast (have {len(candles)}).",
+            "note": f"Need at least {MIN_CANDLES} candles for a forecast (have {len(candles)}).",
         }
 
     last_time = int(candles[-1]["time"])
@@ -120,8 +195,9 @@ async def get_1h_prediction(symbol: str, repo: McxPredictionRepository) -> dict:
     slope, _momentum, atr_val, conviction = _slope_momentum_atr(candles)
 
     predicted = []
-    for i in range(1, HORIZON_HOURS + 1):
-        t = last_time + i * _BUCKET_SECONDS
+    bucket = cfg["bucket_seconds"]
+    for i in range(1, cfg["horizon"] + 1):
+        t = last_time + i * bucket
         proj_close = last_close + slope * i * conviction
         band = atr_val * (i**0.5)
         predicted.append(
@@ -133,14 +209,14 @@ async def get_1h_prediction(symbol: str, repo: McxPredictionRepository) -> dict:
             }
         )
 
-    await repo.save_predictions(GOLDEN_EGG_PREDICTION_USER, symbol, _PERIOD, predicted)
+    await repo.save_predictions(GOLDEN_EGG_PREDICTION_USER, symbol, period, predicted)
     history = _serialize_history(
-        await repo.get_recent(GOLDEN_EGG_PREDICTION_USER, symbol, _PERIOD, limit=200)
+        await repo.get_recent(GOLDEN_EGG_PREDICTION_USER, symbol, period, limit=200)
     )
 
     return {
         "symbol": symbol,
-        "period": _PERIOD,
+        "period": period,
         "candles": candles,
         "generated_at": datetime.utcnow().isoformat(),
         "last_actual_time": last_time,
@@ -148,5 +224,6 @@ async def get_1h_prediction(symbol: str, repo: McxPredictionRepository) -> dict:
         "predicted": predicted,
         "history": history,
         "accuracy": accuracy,
+        **range_stats,
         "method": "ema20-slope + roc-momentum + atr-cone (local heuristic, not TimesFM)",
     }

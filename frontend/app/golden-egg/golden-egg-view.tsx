@@ -5,14 +5,16 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { NavBar } from '@/components/nav-bar'
 import { PriceChart } from '@/components/price-chart'
-import type { PredictionPoint } from '@/components/price-chart'
+import type { PredictionPoint, RefLine } from '@/components/price-chart'
 import {
-  getGoldenEggToday, getGoldenEggById, getGoldenEggHistory, triggerGoldenEggScan, getGoldenEgg1hPrediction,
+  getGoldenEggToday, getGoldenEggById, getGoldenEggHistory, triggerGoldenEggScan, getGoldenEggPrediction,
   getForecast, getMe,
 } from '@/lib/api'
 import type {
-  GoldenEggPick, GoldenEggHistoryItem, GoldenEgg1hPrediction, ForecastResult, HorizonForecast,
+  GoldenEggPick, GoldenEggHistoryItem, GoldenEggPrediction, ForecastResult, HorizonForecast, ChartPeriod,
 } from '@/lib/api'
+
+const PREDICTION_PERIODS: ChartPeriod[] = ['5m', '15m', '30m', '1h', '2h', '4h', '1D', '1W', '1M']
 
 function fmt(n: number | null | undefined) {
   if (n == null) return '—'
@@ -61,11 +63,19 @@ function HorizonCard({ f }: { f: HorizonForecast }) {
   )
 }
 
-function OneHourChart({ pred, symbol }: { pred: GoldenEgg1hPrediction | null; symbol: string }) {
+function PredictionChart({ token, symbol, viewingId }: { token: string; symbol: string; viewingId: string | null }) {
+  const [period, setPeriod] = useState<ChartPeriod>('1h')
+  const [pred, setPred] = useState<GoldenEggPrediction | null>(null)
+
+  useEffect(() => {
+    setPred(null)
+    getGoldenEggPrediction(token, period, viewingId ?? undefined).then(setPred).catch(() => null)
+  }, [token, period, viewingId, symbol])
+
   if (!pred) {
     return (
       <div className="rounded-xl border border-zinc-200 bg-white p-4 text-xs text-zinc-400 dark:border-zinc-800 dark:bg-zinc-900">
-        Loading 1h forecast…
+        Loading forecast…
       </div>
     )
   }
@@ -90,20 +100,28 @@ function OneHourChart({ pred, symbol }: { pred: GoldenEgg1hPrediction | null; sy
       .values(),
   ).sort((a, b) => a.time - b.time)
 
+  const refLines: RefLine[] = [
+    ...(pred.day_high != null ? [{ price: pred.day_high, label: 'DH', color: '#10b981' }] : []),
+    ...(pred.day_low != null ? [{ price: pred.day_low, label: 'DL', color: '#10b981' }] : []),
+    ...(pred.month_high != null ? [{ price: pred.month_high, label: 'MH', color: '#ef4444' }] : []),
+    ...(pred.month_low != null ? [{ price: pred.month_low, label: 'ML', color: '#ef4444' }] : []),
+  ]
+
   return (
     <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
       <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
-        Next hours (local heuristic — not a trading signal)
+        AI forecast (local heuristic — not a trading signal) &middot; DH/DL = day high/low, MH/ML = month high/low
       </p>
       <PriceChart
         symbol={symbol}
         data={pred.candles}
-        period="1h"
-        onPeriodChange={() => {}}
+        period={period}
+        onPeriodChange={setPeriod}
         loading={false}
         currentPrice={pred.last_actual_close ?? null}
         prediction={predictionPoints}
-        periods={['1h']}
+        refLines={refLines}
+        periods={PREDICTION_PERIODS}
       />
       {acc.sample_size > 0 && (
         <p className="mt-2 text-[10px] text-zinc-400">
@@ -125,7 +143,6 @@ export default function GoldenEggView() {
   const [today, setToday] = useState<GoldenEggPick | null>(null)
   const [history, setHistory] = useState<GoldenEggHistoryItem[]>([])
   const [forecast, setForecast] = useState<ForecastResult | null>(null)
-  const [oneHour, setOneHour] = useState<GoldenEgg1hPrediction | null>(null)
   const [loading, setLoading] = useState(true)
   const [scanning, setScanning] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
@@ -143,7 +160,6 @@ export default function GoldenEggView() {
       .then(async doc => {
         setToday(doc)
         if (doc.pick) {
-          getGoldenEgg1hPrediction(t, viewingId ?? undefined).then(setOneHour).catch(() => null)
           getForecast(t, doc.pick.symbol).then(setForecast).catch(() => null)
         }
       })
@@ -164,7 +180,6 @@ export default function GoldenEggView() {
       ])
       setToday(doc); setHistory(hist)
       if (doc.pick) {
-        getGoldenEgg1hPrediction(tokenRef.current).then(setOneHour).catch(() => null)
         getForecast(tokenRef.current, doc.pick.symbol).then(setForecast).catch(() => null)
       }
       setMsg('Scan complete.')
@@ -284,7 +299,7 @@ export default function GoldenEggView() {
 
             <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-400">Predictions</p>
             <div className="mb-3">
-              <OneHourChart pred={oneHour} symbol={pick.symbol} />
+              <PredictionChart token={tokenRef.current} symbol={pick.symbol} viewingId={viewingId} />
             </div>
             <div className="mb-8 grid grid-cols-1 gap-3 sm:grid-cols-3">
               {dayF && <HorizonCard f={dayF} />}

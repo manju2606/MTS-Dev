@@ -1,9 +1,9 @@
 """Golden Egg — daily single-pick API routes.
 
 See app/services/golden_egg_service.py for the 09:15 IST scan/email/persist
-pipeline, and golden_egg_intraday_prediction_service.py for the 1h forecast
-(day/week/month come from the existing /forecast/{symbol} routes -- see
-today()'s note below).
+pipeline, and golden_egg_intraday_prediction_service.py for the chart's own
+multi-timeframe forecast (day/week/month-scale ML forecasts come from the
+existing /forecast/{symbol} routes instead -- see today()'s note below).
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -81,15 +81,20 @@ async def trigger_scan(_: CurrentUser) -> dict:
     return {"pick": dataclasses.asdict(pick)}
 
 
-@router.get("/predict-1h")
-async def predict_1h(_: CurrentUser, id: str | None = Query(default=None)) -> dict:
-    """1-hour forecast for a pick's symbol -- today's latest by default, or
-    a specific historical run via `id` (History table row links pass this).
+@router.get("/predict")
+async def predict(
+    _: CurrentUser,
+    period: str = Query(default="1h"),
+    id: str | None = Query(default=None),
+) -> dict:
+    """Chart forecast for a pick's symbol at the given timeframe
+    (5m/15m/30m/1h/2h/4h/1D/1W/1M) -- today's latest pick by default, or a
+    specific historical run via `id` (History table row links pass this).
     See golden_egg_intraday_prediction_service.py. 409 if that pick has no
     symbol to forecast."""
     from app.infra.db.repositories.golden_egg_repo import GoldenEggRepository
     from app.infra.db.repositories.mcx_prediction_repo import McxPredictionRepository
-    from app.services.golden_egg_intraday_prediction_service import get_1h_prediction
+    from app.services.golden_egg_intraday_prediction_service import get_prediction
 
     egg_repo = GoldenEggRepository()
     doc = await egg_repo.get_by_id(id) if id else await egg_repo.get_latest()
@@ -98,6 +103,6 @@ async def predict_1h(_: CurrentUser, id: str | None = Query(default=None)) -> di
 
     symbol = doc["pick"]["symbol"]
     try:
-        return await get_1h_prediction(symbol, McxPredictionRepository())
+        return await get_prediction(symbol, period, McxPredictionRepository())
     except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"1h prediction unavailable: {exc}") from exc
+        raise HTTPException(status_code=503, detail=f"Prediction unavailable: {exc}") from exc

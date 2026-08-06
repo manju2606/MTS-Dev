@@ -1077,7 +1077,7 @@ export type HistoryBar = {
   volume: number
 }
 
-export type ChartPeriod = '1m' | '1D' | '5m' | '5D' | '15m' | '30m' | '45m' | '1W' | '1h' | '1M' | '3M' | '6M' | '1Y' | '4h' | '8h'
+export type ChartPeriod = '1m' | '1D' | '5m' | '5D' | '15m' | '30m' | '45m' | '1W' | '1h' | '2h' | '1M' | '3M' | '6M' | '1Y' | '4h' | '8h'
 
 export async function getHistory(
   token: string,
@@ -4215,7 +4215,7 @@ export type GoldenEggPick = {
 
 export type GoldenEggHistoryItem = GoldenEggPick
 
-export type GoldenEgg1hPoint = {
+export type GoldenEggPredictionPoint = {
   time: number
   predicted_close: number
   upper: number
@@ -4224,16 +4224,20 @@ export type GoldenEgg1hPoint = {
   hit?: boolean | null
 }
 
-export type GoldenEgg1hPrediction = {
+export type GoldenEggPrediction = {
   symbol: string
   period: string
   candles: HistoryBar[]
   generated_at?: string
   last_actual_time?: number
   last_actual_close?: number
-  predicted: GoldenEgg1hPoint[]
-  history: GoldenEgg1hPoint[]
+  predicted: GoldenEggPredictionPoint[]
+  history: GoldenEggPredictionPoint[]
   accuracy: { sample_size: number; hit_rate_pct?: number; avg_error_pct?: number }
+  day_high?: number | null
+  day_low?: number | null
+  month_high?: number | null
+  month_low?: number | null
   method: string
   note?: string
 }
@@ -4262,9 +4266,10 @@ export async function triggerGoldenEggScan(token: string): Promise<{ pick: Intra
   return r.json()
 }
 
-export async function getGoldenEgg1hPrediction(token: string, id?: string): Promise<GoldenEgg1hPrediction> {
-  const q = id ? `?id=${encodeURIComponent(id)}` : ''
-  const r = await fetch(`${BASE}/api/v1/golden-egg/predict-1h${q}`, { headers: authHeaders(token) })
+export async function getGoldenEggPrediction(token: string, period: string, id?: string): Promise<GoldenEggPrediction> {
+  const q = new URLSearchParams({ period })
+  if (id) q.set('id', id)
+  const r = await fetch(`${BASE}/api/v1/golden-egg/predict?${q}`, { headers: authHeaders(token) })
   if (!r.ok) throw new Error(await r.text())
   return r.json()
 }

@@ -65,7 +65,7 @@ type PriceChartProps = {
   currencySymbol?: string
 }
 
-const PERIODS: ChartPeriod[] = ['1m', '5m', '15m', '30m', '45m', '1h', '1D', '5D', '1W', '1M', '3M', '6M', '1Y']
+const PERIODS: ChartPeriod[] = ['1m', '5m', '15m', '30m', '45m', '1h', '2h', '1D', '5D', '1W', '1M', '3M', '6M', '1Y']
 
 // Real candle-bucket width in seconds for each period, matching the actual
 // server-side interval (e.g. "30m" is rendered from 15-minute candles, not
@@ -73,7 +73,7 @@ const PERIODS: ChartPeriod[] = ['1m', '5m', '15m', '30m', '45m', '1h', '1D', '5D
 // to a new bucket at the right moment instead of drifting further from the
 // true current time the longer a tab stays open without a period switch.
 const PERIOD_BUCKET_SECONDS: Record<ChartPeriod, number> = {
-  '1m': 60, '5m': 300, '15m': 900, '30m': 900, '45m': 3600, '1h': 3600,
+  '1m': 60, '5m': 300, '15m': 900, '30m': 900, '45m': 3600, '1h': 3600, '2h': 7200,
   '1D': 86400, '5D': 86400, '1W': 86400, '1M': 86400, '3M': 86400, '6M': 86400, '1Y': 86400,
   '4h': 14400, '8h': 28800,
 }
@@ -88,7 +88,7 @@ const PERIOD_BUCKET_SECONDS: Record<ChartPeriod, number> = {
 // intraday, so "the end of the chart" is always centred regardless of
 // which period is selected. Users can still scroll/zoom out manually.
 const DEFAULT_VISIBLE_BARS: Partial<Record<ChartPeriod, number>> = {
-  '1m': 120, '5m': 100, '15m': 80, '30m': 60, '45m': 60, '1h': 48,
+  '1m': 120, '5m': 100, '15m': 80, '30m': 60, '45m': 60, '1h': 48, '2h': 30,
   '1D': 15, '5D': 20, '1W': 30, '1M': 45, '3M': 90, '6M': 180, '1Y': 250,
   '4h': 40, '8h': 24,
 }

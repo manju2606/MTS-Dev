@@ -17,6 +17,7 @@ from app.api.v1 import (
     discovery,
     dsws,
     forecast,
+    golden_egg,
     golden_stock,
     historical_data,
     international_market,
@@ -87,6 +88,7 @@ router.include_router(audit_api.router)
 router.include_router(options.router)
 router.include_router(calendar.router)
 router.include_router(custom_screener.router)
+router.include_router(golden_egg.router)
 router.include_router(golden_stock.router)
 router.include_router(btst.router)
 router.include_router(watchlist_history.router)

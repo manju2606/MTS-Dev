@@ -41,17 +41,30 @@ async def send_golden_egg_email(target_profit: float = 1000.0) -> IntradayCandid
     Stock Intraday scan, emails the single top pick with a target_profit-sized
     quantity suggestion, and returns that pick (None if no candidate cleared
     the scanner's filters today -- a "no clear setup" email is still sent so
-    the 09:15-09:30 email reliably arrives either way)."""
+    the 09:15-09:30 email reliably arrives either way).
+
+    Also persists the pick (see infra/db/repositories/golden_egg_repo.py --
+    the History tab needs this; the email alone doesn't leave a record) and
+    kicks off a day/week/month price forecast for the picked symbol (reuses
+    forecast_service.generate_forecast, the same ML ensemble already backing
+    the standalone Forecast page -- no separate prediction engine needed for
+    those three horizons, only the intraday "1h" one is Golden-Egg-specific,
+    see golden_egg_intraday_prediction_service.py)."""
+    from app.infra.db.repositories.golden_egg_repo import GoldenEggRepository
+
     scan = await run_golden_stock_scan()
     market_context = await _get_market_context()
+    repo = GoldenEggRepository()
 
     if not scan.picks:
+        await repo.save_pick(scan.scan_date, None, None, target_profit, market_context)
         await _send_no_pick_email(scan.scan_date, market_context)
         log.info("golden_egg.no_pick", date=scan.scan_date)
         return None
 
     pick = scan.picks[0]
     sizing = _size_for_target(pick, target_profit)
+    await repo.save_pick(scan.scan_date, pick, sizing, target_profit, market_context)
     await _send_pick_email(pick, sizing, target_profit, market_context)
     log.info(
         "golden_egg.sent",
@@ -60,6 +73,14 @@ async def send_golden_egg_email(target_profit: float = 1000.0) -> IntradayCandid
         qty=sizing["qty"],
         target_profit=target_profit,
     )
+
+    try:
+        from app.services.forecast_service import generate_forecast
+
+        await generate_forecast(pick.symbol)
+    except Exception as exc:
+        log.warning("golden_egg.forecast_seed.failed", symbol=pick.symbol, error=str(exc))
+
     return pick
 
 

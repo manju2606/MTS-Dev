@@ -4192,6 +4192,75 @@ export async function getGoldenStockPerformance(token: string): Promise<Record<s
   return r.json()
 }
 
+// ── Golden Egg (single-pick daily email + history + predictions) ────────────
+
+export type GoldenEggSizing = {
+  qty: number
+  position_value: number
+  expected_profit: number
+  max_loss: number
+  capped: boolean
+}
+
+export type GoldenEggPick = {
+  id: string
+  scan_date: string
+  pick: IntradayCandidate | null
+  sizing: GoldenEggSizing | null
+  target_profit: number
+  market_context: string | null
+  created_at?: string
+  updated_at?: string
+}
+
+export type GoldenEggHistoryItem = GoldenEggPick
+
+export type GoldenEgg1hPoint = {
+  time: number
+  predicted_close: number
+  upper: number
+  lower: number
+  actual_close?: number | null
+  hit?: boolean | null
+}
+
+export type GoldenEgg1hPrediction = {
+  symbol: string
+  period: string
+  generated_at?: string
+  last_actual_time?: number
+  last_actual_close?: number
+  predicted: GoldenEgg1hPoint[]
+  history: GoldenEgg1hPoint[]
+  accuracy: { sample_size: number; hit_rate_pct?: number; avg_error_pct?: number }
+  method: string
+  note?: string
+}
+
+export async function getGoldenEggToday(token: string): Promise<GoldenEggPick> {
+  const r = await fetch(`${BASE}/api/v1/golden-egg/today`, { headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+export async function getGoldenEggHistory(token: string, limit = 30): Promise<GoldenEggHistoryItem[]> {
+  const r = await fetch(`${BASE}/api/v1/golden-egg/history?limit=${limit}`, { headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+export async function triggerGoldenEggScan(token: string): Promise<{ pick: IntradayCandidate | null; message?: string }> {
+  const r = await fetch(`${BASE}/api/v1/golden-egg/scan`, { method: 'POST', headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+export async function getGoldenEgg1hPrediction(token: string): Promise<GoldenEgg1hPrediction> {
+  const r = await fetch(`${BASE}/api/v1/golden-egg/predict-1h`, { headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
 // ── Watchlist History (SotD / BTST / Golden Stock pick tracking) ────────────
 
 export type WatchlistHistorySource = 'SOTD' | 'BTST' | 'GOLDEN_STOCK'

@@ -105,6 +105,7 @@ async def get_1h_prediction(symbol: str, repo: McxPredictionRepository) -> dict:
         return {
             "symbol": symbol,
             "period": _PERIOD,
+            "candles": candles,
             "predicted": [],
             "history": _serialize_history(
                 await repo.get_recent(GOLDEN_EGG_PREDICTION_USER, symbol, _PERIOD)
@@ -140,6 +141,7 @@ async def get_1h_prediction(symbol: str, repo: McxPredictionRepository) -> dict:
     return {
         "symbol": symbol,
         "period": _PERIOD,
+        "candles": candles,
         "generated_at": datetime.utcnow().isoformat(),
         "last_actual_time": last_time,
         "last_actual_close": round(last_close, 2),

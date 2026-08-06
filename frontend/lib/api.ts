@@ -4227,6 +4227,7 @@ export type GoldenEgg1hPoint = {
 export type GoldenEgg1hPrediction = {
   symbol: string
   period: string
+  candles: HistoryBar[]
   generated_at?: string
   last_actual_time?: number
   last_actual_close?: number

@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { NavBar } from '@/components/nav-bar'
+import { PriceChart } from '@/components/price-chart'
+import type { PredictionPoint } from '@/components/price-chart'
 import {
   getGoldenEggToday, getGoldenEggHistory, triggerGoldenEggScan, getGoldenEgg1hPrediction,
   getForecast, getMe,
@@ -23,12 +25,6 @@ function fmtDateTime(iso: string | undefined) {
   } catch {
     return iso
   }
-}
-
-function fmtHour(epoch: number) {
-  return new Date(epoch * 1000).toLocaleTimeString('en-IN', {
-    timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false,
-  })
 }
 
 function ConfidenceBar({ score }: { score: number }) {
@@ -64,7 +60,7 @@ function HorizonCard({ f }: { f: HorizonForecast }) {
   )
 }
 
-function OneHourCard({ pred }: { pred: GoldenEgg1hPrediction | null }) {
+function OneHourChart({ pred, symbol }: { pred: GoldenEgg1hPrediction | null; symbol: string }) {
   if (!pred) {
     return (
       <div className="rounded-xl border border-zinc-200 bg-white p-4 text-xs text-zinc-400 dark:border-zinc-800 dark:bg-zinc-900">
@@ -80,23 +76,38 @@ function OneHourCard({ pred }: { pred: GoldenEgg1hPrediction | null }) {
     )
   }
   const acc = pred.accuracy
+
+  // Merge the persisted trail (past predictions, kept on the chart even
+  // once resolved) with the current forward forecast, de-duplicated by
+  // time -- same approach as the MCX AI Score page's chart.
+  const predictionPoints: PredictionPoint[] = Array.from(
+    [...pred.history, ...pred.predicted]
+      .reduce((map, p) => {
+        map.set(p.time, { time: p.time, predictedClose: p.predicted_close, upper: p.upper, lower: p.lower })
+        return map
+      }, new Map<number, PredictionPoint>())
+      .values(),
+  ).sort((a, b) => a.time - b.time)
+
   return (
     <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
       <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
         Next hours (local heuristic — not a trading signal)
       </p>
-      <div className="space-y-1">
-        {pred.predicted.map(p => (
-          <div key={p.time} className="flex items-center justify-between text-xs">
-            <span className="text-zinc-500">{fmtHour(p.time)}</span>
-            <span className="font-semibold text-zinc-900 dark:text-zinc-100">₹{fmt(p.predicted_close)}</span>
-            <span className="text-[10px] text-zinc-400">₹{fmt(p.lower)}–₹{fmt(p.upper)}</span>
-          </div>
-        ))}
-      </div>
+      <PriceChart
+        symbol={symbol}
+        data={pred.candles}
+        period="1h"
+        onPeriodChange={() => {}}
+        loading={false}
+        currentPrice={pred.last_actual_close ?? null}
+        prediction={predictionPoints}
+        periods={['1h']}
+      />
       {acc.sample_size > 0 && (
         <p className="mt-2 text-[10px] text-zinc-400">
           Tracked {acc.sample_size} past predictions &middot; {acc.hit_rate_pct?.toFixed(1)}% landed within band
+          {acc.avg_error_pct != null && <> &middot; avg error {acc.avg_error_pct.toFixed(2)}%</>}
         </p>
       )}
     </div>
@@ -258,8 +269,10 @@ export default function GoldenEggView() {
             </div>
 
             <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-400">Predictions</p>
-            <div className="mb-8 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <OneHourCard pred={oneHour} />
+            <div className="mb-3">
+              <OneHourChart pred={oneHour} symbol={pick.symbol} />
+            </div>
+            <div className="mb-8 grid grid-cols-1 gap-3 sm:grid-cols-3">
               {dayF && <HorizonCard f={dayF} />}
               {weekF && <HorizonCard f={weekF} />}
               {monthF && <HorizonCard f={monthF} />}

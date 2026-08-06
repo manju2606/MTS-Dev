@@ -4236,6 +4236,8 @@ export type GoldenEggPrediction = {
   accuracy: { sample_size: number; hit_rate_pct?: number; avg_error_pct?: number }
   day_high?: number | null
   day_low?: number | null
+  week_high?: number | null
+  week_low?: number | null
   month_high?: number | null
   month_low?: number | null
   method: string

@@ -63,7 +63,9 @@ function HorizonCard({ f }: { f: HorizonForecast }) {
   )
 }
 
-function PredictionChart({ token, symbol, viewingId }: { token: string; symbol: string; viewingId: string | null }) {
+type TradeLevels = { entry: number; stopLoss: number; target1: number; target2: number }
+
+function PredictionChart({ token, symbol, viewingId, levels }: { token: string; symbol: string; viewingId: string | null; levels: TradeLevels }) {
   const [period, setPeriod] = useState<ChartPeriod>('1h')
   const [pred, setPred] = useState<GoldenEggPrediction | null>(null)
 
@@ -101,8 +103,14 @@ function PredictionChart({ token, symbol, viewingId }: { token: string; symbol: 
   ).sort((a, b) => a.time - b.time)
 
   const refLines: RefLine[] = [
+    { price: levels.entry, label: 'Entry', color: '#6366f1' },
+    { price: levels.stopLoss, label: 'SL', color: '#dc2626' },
+    { price: levels.target1, label: 'T1', color: '#059669' },
+    { price: levels.target2, label: 'T2', color: '#059669' },
     ...(pred.day_high != null ? [{ price: pred.day_high, label: 'DH', color: '#10b981' }] : []),
     ...(pred.day_low != null ? [{ price: pred.day_low, label: 'DL', color: '#10b981' }] : []),
+    ...(pred.week_high != null ? [{ price: pred.week_high, label: 'WH', color: '#3b82f6' }] : []),
+    ...(pred.week_low != null ? [{ price: pred.week_low, label: 'WL', color: '#3b82f6' }] : []),
     ...(pred.month_high != null ? [{ price: pred.month_high, label: 'MH', color: '#ef4444' }] : []),
     ...(pred.month_low != null ? [{ price: pred.month_low, label: 'ML', color: '#ef4444' }] : []),
   ]
@@ -110,7 +118,7 @@ function PredictionChart({ token, symbol, viewingId }: { token: string; symbol: 
   return (
     <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
       <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
-        AI forecast (local heuristic — not a trading signal) &middot; DH/DL = day high/low, MH/ML = month high/low
+        AI forecast (local heuristic — not a trading signal) &middot; DH/DL = day, WH/WL = week, MH/ML = month high/low &middot; SL/T1/T2 = stop-loss/targets
       </p>
       <PriceChart
         symbol={symbol}
@@ -299,7 +307,12 @@ export default function GoldenEggView() {
 
             <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-400">Predictions</p>
             <div className="mb-3">
-              <PredictionChart token={tokenRef.current} symbol={pick.symbol} viewingId={viewingId} />
+              <PredictionChart
+                token={tokenRef.current}
+                symbol={pick.symbol}
+                viewingId={viewingId}
+                levels={{ entry: pick.entry_price, stopLoss: pick.stop_loss, target1: pick.target_1, target2: pick.target_2 }}
+              />
             </div>
             <div className="mb-8 grid grid-cols-1 gap-3 sm:grid-cols-3">
               {dayF && <HorizonCard f={dayF} />}

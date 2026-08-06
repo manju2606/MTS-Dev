@@ -148,19 +148,33 @@ async def _range_stats(symbol: str, period: str, candles: list[dict]) -> dict:
     daily = candles if period == "1D" else await _fetch_candles(symbol, "1D")
 
     today = datetime.now(IST).date()
+    week_start = today - timedelta(days=today.weekday())
     month_start = today.replace(day=1)
+    week_candles = [
+        c for c in daily if datetime.fromtimestamp(c["time"], tz=IST).date() >= week_start
+    ]
     month_candles = [
         c for c in daily if datetime.fromtimestamp(c["time"], tz=IST).date() >= month_start
     ]
 
-    highs = [c["high"] for c in month_candles] + ([day_high] if day_high else [])
-    lows = [c["low"] for c in month_candles if c["low"] > 0] + ([day_low] if day_low else [])
+    def _high(cs: list[dict]) -> float | None:
+        highs = [c["high"] for c in cs] + ([day_high] if day_high else [])
+        return max(highs) if highs else None
+
+    def _low(cs: list[dict]) -> float | None:
+        lows = [c["low"] for c in cs if c["low"] > 0] + ([day_low] if day_low else [])
+        return min(lows) if lows else None
+
+    week_high, week_low = _high(week_candles), _low(week_candles)
+    month_high, month_low = _high(month_candles), _low(month_candles)
 
     return {
         "day_high": round(day_high, 2) if day_high else None,
         "day_low": round(day_low, 2) if day_low else None,
-        "month_high": round(max(highs), 2) if highs else None,
-        "month_low": round(min(lows), 2) if lows else None,
+        "week_high": round(week_high, 2) if week_high else None,
+        "week_low": round(week_low, 2) if week_low else None,
+        "month_high": round(month_high, 2) if month_high else None,
+        "month_low": round(month_low, 2) if month_low else None,
     }
 
 

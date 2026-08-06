@@ -4276,6 +4276,15 @@ export async function getGoldenEggPrediction(token: string, period: string, id?:
   return r.json()
 }
 
+// ── Stock Analysis (search any symbol -- chart + AI signal + forecast) ──────
+
+export async function getStockAnalysisPrediction(token: string, symbol: string, period: string): Promise<GoldenEggPrediction> {
+  const q = new URLSearchParams({ symbol, period })
+  const r = await fetch(`${BASE}/api/v1/stock-analysis/predict?${q}`, { headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
 // ── Watchlist History (SotD / BTST / Golden Stock pick tracking) ────────────
 
 export type WatchlistHistorySource = 'SOTD' | 'BTST' | 'GOLDEN_STOCK' | 'GOLDEN_EGG'

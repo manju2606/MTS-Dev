@@ -105,6 +105,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/watchlists', label: 'Watchlists',       icon: 'list',       desc: 'Track stocks with live quotes' },
       { href: '/dsws',       label: 'DSWS',             icon: 'list',       desc: 'Daily Discovery Watchlist Summary · Strong Buy/Buy/Sell/Strong Sell tracked intraday' },
       { href: '/tradingview', label: 'TradingView',     icon: 'trendingUp', desc: 'Candlestick chart, volume, RSI/MACD/SMA/Bollinger + AI signal' },
+      { href: '/stock-analysis', label: 'Stock Analysis', icon: 'search', desc: 'Search any stock · AI signal · multi-timeframe forecast · day/week/month prediction' },
       { href: '/trade',      label: 'Quick Trade',      icon: 'zap',        desc: 'Pick a stock, see indicators + AI signal, place a paper trade' },
       { href: '/stock-of-day', label: 'Stock of Day',   icon: 'star',       desc: 'AI top pick · auto paper trade · SL/target tracking' },
       { href: '/golden-egg',   label: 'Golden Egg',     icon: 'star',       desc: 'Daily 09:15 IST single pick · 1h/day/week/month predictions · history' },

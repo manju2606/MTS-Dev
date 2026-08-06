@@ -37,6 +37,7 @@ from app.api.v1 import (
     risk,
     scanner,
     sentiment_forecast,
+    stock_analysis,
     stock_of_day,
     strategy_api,
     strategy_lab,
@@ -76,6 +77,7 @@ router.include_router(usage.router)
 router.include_router(dashboard.router)
 router.include_router(discovery.router)
 router.include_router(forecast.router)
+router.include_router(stock_analysis.router)
 router.include_router(stock_of_day.router)
 router.include_router(market_sources.router)
 router.include_router(org_api.router)

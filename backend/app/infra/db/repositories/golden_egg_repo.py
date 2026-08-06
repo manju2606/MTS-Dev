@@ -1,9 +1,13 @@
 """MongoDB repository for Golden Egg daily-pick records.
 
-Collection: golden_egg_picks (in mts_journal DB). One document per
-scan_date -- Golden Egg is a single-pick-per-day email (see
-services/golden_egg_service.py), so unlike Golden Stock Intraday's
-picks-array-per-day shape, this is just one pick (or none) per document.
+Collection: golden_egg_picks (in mts_journal DB). One document per scan
+*run* (not per scan_date) -- the scheduled 09:15 IST job and any manual
+admin trigger (POST /golden-egg/scan) both count as a genuine "this stock
+was chosen" event and should each show up in History, including multiple
+runs on the same calendar day. An earlier version upserted by scan_date,
+which silently overwrote that day's earlier pick(s) on every re-run --
+exactly the "AVALON this morning, then IFBIND, now only TRAVELFOOD shows"
+bug this insert-only version fixes.
 """
 
 from __future__ import annotations
@@ -42,20 +46,18 @@ class GoldenEggRepository:
         target_profit: float,
         market_context: str | None,
     ) -> None:
-        """Upsert the single pick (or "no pick") for `scan_date`."""
+        """Insert a new record for this scan run -- never overwrites a
+        prior run's pick, even one from earlier the same day (see this
+        module's docstring)."""
         doc = {
             "scan_date": scan_date,
             "pick": dataclasses.asdict(pick) if pick else None,
             "sizing": sizing,
             "target_profit": target_profit,
             "market_context": market_context,
-            "updated_at": datetime.utcnow(),
+            "created_at": datetime.utcnow(),
         }
-        await self._col.update_one(
-            {"scan_date": scan_date},
-            {"$set": doc, "$setOnInsert": {"created_at": datetime.utcnow()}},
-            upsert=True,
-        )
+        await self._col.insert_one(doc)
 
     async def get_latest(self) -> dict | None:
         doc = await self._col.find_one({}, sort=[("created_at", -1)])
@@ -64,7 +66,9 @@ class GoldenEggRepository:
         return _clean(doc)
 
     async def get_by_date(self, date_str: str) -> dict | None:
-        doc = await self._col.find_one({"scan_date": date_str})
+        """Most recent run for `date_str` -- a day can now have several
+        (see save_pick); this returns the latest of them."""
+        doc = await self._col.find_one({"scan_date": date_str}, sort=[("created_at", -1)])
         if doc is None:
             return None
         return _clean(doc)

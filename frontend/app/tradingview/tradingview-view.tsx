@@ -4,16 +4,25 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { NavBar } from '@/components/nav-bar'
 import { PriceChart } from '@/components/price-chart'
+import type { PredictionPoint, RefLine } from '@/components/price-chart'
 import { WatchlistPicker } from '@/components/watchlist-picker'
 import {
   searchStocks,
   getHistory,
   getQuoteDetail,
   analyzeSymbol,
+  getStockAnalysisPrediction,
 } from '@/lib/api'
 import type {
-  StockSearchResult, HistoryBar, ChartPeriod, WatchlistQuote, AIRecommendation,
+  StockSearchResult, HistoryBar, ChartPeriod, WatchlistQuote, AIRecommendation, GoldenEggPrediction,
 } from '@/lib/api'
+
+// Periods the AI forecast engine supports (see stock-analysis-view.tsx /
+// golden-egg-view.tsx) -- a strict subset of TradingView's own broader
+// period list (1m/45m/5D/3M/6M/1Y have no matching yfinance interval this
+// engine uses). Selecting one of those still shows the real chart as
+// before, just without the AI prediction/day-week-month overlay.
+const PREDICTABLE_PERIODS = new Set<ChartPeriod>(['5m', '15m', '30m', '1h', '2h', '4h', '1D', '1W', '1M'])
 
 function fmtINR(n: number) {
   return `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -165,6 +174,7 @@ export function TradingViewPageView() {
   const [chartLoading, setChartLoading] = useState(false)
   const [quote, setQuote] = useState<WatchlistQuote | null>(null)
   const [rec, setRec] = useState<AIRecommendation | null>(null)
+  const [pred, setPred] = useState<GoldenEggPrediction | null>(null)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -179,20 +189,51 @@ export function TradingViewPageView() {
       .finally(() => setChartLoading(false))
   }
 
+  function loadPrediction(symbol: string, p: ChartPeriod) {
+    setPred(null)
+    if (!PREDICTABLE_PERIODS.has(p)) return
+    getStockAnalysisPrediction(token, symbol, p).then(setPred).catch(() => null)
+  }
+
   function handleSelect(r: StockSearchResult) {
     setSelected(r)
     setError('')
     setQuote(null)
     setRec(null)
     loadChart(r.symbol, period)
+    loadPrediction(r.symbol, period)
     getQuoteDetail(token, r.symbol).then(setQuote).catch(e => setError((e as Error).message))
     analyzeSymbol(token, r.symbol).then(setRec).catch(() => {})
   }
 
   function handlePeriodChange(p: ChartPeriod) {
     setPeriod(p)
-    if (selected) loadChart(selected.symbol, p)
+    if (selected) { loadChart(selected.symbol, p); loadPrediction(selected.symbol, p) }
   }
+
+  // AI forecast overlay -- merges the persisted trail with the current
+  // forward forecast, same de-dup approach as Golden Egg/Stock Analysis's
+  // chart. Empty (not just absent) whenever `pred` is null so the chart
+  // cleanly drops the overlay for periods the forecast engine doesn't cover.
+  const predictionPoints: PredictionPoint[] = pred && !pred.note
+    ? Array.from(
+        [...pred.history, ...pred.predicted]
+          .reduce((map, p) => {
+            map.set(p.time, { time: p.time, predictedClose: p.predicted_close, upper: p.upper, lower: p.lower })
+            return map
+          }, new Map<number, PredictionPoint>())
+          .values(),
+      ).sort((a, b) => a.time - b.time)
+    : []
+
+  const refLines: RefLine[] = pred && !pred.note ? [
+    ...(pred.day_high != null ? [{ price: pred.day_high, label: 'DH', color: '#10b981' }] : []),
+    ...(pred.day_low != null ? [{ price: pred.day_low, label: 'DL', color: '#10b981' }] : []),
+    ...(pred.week_high != null ? [{ price: pred.week_high, label: 'WH', color: '#3b82f6' }] : []),
+    ...(pred.week_low != null ? [{ price: pred.week_low, label: 'WL', color: '#3b82f6' }] : []),
+    ...(pred.month_high != null ? [{ price: pred.month_high, label: 'MH', color: '#ef4444' }] : []),
+    ...(pred.month_low != null ? [{ price: pred.month_low, label: 'ML', color: '#ef4444' }] : []),
+  ] : []
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
@@ -257,7 +298,18 @@ export function TradingViewPageView() {
               onPeriodChange={handlePeriodChange}
               loading={chartLoading}
               aiLevels={rec ? { signal: rec.signal, entry: rec.entry_price, stopLoss: rec.stop_loss, target: rec.target } : null}
+              prediction={predictionPoints}
+              refLines={refLines}
+              showVolume
             />
+            {pred?.accuracy && pred.accuracy.sample_size > 0 && (
+              <p className="-mt-3 text-[11px] text-zinc-400">
+                Purple line is the AI prediction (local heuristic, not a trading signal on its own) &middot;
+                tracked {pred.accuracy.sample_size} past predictions &middot; {pred.accuracy.hit_rate_pct?.toFixed(1)}% landed within band
+                {pred.accuracy.avg_error_pct != null && <> &middot; avg error {pred.accuracy.avg_error_pct.toFixed(2)}%</>}
+                &middot; DH/DL = day, WH/WL = week, MH/ML = month high/low
+              </p>
+            )}
 
             <AIStrip rec={rec} />
 

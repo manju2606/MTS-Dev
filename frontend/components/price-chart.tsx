@@ -63,6 +63,12 @@ type PriceChartProps = {
   // Defaults to ₹ (every existing MCX/equity caller is INR) -- Crypto's
   // Binance-sourced chart data is USD, so it passes "$" here instead.
   currencySymbol?: string
+  // Volume is always plotted (see volSeries below) but kept subtle by
+  // default -- faint bars, no axis -- since most existing callers overlay
+  // enough already (AI levels, predictions, ref lines) that a prominent
+  // volume pane would compete for attention. Opt in per-caller for a
+  // proper labelled pane instead of changing that default globally.
+  showVolume?: boolean
 }
 
 const PERIODS: ChartPeriod[] = ['1m', '5m', '15m', '30m', '45m', '1h', '2h', '1D', '5D', '1W', '1M', '3M', '6M', '1Y']
@@ -106,7 +112,7 @@ function formatIstTickTime(time: number): string {
   })
 }
 
-export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLevels, currentPrice, exchangeLabel, refLines, prediction, periods, periodBucketSeconds, defaultVisibleBars, currencySymbol = '₹', indicators }: PriceChartProps) {
+export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLevels, currentPrice, exchangeLabel, refLines, prediction, periods, periodBucketSeconds, defaultVisibleBars, currencySymbol = '₹', indicators, showVolume = false }: PriceChartProps) {
   const bucketSecondsMap = useMemo(
     () => ({ ...PERIOD_BUCKET_SECONDS, ...periodBucketSeconds }),
     [periodBucketSeconds],
@@ -303,10 +309,11 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
           priceScaleId: 'vol',
         })
 
-        chart.priceScale('vol').applyOptions({
-          scaleMargins: { top: 0.85, bottom: 0 },
-          visible: false,
-        })
+        chart.priceScale('vol').applyOptions(
+          showVolume
+            ? { scaleMargins: { top: 0.75, bottom: 0 }, visible: true }
+            : { scaleMargins: { top: 0.85, bottom: 0 }, visible: false },
+        )
 
         candleSeries.setData(
           data.map(b => ({
@@ -322,7 +329,9 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
           data.map(b => ({
             time: b.time as UTCTimestamp,
             value: b.volume,
-            color: b.close >= b.open ? '#10b98140' : '#ef444440',
+            color: b.close >= b.open
+              ? (showVolume ? '#10b981b3' : '#10b98140')
+              : (showVolume ? '#ef4444b3' : '#ef444440'),
           })),
         )
 
@@ -536,7 +545,7 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
       lastBarRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, aiLevels, refLinesKey, predictionKey, indicatorsKey, period, positionBall, positionPredBall, chartHeight])
+  }, [data, aiLevels, refLinesKey, predictionKey, indicatorsKey, period, positionBall, positionPredBall, chartHeight, showVolume])
 
   // Live tick handling — nudges the LTP line, extends the in-progress last
   // candle (high/low/close) in place via .update() so the chart feels

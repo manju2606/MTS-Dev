@@ -130,6 +130,7 @@ function PredictionChart({ token, symbol, viewingId, levels }: { token: string; 
         prediction={predictionPoints}
         refLines={refLines}
         periods={PREDICTION_PERIODS}
+        showVolume
       />
       {acc.sample_size > 0 && (
         <p className="mt-2 text-[10px] text-zinc-400">

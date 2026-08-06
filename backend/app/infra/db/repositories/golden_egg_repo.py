@@ -17,6 +17,8 @@ from datetime import datetime
 
 import motor.motor_asyncio
 import structlog
+from bson import ObjectId
+from bson.errors import InvalidId
 
 from app.core.config import settings
 from app.infra.scanner.golden_stock_scanner import IntradayCandidate
@@ -76,6 +78,19 @@ class GoldenEggRepository:
     async def get_history(self, limit: int = 30) -> list[dict]:
         cursor = self._col.find({}).sort("created_at", -1).limit(limit)
         return [_clean(doc) async for doc in cursor]
+
+    async def get_by_id(self, pick_id: str) -> dict | None:
+        """A specific historical run by its own id -- needed since a day can
+        now hold several runs (see save_pick), so date alone no longer
+        uniquely identifies one. Powers the History table's per-row link."""
+        try:
+            oid = ObjectId(pick_id)
+        except InvalidId:
+            return None
+        doc = await self._col.find_one({"_id": oid})
+        if doc is None:
+            return None
+        return _clean(doc)
 
     async def get_all_for_date(self, date_str: str) -> list[dict]:
         """Every run for `date_str` (oldest first) -- unlike get_by_date

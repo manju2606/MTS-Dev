@@ -1,12 +1,13 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import { NavBar } from '@/components/nav-bar'
 import { PriceChart } from '@/components/price-chart'
 import type { PredictionPoint } from '@/components/price-chart'
 import {
-  getGoldenEggToday, getGoldenEggHistory, triggerGoldenEggScan, getGoldenEgg1hPrediction,
+  getGoldenEggToday, getGoldenEggById, getGoldenEggHistory, triggerGoldenEggScan, getGoldenEgg1hPrediction,
   getForecast, getMe,
 } from '@/lib/api'
 import type {
@@ -116,6 +117,8 @@ function OneHourChart({ pred, symbol }: { pred: GoldenEgg1hPrediction | null; sy
 
 export default function GoldenEggView() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const viewingId = searchParams.get('id')
   const tokenRef = useRef('')
   const [authChecked, setAuthChecked] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
@@ -134,11 +137,13 @@ export default function GoldenEggView() {
     getMe(t).then(u => setIsAdmin(u.role === 'admin')).catch(() => null)
 
     getGoldenEggHistory(t, 30).then(setHistory).catch(() => null)
-    getGoldenEggToday(t)
+    setLoading(true)
+    const fetchPick = viewingId ? getGoldenEggById(t, viewingId) : getGoldenEggToday(t)
+    fetchPick
       .then(async doc => {
         setToday(doc)
         if (doc.pick) {
-          getGoldenEgg1hPrediction(t).then(setOneHour).catch(() => null)
+          getGoldenEgg1hPrediction(t, viewingId ?? undefined).then(setOneHour).catch(() => null)
           getForecast(t, doc.pick.symbol).then(setForecast).catch(() => null)
         }
       })
@@ -147,7 +152,7 @@ export default function GoldenEggView() {
 
     const id = setTimeout(() => setAuthChecked(true), 0)
     return () => clearTimeout(id)
-  }, [router])
+  }, [router, viewingId])
 
   async function handleScan() {
     setScanning(true); setMsg(null)
@@ -187,7 +192,7 @@ export default function GoldenEggView() {
               One high-conviction intraday pick, emailed 09:15–09:30 IST every trading day. History and predictions below.
             </p>
           </div>
-          {isAdmin && (
+          {isAdmin && !viewingId && (
             <button
               onClick={handleScan}
               disabled={scanning}
@@ -197,6 +202,15 @@ export default function GoldenEggView() {
             </button>
           )}
         </div>
+
+        {viewingId && (
+          <div className="mb-6 flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-300">
+            <span>Viewing a historical pick{today ? ` from ${today.scan_date}` : ''}, not today's.</span>
+            <Link href="/golden-egg" className="font-semibold underline hover:no-underline">
+              ← Back to today
+            </Link>
+          </div>
+        )}
 
         {msg && (
           <div className="mb-6 rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
@@ -302,8 +316,14 @@ export default function GoldenEggView() {
               {history.map(h => (
                 <tr key={h.id} className="border-b border-zinc-100 last:border-0 dark:border-zinc-800/60">
                   <td className="px-3 py-2 text-zinc-500">{h.scan_date}</td>
-                  <td className="px-3 py-2 font-semibold text-zinc-900 dark:text-zinc-100">
-                    {h.pick ? h.pick.symbol.replace('.NS', '').replace('.BO', '') : '—'}
+                  <td className="px-3 py-2 font-semibold">
+                    {h.pick ? (
+                      <Link href={`/golden-egg?id=${h.id}`} className="text-indigo-600 hover:underline dark:text-indigo-400">
+                        {h.pick.symbol.replace('.NS', '').replace('.BO', '')}
+                      </Link>
+                    ) : (
+                      <span className="text-zinc-900 dark:text-zinc-100">—</span>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-zinc-500">{h.pick ? `₹${fmt(h.pick.entry_price)}` : '—'}</td>
                   <td className="px-3 py-2 text-zinc-500">{h.pick ? h.pick.confidence_score : '—'}</td>

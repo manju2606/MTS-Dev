@@ -4244,6 +4244,12 @@ export async function getGoldenEggToday(token: string): Promise<GoldenEggPick> {
   return r.json()
 }
 
+export async function getGoldenEggById(token: string, id: string): Promise<GoldenEggPick> {
+  const r = await fetch(`${BASE}/api/v1/golden-egg/pick/${encodeURIComponent(id)}`, { headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
 export async function getGoldenEggHistory(token: string, limit = 30): Promise<GoldenEggHistoryItem[]> {
   const r = await fetch(`${BASE}/api/v1/golden-egg/history?limit=${limit}`, { headers: authHeaders(token) })
   if (!r.ok) throw new Error(await r.text())
@@ -4256,8 +4262,9 @@ export async function triggerGoldenEggScan(token: string): Promise<{ pick: Intra
   return r.json()
 }
 
-export async function getGoldenEgg1hPrediction(token: string): Promise<GoldenEgg1hPrediction> {
-  const r = await fetch(`${BASE}/api/v1/golden-egg/predict-1h`, { headers: authHeaders(token) })
+export async function getGoldenEgg1hPrediction(token: string, id?: string): Promise<GoldenEgg1hPrediction> {
+  const q = id ? `?id=${encodeURIComponent(id)}` : ''
+  const r = await fetch(`${BASE}/api/v1/golden-egg/predict-1h${q}`, { headers: authHeaders(token) })
   if (!r.ok) throw new Error(await r.text())
   return r.json()
 }

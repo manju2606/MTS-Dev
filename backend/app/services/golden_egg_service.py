@@ -9,13 +9,11 @@ suggested quantity sized to net roughly `target_profit` rupees at the nearer
 target (T1), capped so the position's value never exceeds
 settings.PAPER_CAPITAL.
 
-Deliberately doesn't persist anything or place any trade -- this is a
-read-only, informational email, separate from Golden Stock Intraday's own
-09:30+ scan/save/watchlist pipeline (golden_stock_service.py) and from Stock
-of the Day's optional auto-trade (stock_of_day_service.py). Cash equities
-only, same universe as Golden Stock Intraday (NIFTY_ALL) -- no F&O/options
-are ever considered, so "no options" is satisfied by construction, not by
-an extra filter.
+Persists each pick, adds it to admins' "Golden Egg" watchlist, and sends the
+email -- but never places any trade, unlike Stock of the Day's optional
+auto-trade (stock_of_day_service.py). Cash equities only, same universe as
+Golden Stock Intraday (NIFTY_ALL) -- no F&O/options are ever considered, so
+"no options" is satisfied by construction, not by an extra filter.
 
 Not financial advice: the quantity/profit figures below are illustrative
 sizing math for a manual decision, not a guarantee of any outcome. Every
@@ -65,6 +63,7 @@ async def send_golden_egg_email(target_profit: float = 1000.0) -> IntradayCandid
     pick = scan.picks[0]
     sizing = _size_for_target(pick, target_profit)
     await repo.save_pick(scan.scan_date, pick, sizing, target_profit, market_context)
+    await _add_to_golden_egg_watchlist(pick)
     await _send_pick_email(pick, sizing, target_profit, market_context)
     log.info(
         "golden_egg.sent",
@@ -123,6 +122,84 @@ def _size_for_target(pick: IntradayCandidate, target_profit: float) -> dict:
         "max_loss": round(qty * (pick.entry_price - pick.stop_loss), 2),
         "capped": capped,
     }
+
+
+# ── Watchlist ────────────────────────────────────────────────────────────────
+
+
+async def _add_to_golden_egg_watchlist(pick: IntradayCandidate) -> None:
+    """Add today's pick to each admin's persistent "Golden Egg" watchlist
+    (accumulates across days) -- same pattern as Golden Stock Intraday's own
+    _create_intraday_watchlist, kept as its own copy rather than a shared
+    helper to match this codebase's existing convention of each picker
+    service owning its watchlist-sync logic independently."""
+    try:
+        from uuid import uuid4
+
+        from sqlalchemy import select, text
+        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+        from app.core.config import settings
+        from app.infra.db.models import UserORM
+
+        engine = create_async_engine(settings.DATABASE_URL)
+        Session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+        wl_name = "Golden Egg"
+
+        async with Session() as session:
+            result = await session.execute(
+                select(UserORM).where(UserORM.role == "admin", UserORM.is_active.is_(True)).limit(5)
+            )
+            admins = result.scalars().all()
+
+            if not admins:
+                result = await session.execute(
+                    select(UserORM).where(UserORM.is_active.is_(True)).limit(1)
+                )
+                admins = result.scalars().all()
+
+            for admin in admins:
+                uid = str(admin.id)
+
+                existing = await session.execute(
+                    text("SELECT id FROM watchlists WHERE user_id = :uid AND name = :name"),
+                    {"uid": uid, "name": wl_name},
+                )
+                wl_id = existing.scalar()
+                if wl_id is None:
+                    wl_id = str(uuid4())
+                    await session.execute(
+                        text(
+                            "INSERT INTO watchlists (id, user_id, name, created_at) "
+                            "VALUES (:id, :uid, :name, NOW())"
+                        ),
+                        {"id": wl_id, "uid": uid, "name": wl_name},
+                    )
+                else:
+                    wl_id = str(wl_id)
+
+                await session.execute(
+                    text(
+                        "INSERT INTO watchlist_items "
+                        "(id, user_id, watchlist_id, symbol, exchange, added_at) "
+                        "VALUES (:id, :uid, :wlid, :sym, 'NSE', NOW()) "
+                        "ON CONFLICT DO NOTHING"
+                    ),
+                    {
+                        "id": str(uuid4()),
+                        "uid": uid,
+                        "wlid": wl_id,
+                        "sym": pick.symbol,
+                    },
+                )
+
+            await session.commit()
+
+        await engine.dispose()
+        log.info("golden_egg.watchlist.updated", name=wl_name, symbol=pick.symbol)
+    except Exception as exc:
+        log.warning("golden_egg.watchlist.error", error=str(exc))
 
 
 # ── Market context (best-effort) ─────────────────────────────────────────────

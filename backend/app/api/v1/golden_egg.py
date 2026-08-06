@@ -42,12 +42,29 @@ async def get_history(_: CurrentUser, limit: int = Query(default=30, ge=1, le=10
 
 @router.get("/history/{date_str}")
 async def get_by_date(date_str: str, _: CurrentUser) -> dict:
+    """Most recent run for `date_str` -- kept for backward compat. A day can
+    hold several runs now (see golden_egg_repo.py), so History table rows
+    link to GET /pick/{id} below instead, which identifies one specific run
+    rather than just "whatever's latest for this date"."""
     from app.infra.db.repositories.golden_egg_repo import GoldenEggRepository
 
     repo = GoldenEggRepository()
     doc = await repo.get_by_date(date_str)
     if doc is None:
         raise HTTPException(status_code=404, detail=f"No Golden Egg pick for date {date_str}")
+    return doc
+
+
+@router.get("/pick/{pick_id}")
+async def get_pick_by_id(pick_id: str, _: CurrentUser) -> dict:
+    """One specific historical run by its own id -- what each History table
+    row links to."""
+    from app.infra.db.repositories.golden_egg_repo import GoldenEggRepository
+
+    repo = GoldenEggRepository()
+    doc = await repo.get_by_id(pick_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail=f"No Golden Egg pick found for id {pick_id}")
     return doc
 
 
@@ -65,18 +82,19 @@ async def trigger_scan(_: CurrentUser) -> dict:
 
 
 @router.get("/predict-1h")
-async def predict_1h(_: CurrentUser) -> dict:
-    """1-hour forecast for today's pick's symbol -- see
-    golden_egg_intraday_prediction_service.py. 409 if there's no pick today
-    (nothing to forecast)."""
+async def predict_1h(_: CurrentUser, id: str | None = Query(default=None)) -> dict:
+    """1-hour forecast for a pick's symbol -- today's latest by default, or
+    a specific historical run via `id` (History table row links pass this).
+    See golden_egg_intraday_prediction_service.py. 409 if that pick has no
+    symbol to forecast."""
     from app.infra.db.repositories.golden_egg_repo import GoldenEggRepository
     from app.infra.db.repositories.mcx_prediction_repo import McxPredictionRepository
     from app.services.golden_egg_intraday_prediction_service import get_1h_prediction
 
     egg_repo = GoldenEggRepository()
-    doc = await egg_repo.get_latest()
+    doc = await egg_repo.get_by_id(id) if id else await egg_repo.get_latest()
     if doc is None or not doc.get("pick"):
-        raise HTTPException(status_code=409, detail="No Golden Egg pick today to forecast.")
+        raise HTTPException(status_code=409, detail="No Golden Egg pick to forecast.")
 
     symbol = doc["pick"]["symbol"]
     try:

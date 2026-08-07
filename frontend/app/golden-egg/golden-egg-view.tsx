@@ -255,13 +255,26 @@ export default function GoldenEggView() {
         {!loading && pick && (
           <>
             <div className="mb-6 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-              <div className="mb-3 flex flex-wrap items-center gap-3">
-                <span className="text-xl font-bold text-zinc-900 dark:text-zinc-50">{sym}</span>
-                <span className={`text-sm font-semibold ${pick.change_pct >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                  {pick.change_pct >= 0 ? '+' : ''}{pick.change_pct.toFixed(2)}%
-                </span>
-                <span className="text-xs text-zinc-400">{pick.sector}</span>
-                <span className="text-xs text-zinc-400">&middot; {today?.scan_date}</span>
+              <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="text-xl font-bold text-zinc-900 dark:text-zinc-50">{sym}</span>
+                  <span className={`text-sm font-semibold ${pick.change_pct >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                    {pick.change_pct >= 0 ? '+' : ''}{pick.change_pct.toFixed(2)}%
+                  </span>
+                  <span className="text-xs text-zinc-400">{pick.sector}</span>
+                  <span className="text-xs text-zinc-400">&middot; {today?.scan_date}</span>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="text-xs text-zinc-400">LTP</p>
+                  <p className="text-base font-bold text-zinc-900 dark:text-zinc-50">
+                    ₹{fmt(pick.ltp ?? pick.current_price)}
+                  </p>
+                  {pick.pnl_amount != null && pick.pnl_pct != null && (
+                    <p className={`text-xs font-semibold ${pick.pnl_amount >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                      {pick.pnl_amount >= 0 ? '+' : ''}₹{fmt(pick.pnl_amount)} ({pick.pnl_pct >= 0 ? '+' : ''}{pick.pnl_pct.toFixed(2)}%)
+                    </p>
+                  )}
+                </div>
               </div>
 
               <div className="mb-4">
@@ -334,13 +347,15 @@ export default function GoldenEggView() {
                 <th className="px-3 py-2 font-semibold">Date</th>
                 <th className="px-3 py-2 font-semibold">Symbol</th>
                 <th className="px-3 py-2 font-semibold">Entry</th>
+                <th className="px-3 py-2 font-semibold">LTP</th>
+                <th className="px-3 py-2 font-semibold">P&amp;L</th>
                 <th className="px-3 py-2 font-semibold">Confidence</th>
                 <th className="px-3 py-2 font-semibold">Generated</th>
               </tr>
             </thead>
             <tbody>
               {history.length === 0 && (
-                <tr><td colSpan={5} className="px-3 py-6 text-center text-zinc-400">No history yet.</td></tr>
+                <tr><td colSpan={7} className="px-3 py-6 text-center text-zinc-400">No history yet.</td></tr>
               )}
               {history.map(h => (
                 <tr key={h.id} className="border-b border-zinc-100 last:border-0 dark:border-zinc-800/60">
@@ -355,6 +370,18 @@ export default function GoldenEggView() {
                     )}
                   </td>
                   <td className="px-3 py-2 text-zinc-500">{h.pick ? `₹${fmt(h.pick.entry_price)}` : '—'}</td>
+                  <td className="px-3 py-2 text-zinc-500">
+                    {h.pick?.ltp != null ? `₹${fmt(h.pick.ltp)}` : '—'}
+                  </td>
+                  <td className="px-3 py-2">
+                    {h.pick?.pnl_amount != null && h.pick?.pnl_pct != null ? (
+                      <span className={`font-semibold ${h.pick.pnl_amount >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                        {h.pick.pnl_amount >= 0 ? '+' : ''}₹{fmt(h.pick.pnl_amount)} ({h.pick.pnl_pct >= 0 ? '+' : ''}{h.pick.pnl_pct.toFixed(2)}%)
+                      </span>
+                    ) : (
+                      <span className="text-zinc-400">—</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-zinc-500">{h.pick ? h.pick.confidence_score : '—'}</td>
                   <td className="px-3 py-2 text-zinc-400">{fmtDateTime(h.created_at)}</td>
                 </tr>

@@ -6,6 +6,8 @@ multi-timeframe forecast (day/week/month-scale ML forecasts come from the
 existing /forecast/{symbol} routes instead -- see today()'s note below).
 """
 
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.deps import CurrentUser, require_role
@@ -14,6 +16,52 @@ from app.domain.models.user import UserRole
 router = APIRouter(prefix="/golden-egg", tags=["golden-egg"])
 
 _admin_only = Depends(require_role(UserRole.ADMIN))
+
+
+async def _fetch_ltp_map(symbols: list[str]) -> dict[str, float]:
+    """Batch-fetch live prices for a list of NSE/BSE symbols."""
+    from app.infra.market_data.yfinance_client import YFinanceClient
+
+    unique = sorted({s for s in symbols if s})
+    if not unique:
+        return {}
+    client = YFinanceClient()
+    results = await asyncio.gather(
+        *[client.get_quote(sym) for sym in unique], return_exceptions=True
+    )
+    return {
+        sym: r.price
+        for sym, r in zip(unique, results, strict=True)
+        if not isinstance(r, Exception)
+    }
+
+
+def _attach_pnl(pick: dict, ltp: float | None) -> None:
+    pick["ltp"] = ltp
+    entry = pick.get("entry_price")
+    if ltp is not None and entry:
+        pick["pnl_amount"] = round(ltp - entry, 2)
+        pick["pnl_pct"] = round((ltp - entry) / entry * 100, 2)
+    else:
+        pick["pnl_amount"] = None
+        pick["pnl_pct"] = None
+
+
+async def _attach_pnl_to_doc(doc: dict) -> None:
+    pick = doc.get("pick")
+    if not pick or not pick.get("symbol"):
+        return
+    ltp_map = await _fetch_ltp_map([pick["symbol"]])
+    _attach_pnl(pick, ltp_map.get(pick["symbol"]))
+
+
+async def _attach_pnl_to_docs(docs: list[dict]) -> None:
+    symbols = [d["pick"]["symbol"] for d in docs if d.get("pick") and d["pick"].get("symbol")]
+    ltp_map = await _fetch_ltp_map(symbols)
+    for d in docs:
+        pick = d.get("pick")
+        if pick and pick.get("symbol"):
+            _attach_pnl(pick, ltp_map.get(pick["symbol"]))
 
 
 @router.get("/today")
@@ -29,6 +77,7 @@ async def get_today(_: CurrentUser) -> dict:
     doc = await repo.get_latest()
     if doc is None:
         raise HTTPException(status_code=404, detail="No Golden Egg pick yet. Run a scan first.")
+    await _attach_pnl_to_doc(doc)
     return doc
 
 
@@ -37,7 +86,9 @@ async def get_history(_: CurrentUser, limit: int = Query(default=30, ge=1, le=10
     from app.infra.db.repositories.golden_egg_repo import GoldenEggRepository
 
     repo = GoldenEggRepository()
-    return await repo.get_history(limit=limit)
+    docs = await repo.get_history(limit=limit)
+    await _attach_pnl_to_docs(docs)
+    return docs
 
 
 @router.get("/history/{date_str}")
@@ -52,6 +103,7 @@ async def get_by_date(date_str: str, _: CurrentUser) -> dict:
     doc = await repo.get_by_date(date_str)
     if doc is None:
         raise HTTPException(status_code=404, detail=f"No Golden Egg pick for date {date_str}")
+    await _attach_pnl_to_doc(doc)
     return doc
 
 
@@ -65,6 +117,7 @@ async def get_pick_by_id(pick_id: str, _: CurrentUser) -> dict:
     doc = await repo.get_by_id(pick_id)
     if doc is None:
         raise HTTPException(status_code=404, detail=f"No Golden Egg pick found for id {pick_id}")
+    await _attach_pnl_to_doc(doc)
     return doc
 
 
@@ -78,7 +131,9 @@ async def trigger_scan(_: CurrentUser) -> dict:
         return {"pick": None, "message": "No candidate cleared the scanner's filters today."}
     import dataclasses
 
-    return {"pick": dataclasses.asdict(pick)}
+    doc = {"pick": dataclasses.asdict(pick)}
+    await _attach_pnl_to_doc(doc)
+    return doc
 
 
 @router.get("/predict")

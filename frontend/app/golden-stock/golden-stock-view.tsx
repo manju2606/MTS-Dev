@@ -100,7 +100,14 @@ function PickCard({ pick, token, watchlists }: { pick: IntradayCandidate; token:
         </div>
         <div className="shrink-0 text-right">
           <p className="text-xs text-zinc-400">LTP</p>
-          <p className="text-base font-bold text-zinc-900 dark:text-zinc-50">&#8377;{fmt(pick.current_price)}</p>
+          <p className="text-base font-bold text-zinc-900 dark:text-zinc-50">
+            &#8377;{fmt(pick.ltp ?? pick.current_price)}
+          </p>
+          {pick.pnl_amount != null && pick.pnl_pct != null && (
+            <p className={`text-xs font-semibold ${pick.pnl_amount >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+              {pick.pnl_amount >= 0 ? '+' : ''}&#8377;{fmt(pick.pnl_amount)} ({pick.pnl_pct >= 0 ? '+' : ''}{pick.pnl_pct.toFixed(2)}%)
+            </p>
+          )}
         </div>
       </div>
 
@@ -236,7 +243,7 @@ function HistoryTable({
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-zinc-200 dark:border-zinc-800">
-            {['Date', 'Scan Time', 'Universe', 'Pass 1', 'Picks', 'Top Pick', 'Score'].map(h => (
+            {['Date', 'Scan Time', 'Universe', 'Pass 1', 'Picks', 'Top Pick', 'Score', 'LTP', 'P&L'].map(h => (
               <th key={h} className="px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
                 {h}
               </th>
@@ -264,6 +271,18 @@ function HistoryTable({
                 <span className={`font-bold ${
                   row.top_score >= 70 ? 'text-emerald-600' : row.top_score >= 50 ? 'text-amber-500' : 'text-red-500'
                 }`}>{row.top_score}</span>
+              </td>
+              <td className="px-4 py-3 text-zinc-700 dark:text-zinc-300">
+                {row.top_ltp != null ? `₹${fmt(row.top_ltp)}` : '—'}
+              </td>
+              <td className="px-4 py-3">
+                {row.top_pnl_amount != null && row.top_pnl_pct != null ? (
+                  <span className={`font-semibold ${row.top_pnl_amount >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                    {row.top_pnl_amount >= 0 ? '+' : ''}₹{fmt(row.top_pnl_amount)} ({row.top_pnl_pct >= 0 ? '+' : ''}{row.top_pnl_pct.toFixed(2)}%)
+                  </span>
+                ) : (
+                  <span className="text-zinc-400">—</span>
+                )}
               </td>
             </tr>
           ))}

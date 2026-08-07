@@ -4138,6 +4138,9 @@ export type IntradayCandidate = {
   actual_close?: number | null
   actual_pct?: number | null
   resolved_at?: string | null
+  ltp?: number | null
+  pnl_amount?: number | null
+  pnl_pct?: number | null
 }
 
 export type GoldenStockScan = {
@@ -4159,6 +4162,10 @@ export type GoldenStockHistoryItem = {
   pick_count: number
   top_symbol: string
   top_score: number
+  top_entry_price?: number | null
+  top_ltp?: number | null
+  top_pnl_amount?: number | null
+  top_pnl_pct?: number | null
   created_at?: string
 }
 

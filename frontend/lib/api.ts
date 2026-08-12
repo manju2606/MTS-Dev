@@ -1025,6 +1025,47 @@ export async function saveJournalEntry(
   return res.json()
 }
 
+// ── Chartink ───────────────────────────────────────────────────────────────
+
+export type ChartinkCandidate = {
+  id: string
+  scan_name: string
+  symbol: string
+  trigger_price: number
+  signal: 'BUY' | 'SELL' | 'HOLD'
+  confidence: number
+  entry_price: number
+  stop_loss: number
+  target: number
+  risk_reward_ratio: number
+  holding_period: string
+  explanation: string
+  rsi: number
+  adx: number
+  volume_ratio: number
+  received_at: string
+}
+
+export async function getChartinkCandidates(
+  token: string,
+  scanName?: string,
+  limit = 50,
+): Promise<ChartinkCandidate[]> {
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (scanName) params.set('scan_name', scanName)
+  const res = await fetch(`${BASE}/api/v1/chartink/candidates?${params}`, {
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error('Failed to fetch Chartink candidates')
+  return res.json()
+}
+
+export async function getChartinkToday(token: string): Promise<ChartinkCandidate[]> {
+  const res = await fetch(`${BASE}/api/v1/chartink/today`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error('Failed to fetch today\'s Chartink candidates')
+  return res.json()
+}
+
 // ── Legacy ──────────────────────────────────────────────────────────────────
 
 export async function seedDefaultWatchlist(token: string): Promise<{ added: number }> {
@@ -3357,6 +3398,8 @@ export type StockOfDay = {
   status: 'WATCHING' | 'TRADING' | 'TARGET_HIT' | 'STOP_HIT' | 'EXPIRED'
   exit_price: number | null
   exit_time: string | null
+  ltp?: number | null
+  pnl_amount?: number | null
   pnl_pct: number | null
   outcome: 'WIN' | 'LOSS' | 'NEUTRAL' | null
 }
@@ -4480,6 +4523,9 @@ export type BTSTPick = {
   actual_close?: number | null
   actual_pct?: number | null
   resolved_at?: string | null
+  ltp?: number | null
+  pnl_amount?: number | null
+  pnl_pct?: number | null
 }
 
 export type BTSTScanResult = {
@@ -4503,6 +4549,10 @@ export type BTSTHistoryItem = {
   pick_count: number
   top_symbol: string
   top_score: number
+  top_entry_price?: number | null
+  top_ltp?: number | null
+  top_pnl_amount?: number | null
+  top_pnl_pct?: number | null
   created_at?: string
 }
 

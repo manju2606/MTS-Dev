@@ -1,8 +1,10 @@
-# Processed by the official nginx image's docker-entrypoint (envsubst on
-# *.template files in /etc/nginx/templates/) — ${DOMAIN} is substituted from
-# the container's environment. Requires a cert already present at
-# /etc/letsencrypt/live/${DOMAIN}/ before nginx will start; see the
-# certbot bootstrap steps run once on first deploy.
+# Rendered by select-config.sh (the nginx service's command, not the base
+# image's own entrypoint) via envsubst — ${DOMAIN} is substituted from the
+# container's environment. Only used once a cert actually exists at
+# /etc/letsencrypt/live/${DOMAIN}/; select-config.sh renders
+# http-only.conf.template instead when it doesn't, so nginx never fails to
+# start over a missing certificate. See the certbot bootstrap steps run
+# once on first real deploy.
 upstream backend {
     server backend:8000;
 }

@@ -24,8 +24,10 @@ services:
       DOMAIN: ${DOMAIN:-localhost}
     volumes:
       - ./nginx/templates:/etc/nginx/templates:ro
+      - ./nginx/select-config.sh:/select-config.sh:ro
       - certbot_www:/var/www/certbot:ro
       - certbot_certs:/etc/letsencrypt:ro
+    command: ["sh", "/select-config.sh"]
     depends_on:
       - backend
       - frontend

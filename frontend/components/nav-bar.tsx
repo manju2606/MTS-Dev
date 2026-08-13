@@ -152,6 +152,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/portfolio',           label: 'Paper Trading',        icon: 'clipboard',  desc: 'P&L and analysis of paper trades' },
       { href: '/portfolio/assistant', label: 'Portfolio Assistant',  icon: 'sparkles',   desc: 'Track real holdings · AI analysis · chat' },
       { href: '/portfolio/strategy-lab', label: 'AI Strategy Lab',   icon: 'cpu',        desc: 'Auto-generate, backtest & rank hundreds of strategies' },
+      { href: '/performance',         label: 'Performance',          icon: 'barChart',   desc: 'Win/loss across every AI signal source · MCX, Golden Stock, BTST, SOTD, paper trades, Chartink, Golden Egg' },
       { href: '/tax',                 label: 'Tax Report',           icon: 'fileText',   desc: 'STCG / LTCG breakdown & CSV export' },
       { href: '/reports',             label: 'Reports',              icon: 'fileText',   desc: 'Hourly scan email reports' },
     ],

@@ -33,6 +33,7 @@ from app.api.v1 import (
     options,
     org_api,
     paper,
+    performance,
     portfolio,
     research,
     risk,
@@ -107,3 +108,4 @@ router.include_router(usa_stocks.router)
 router.include_router(international_market.router)
 router.include_router(historical_data.router)
 router.include_router(strategy_lab.router)
+router.include_router(performance.router)

@@ -6,6 +6,7 @@ single-consumer, feature-specific repo (the Chartink webhook pipeline), not
 one of the core Phase-1/2 entities that interface abstracts over.
 """
 
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -128,6 +129,19 @@ class SQLChartinkCandidateRepository:
             if not already_longer:
                 breakouts.append(symbol)
         return breakouts
+
+    async def count_calls_since(self, since: datetime | None) -> int:
+        """Total candidates scored/stored on or after `since` (all-time if
+        None) -- for the cross-engine Performance dashboard's "total
+        calls" count. No outcome/win-loss tracking exists for Chartink
+        yet -- entry/SL/target are scored once at alert time and never
+        checked against subsequent real price movement -- so this raw
+        candidate count is the only metric it can currently contribute."""
+        stmt = select(func.count()).select_from(ChartinkCandidateORM)
+        if since is not None:
+            stmt = stmt.where(ChartinkCandidateORM.received_at >= since)
+        result = await self._session.execute(stmt)
+        return result.scalar_one()
 
     async def compare_latest_batches(self, scan_name: str) -> dict:
         """Part 3 (Comparison Logic): diff the two most recent scan-alert

@@ -100,6 +100,18 @@ class GoldenEggRepository:
         cursor = self._col.find({"scan_date": date_str}).sort("created_at", 1)
         return [_clean(doc) async for doc in cursor]
 
+    async def count_calls_since(self, since: datetime | None) -> int:
+        """Number of runs that actually picked a stock (excludes the
+        `pick: None` "nothing passed the filter today" runs) on or after
+        `since` (all-time if None) -- for the cross-engine Performance
+        dashboard's "total calls" count. No outcome/win-loss tracking
+        exists for Golden Egg yet (see module docstring), so this is the
+        only metric it can currently contribute."""
+        query: dict = {"pick": {"$ne": None}}
+        if since is not None:
+            query["created_at"] = {"$gte": since}
+        return await self._col.count_documents(query)
+
 
 def _clean(doc: dict) -> dict:
     doc["id"] = str(doc.pop("_id"))

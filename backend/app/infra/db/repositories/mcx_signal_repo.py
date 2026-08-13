@@ -100,3 +100,12 @@ class McxSignalRepository:
         AI scorer itself rather than one user's trading activity."""
         cursor = self._col.find({"status": "CLOSED", "closed_at": {"$gte": since}})
         return [d async for d in cursor]
+
+    async def list_all_since(self, since: datetime | None) -> list[dict]:
+        """Every signal (OPEN or CLOSED) across all users, generated on or
+        after `since` (all-time if None) -- for the cross-engine Performance
+        dashboard's "total calls" count, which needs every signal fired, not
+        just the ones that have since resolved."""
+        query: dict = {} if since is None else {"generated_at": {"$gte": since}}
+        cursor = self._col.find(query)
+        return [d async for d in cursor]

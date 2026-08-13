@@ -142,6 +142,52 @@ class StockOfDayRepository:
         """Count how many auto-trades were placed for a given date."""
         return await self._col.count_documents({"date": date_str, "auto_traded": True})
 
+    async def get_performance_stats(self, since_date: str | None) -> dict:
+        """Aggregate WIN/LOSS/NEUTRAL across every pick (optionally only
+        since_date onward) -- one pick per day, unlike Golden Stock/BTST's
+        per-scan pick arrays, so this counts documents rather than
+        unwinding an array. For the cross-engine Performance dashboard."""
+        query: dict = {} if since_date is None else {"date": {"$gte": since_date}}
+        total_calls = await self._col.count_documents(query)
+
+        pipeline = [
+            {"$match": {**query, "outcome": {"$ne": None}}},
+            {
+                "$group": {
+                    "_id": None,
+                    "total": {"$sum": 1},
+                    "wins": {"$sum": {"$cond": [{"$eq": ["$outcome", "WIN"]}, 1, 0]}},
+                    "losses": {"$sum": {"$cond": [{"$eq": ["$outcome", "LOSS"]}, 1, 0]}},
+                    "neutral": {"$sum": {"$cond": [{"$eq": ["$outcome", "NEUTRAL"]}, 1, 0]}},
+                    "avg_return": {"$avg": "$pnl_pct"},
+                }
+            },
+        ]
+        results = [doc async for doc in self._col.aggregate(pipeline)]
+
+        if not results:
+            return {
+                "total_calls": total_calls,
+                "resolved": 0,
+                "wins": 0,
+                "losses": 0,
+                "neutral": 0,
+                "win_rate_pct": None,
+                "avg_return_pct": None,
+            }
+
+        r = results[0]
+        wins, losses = r.get("wins", 0), r.get("losses", 0)
+        return {
+            "total_calls": total_calls,
+            "resolved": r.get("total", 0),
+            "wins": wins,
+            "losses": losses,
+            "neutral": r.get("neutral", 0),
+            "win_rate_pct": round(wins / (wins + losses) * 100, 1) if (wins + losses) > 0 else None,
+            "avg_return_pct": round(r.get("avg_return") or 0.0, 2),
+        }
+
     # ── Settings ──────────────────────────────────────────────────────────────
 
     @property

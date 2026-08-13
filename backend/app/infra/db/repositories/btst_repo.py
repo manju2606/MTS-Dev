@@ -181,8 +181,24 @@ class BTSTRepository:
                 )
         return entries
 
-    async def get_performance_stats(self) -> dict:
+    async def get_performance_stats(self, since_date: str | None = None) -> dict:
+        """Aggregate accuracy stats across all resolved picks (optionally
+        only scan_date >= since_date), plus a separate total-picks-ever
+        count (resolved or not) for the cross-engine Performance
+        dashboard's "total calls" metric. Mirrors GoldenStockRepository's
+        method of the same name/shape."""
+        date_match: dict = {} if since_date is None else {"scan_date": {"$gte": since_date}}
+        total_picks = await self._col.aggregate(
+            [
+                {"$match": date_match},
+                {"$unwind": "$picks"},
+                {"$count": "n"},
+            ]
+        ).to_list(length=1)
+        total_picks_ever = total_picks[0]["n"] if total_picks else 0
+
         pipeline = [
+            {"$match": date_match},
             {"$unwind": "$picks"},
             {"$match": {"picks.outcome": {"$ne": None}}},
             {
@@ -201,23 +217,28 @@ class BTSTRepository:
         results = [doc async for doc in self._col.aggregate(pipeline)]
         if not results:
             return {
-                "total_picks": 0,
+                "total_calls": total_picks_ever,
+                "resolved": 0,
                 "target_hits": 0,
                 "sl_hits": 0,
                 "expired": 0,
-                "hit_rate_pct": 0.0,
-                "avg_return_pct": 0.0,
+                "hit_rate_pct": None,
+                "avg_return_pct": None,
             }
         r = results[0]
-        total = r.get("total", 0)
-        target_hits = r.get("target_hits", 0)
+        target_hits, sl_hits = r.get("target_hits", 0), r.get("sl_hits", 0)
         return {
-            "total_picks": total,
+            "total_calls": total_picks_ever,
+            "resolved": r.get("total", 0),
             "target_hits": target_hits,
-            "sl_hits": r.get("sl_hits", 0),
+            "sl_hits": sl_hits,
             "expired": r.get("expired", 0),
-            "hit_rate_pct": round(target_hits / total * 100, 1) if total > 0 else 0.0,
-            "avg_return_pct": round(r.get("avg_return", 0.0) or 0.0, 2),
+            "hit_rate_pct": (
+                round(target_hits / (target_hits + sl_hits) * 100, 1)
+                if (target_hits + sl_hits) > 0
+                else None
+            ),
+            "avg_return_pct": round(r.get("avg_return") or 0.0, 2),
         }
 
 

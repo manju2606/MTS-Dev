@@ -5384,3 +5384,44 @@ export async function getResultMonteCarlo(
   if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Failed to run Monte Carlo simulation') }
   return res.json()
 }
+
+// ── Performance dashboard (cross-engine win/loss) ───────────────────────────
+
+// tracked=false (Chartink, Golden Egg) means the source has no resolved
+// win/loss outcome data yet -- score entry/SL/target once and never check
+// what happened afterward -- so every field but total_calls is null rather
+// than a fabricated number. See performance_dashboard_service.py.
+export type PerformanceSource = {
+  key: string
+  label: string
+  tracked: boolean
+  total_calls: number
+  resolved: number | null
+  open: number | null
+  wins: number | null
+  losses: number | null
+  other: number | null
+  win_rate_pct: number | null
+  avg_return_pct: number | null
+}
+
+export type PerformanceSummary = {
+  days: number | null
+  as_of: string
+  sources: PerformanceSource[]
+  overall: {
+    total_calls: number
+    tracked_sources: number
+    untracked_sources: number
+    wins: number
+    losses: number
+    win_rate_pct: number | null
+  }
+}
+
+export async function getPerformanceSummary(token: string, days: number | null = 90): Promise<PerformanceSummary> {
+  const params = days != null ? `?days=${days}` : ''
+  const res = await fetch(`${BASE}/api/v1/performance/summary${params}`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error('Failed to fetch performance summary')
+  return res.json()
+}

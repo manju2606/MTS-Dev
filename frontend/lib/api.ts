@@ -1228,6 +1228,22 @@ export async function pollChartinkScanLinkNow(token: string, id: string): Promis
   return res.json()
 }
 
+export type ChartinkPollRun = {
+  id: string
+  scan_name: string
+  status: string
+  count: number
+  polled_at: string
+}
+
+export async function listChartinkScanLinkRuns(token: string, id: string, limit = 20): Promise<ChartinkPollRun[]> {
+  const res = await fetch(`${BASE}/api/v1/chartink/scan-links/${id}/runs?limit=${limit}`, {
+    headers: authHeaders(token),
+  })
+  if (!res.ok) throw new Error('Failed to fetch run history')
+  return res.json()
+}
+
 export type ChartinkCompareResult = {
   scan_name: string
   latest_received_at: string | null

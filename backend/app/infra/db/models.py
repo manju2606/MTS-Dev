@@ -10,6 +10,7 @@ from app.domain.models.alert import Alert
 from app.domain.models.api_key import ApiKey
 from app.domain.models.chartink_breakout_alert import ChartinkBreakoutAlert
 from app.domain.models.chartink_candidate import ChartinkCandidate
+from app.domain.models.chartink_poll_run import ChartinkPollRun
 from app.domain.models.chartink_scan_link import ChartinkScanLink
 from app.domain.models.chartink_scoring_config import ChartinkScoringConfig
 from app.domain.models.trade import Trade, TradeMode, TradeSignal, TradeStatus
@@ -622,4 +623,40 @@ class ChartinkBreakoutAlertORM(Base):
             appeared_date=a.appeared_date,
             streak_count=a.streak_count,
             created_at=a.created_at,
+        )
+
+
+class ChartinkPollRunORM(Base):
+    __tablename__ = "chartink_poll_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    scan_link_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("chartink_scan_links.id"), nullable=False, index=True
+    )
+    scan_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(500), nullable=False)
+    count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    polled_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    def to_domain(self) -> ChartinkPollRun:
+        return ChartinkPollRun(
+            id=self.id,
+            scan_link_id=self.scan_link_id,
+            scan_name=self.scan_name,
+            status=self.status,
+            count=self.count,
+            polled_at=self.polled_at,
+        )
+
+    @classmethod
+    def from_domain(cls, r: ChartinkPollRun) -> "ChartinkPollRunORM":
+        return cls(
+            id=r.id,
+            scan_link_id=r.scan_link_id,
+            scan_name=r.scan_name,
+            status=r.status,
+            count=r.count,
+            polled_at=r.polled_at,
         )

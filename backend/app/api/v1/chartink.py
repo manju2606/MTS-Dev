@@ -322,6 +322,33 @@ async def delete_scan_link(link_id: UUID, current_user: CurrentUser, db: DBSessi
     return {"deleted": True}
 
 
+@router.get("/scan-links/{link_id}/runs")
+async def list_scan_link_runs(
+    link_id: UUID,
+    current_user: CurrentUser,
+    db: DBSession,
+    limit: int = Query(default=20, ge=1, le=200),
+) -> list[dict]:
+    """Poll run history for one scan link -- unlike the link's own
+    last_polled_at/last_poll_status/last_poll_count (overwritten every
+    poll), this is the append-only log. See
+    ChartinkPollRun's docstring."""
+    from app.infra.db.repositories.chartink_poll_run_repo import SQLChartinkPollRunRepository
+
+    repo = SQLChartinkPollRunRepository(db)
+    runs = await repo.list_recent(link_id, limit)
+    return [
+        {
+            "id": str(r.id),
+            "scan_name": r.scan_name,
+            "status": r.status,
+            "count": r.count,
+            "polled_at": r.polled_at.isoformat(),
+        }
+        for r in runs
+    ]
+
+
 @router.post(
     "/scan-links/{link_id}/poll-now", dependencies=[Depends(require_role(UserRole.ADMIN))]
 )

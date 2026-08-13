@@ -5,10 +5,10 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { NavBar } from '@/components/nav-bar'
 import {
   compareChartinkBatches, createChartinkScanLink, deleteChartinkScanLink, getChartinkBreakouts, getMe,
-  listChartinkScanLinks, pollChartinkScanLinkNow, updateChartinkScanLink,
+  listChartinkScanLinkRuns, listChartinkScanLinks, pollChartinkScanLinkNow, updateChartinkScanLink,
 } from '@/lib/api'
 import type {
-  ChartinkBreakoutRow, ChartinkCandidate, ChartinkCompareResult, ChartinkScanLink, User,
+  ChartinkBreakoutRow, ChartinkCandidate, ChartinkCompareResult, ChartinkPollRun, ChartinkScanLink, User,
 } from '@/lib/api'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -184,6 +184,48 @@ function EditScanLinkForm({
   )
 }
 
+// ── Run history panel ────────────────────────────────────────────────────────
+
+function RunHistoryPanel({ linkId, token }: { linkId: string; token: string }) {
+  const [runs, setRuns] = useState<ChartinkPollRun[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    listChartinkScanLinkRuns(token, linkId)
+      .then(setRuns)
+      .catch(e => setError(e instanceof Error ? e.message : 'Failed to load run history'))
+  }, [linkId, token])
+
+  if (error) return <p className="text-xs text-red-500">{error}</p>
+  if (runs === null) return <p className="text-xs text-zinc-400">Loading…</p>
+  if (runs.length === 0) return <p className="text-xs text-zinc-400">No runs recorded yet.</p>
+
+  return (
+    <div className="max-h-64 overflow-y-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
+      <table className="w-full text-[11px]">
+        <thead>
+          <tr className="border-b border-zinc-100 bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800">
+            {['When', 'Status', 'Count'].map(h => (
+              <th key={h} className="px-2.5 py-1.5 text-left font-semibold text-zinc-500 dark:text-zinc-400">{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {runs.map(r => (
+            <tr key={r.id} className="border-b border-zinc-100 last:border-0 dark:border-zinc-800">
+              <td className="px-2.5 py-1.5 text-zinc-500 dark:text-zinc-400">{timeAgo(r.polled_at)}</td>
+              <td className={`px-2.5 py-1.5 ${r.status.startsWith('error') ? 'text-red-500 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                {r.status}
+              </td>
+              <td className="px-2.5 py-1.5 font-semibold text-zinc-700 dark:text-zinc-300">{r.count}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 // ── Scan links table ─────────────────────────────────────────────────────────
 
 function ScanLinksTable({
@@ -197,6 +239,7 @@ function ScanLinksTable({
   const [pollingId, setPollingId] = useState<string | null>(null)
   const [pollMsg, setPollMsg] = useState<{ id: string; ok: boolean; text: string } | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [historyId, setHistoryId] = useState<string | null>(null)
 
   async function pollNow(link: ChartinkScanLink) {
     setPollingId(link.id)
@@ -268,6 +311,12 @@ function ScanLinksTable({
               <td className="px-3 py-2 font-semibold text-zinc-700 dark:text-zinc-300">{link.last_poll_count}</td>
               <td className="px-3 py-2">
                 <div className="flex items-center justify-end gap-2">
+                  <button
+                    onClick={() => setHistoryId(id => id === link.id ? null : link.id)}
+                    className="text-[10px] font-semibold text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+                  >
+                    {historyId === link.id ? 'Close' : 'History'}
+                  </button>
                   {isAdmin && (
                     <>
                       <button
@@ -295,6 +344,13 @@ function ScanLinksTable({
                 </div>
               </td>
             </tr>
+            {historyId === link.id && (
+              <tr className="border-b border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/40">
+                <td colSpan={6} className="px-3 py-3">
+                  <RunHistoryPanel linkId={link.id} token={token} />
+                </td>
+              </tr>
+            )}
             {editingId === link.id && (
               <tr className="border-b border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/40">
                 <td colSpan={6} className="px-3 py-3">

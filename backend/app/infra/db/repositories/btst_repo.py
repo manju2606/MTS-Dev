@@ -100,20 +100,27 @@ class BTSTRepository:
             return None
         return _clean(doc)
 
+    async def list_scans_with_unresolved_picks(self, since_date: str) -> list[dict]:
+        """Every scan doc from `since_date` onward that still has at least
+        one unresolved pick (outcome is null) -- for resolve_btst_outcomes()'s
+        multi-day resolution window (see that function's docstring for why
+        this replaced the old single-day get_scan_by_date lookup). Mirrors
+        GoldenStockRepository's method of the same name."""
+        cursor = self._col.find(
+            {"scan_date": {"$gte": since_date}, "picks.outcome": None}
+        )
+        return [_clean(doc) async for doc in cursor]
+
     async def update_pick_outcome(
         self,
         scan_id: str,
         symbol: str,
         actual_close: float,
         actual_pct: float,
+        outcome: str,
     ) -> None:
-        if actual_pct >= 5.0:
-            outcome = "target_hit"
-        elif actual_pct <= -3.0:
-            outcome = "sl_hit"
-        else:
-            outcome = "expired"
-
+        """Set a pick's final resolved outcome -- caller decides target_hit/
+        sl_hit/expired (see resolve_btst_outcomes()), this just persists it."""
         await self._col.update_one(
             {"_id": ObjectId(scan_id), "picks.symbol": symbol},
             {

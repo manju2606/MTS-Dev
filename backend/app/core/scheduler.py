@@ -102,15 +102,14 @@ async def _run_golden_stock_scan() -> None:
 
 
 async def _resolve_btst_outcomes() -> None:
-    """10:00 IST weekdays: resolve yesterday's Intraday pick outcomes."""
+    """10:00 IST weekdays: checks every still-open Intraday pick from the
+    last few days (not just yesterday's) against target/stop-loss -- see
+    golden_stock_service.resolve_btst_outcomes()'s RESOLUTION_WINDOW_DAYS."""
     try:
-        from datetime import date, timedelta
-
         from app.services.golden_stock_service import resolve_btst_outcomes
 
-        yesterday = (date.today() - timedelta(days=1)).isoformat()
-        count = await resolve_btst_outcomes(yesterday)
-        log.info("scheduler.btst_resolve.done", date=yesterday, updated=count)
+        count = await resolve_btst_outcomes()
+        log.info("scheduler.btst_resolve.done", updated=count)
     except Exception as exc:
         log.error("scheduler.btst_resolve.error", error=str(exc))
 
@@ -126,15 +125,14 @@ async def _run_btst_scan() -> None:
 
 
 async def _resolve_btst_pick_outcomes() -> None:
-    """15:35 IST weekdays: resolve yesterday's BTST picks against today's close."""
+    """15:35 IST weekdays: checks every still-open BTST pick from the last
+    few days (not just yesterday's) against target/stop-loss -- see
+    btst_service.resolve_btst_outcomes()'s RESOLUTION_WINDOW_DAYS."""
     try:
-        from datetime import date, timedelta
-
         from app.services.btst_service import resolve_btst_outcomes
 
-        yesterday = (date.today() - timedelta(days=1)).isoformat()
-        count = await resolve_btst_outcomes(yesterday)
-        log.info("scheduler.btst_pick_resolve.done", date=yesterday, updated=count)
+        count = await resolve_btst_outcomes()
+        log.info("scheduler.btst_pick_resolve.done", updated=count)
     except Exception as exc:
         log.error("scheduler.btst_pick_resolve.error", error=str(exc))
 

@@ -85,14 +85,29 @@ async def poll_scan_link(link: ChartinkScanLink) -> dict:
     return {"scan_name": link.scan_name, "ok": True, "scored": len(candidates)}
 
 
+_DUE_GRACE = timedelta(minutes=10)
+
+
 def is_due(link: ChartinkScanLink, now: datetime | None = None) -> bool:
     """Whether a link's poll interval has elapsed -- used by both the
     scheduler job (only poll links that are actually due) and can be
-    called standalone to check without side effects."""
+    called standalone to check without side effects.
+
+    _DUE_GRACE matters for a link whose poll_interval_minutes equals the
+    scheduler's own checkpoint spacing (60 min, one run at each hour+15
+    mark -- see scheduler.py's _run_chartink_scan_link_poll). With zero
+    slack, any drift off that fixed grid -- a manual "Run Now" click, or
+    just an earlier link in the same checkpoint run taking a few minutes
+    to fetch+score before this one's last_polled_at gets set -- leaves
+    elapsed a few minutes short of the full interval at the *next*
+    checkpoint, silently skipping it for a whole extra hour. The grace
+    absorbs that normal jitter without materially changing the meaning
+    of a long interval (e.g. a 1440-min/daily link still needs ~23h50m
+    elapsed, still effectively once a day)."""
     if not link.enabled:
         return False
     if link.last_polled_at is None:
         return True
     now = now or datetime.utcnow()
     elapsed = now - link.last_polled_at
-    return elapsed >= timedelta(minutes=link.poll_interval_minutes)
+    return elapsed >= timedelta(minutes=link.poll_interval_minutes) - _DUE_GRACE

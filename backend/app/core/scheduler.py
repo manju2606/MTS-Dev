@@ -421,6 +421,14 @@ async def _run_mcx_extreme_alert_check() -> None:
 _MCX_PREDICTION_PERIODS = ("1m", "5m", "15m", "30m", "1h", "4h", "6h", "8h")
 _MCX_CALENDAR_PREDICTION_PERIODS = ("1Wk", "1Mo")
 
+# Real per-call pacing for the metals prediction sweep below -- 17 tracked
+# contracts x 8 periods = 136 Kite historical_data calls per run, previously
+# fired back-to-back (`asyncio.sleep(0)` only yields the event loop, it adds
+# no actual delay) and blowing well past Kite's ~3 req/s limit, producing a
+# steady stream of "Too many requests" 429s. At this pacing the full sweep
+# takes ~48s, comfortably inside the 5-min cadence between runs.
+_MCX_METALS_PREDICTION_THROTTLE_SECONDS = 0.35
+
 
 async def _run_mcx_prediction_check() -> None:
     """Every 5 min, 09:00-23:30 IST weekdays: generate/resolve NG/NGMini
@@ -839,7 +847,7 @@ async def _run_mcx_metals_prediction_check() -> None:
                             period=period,
                             error=str(exc),
                         )
-                    await asyncio.sleep(0)
+                    await asyncio.sleep(_MCX_METALS_PREDICTION_THROTTLE_SECONDS)
         log.info("scheduler.mcx_metals_prediction.done", users=len(user_ids), checked=checked)
     except Exception as exc:
         log.error("scheduler.mcx_metals_prediction.error", error=str(exc))

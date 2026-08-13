@@ -28,7 +28,7 @@ async def get_summary(
 async def get_calls(
     current_user: CurrentUser,
     source: str = Query(...),
-    outcome: Literal["win", "loss"] = Query(...),
+    outcome: Literal["win", "loss", "open"] = Query(...),
     days: int | None = Query(default=None, ge=1, le=3650, description="Omit for all-time"),
 ) -> list[dict]:
     """The actual calls behind one source's win/loss count on the

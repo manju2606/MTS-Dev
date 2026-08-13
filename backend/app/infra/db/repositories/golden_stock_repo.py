@@ -191,20 +191,24 @@ class GoldenStockRepository:
         return entries
 
     async def list_picks_by_outcome(
-        self, outcomes: list[str], since_date: str | None = None, limit: int = 200
+        self, outcomes: list[str] | None, since_date: str | None = None, limit: int = 200
     ) -> list[dict]:
-        """Flat list of resolved picks whose outcome is one of `outcomes`
-        (e.g. ["target_hit"] for wins, ["sl_hit"] for losses), most
-        recently resolved first -- for the Performance dashboard's
-        click-through from a win/loss count to the actual calls behind
-        it."""
+        """Flat list of picks whose outcome is one of `outcomes` (e.g.
+        ["target_hit"] for wins, ["sl_hit"] for losses), most recent
+        scan first -- or, when `outcomes` is None, picks that haven't
+        resolved yet (outcome is still null) i.e. the "open" bucket. For
+        the Performance dashboard's click-through from a win/loss/open
+        count to the actual calls behind it."""
         date_match: dict = {} if since_date is None else {"scan_date": {"$gte": since_date}}
+        outcome_match = (
+            {"picks.outcome": None} if outcomes is None else {"picks.outcome": {"$in": outcomes}}
+        )
         cursor = self._col.aggregate(
             [
                 {"$match": date_match},
                 {"$unwind": "$picks"},
-                {"$match": {"picks.outcome": {"$in": outcomes}}},
-                {"$sort": {"picks.resolved_at": -1}},
+                {"$match": outcome_match},
+                {"$sort": {"scan_date": -1}},
                 {"$limit": limit},
                 {
                     "$project": {

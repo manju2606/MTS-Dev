@@ -501,6 +501,21 @@ async def _run_chartink_scan_link_poll() -> None:
         log.error("scheduler.chartink_scan_link.error", error=str(exc))
 
 
+async def _run_chartink_breakout_resolve() -> None:
+    """Every 15 min, 09:15-15:30 IST weekdays: checks every OPEN breakout
+    alert's live LTP against its own entry/stop_loss/target (set once at
+    breakout time -- see chartink_signal_service._record_and_alert_breakouts),
+    closing WIN/LOSS/EXPIRED the same way MCX signals resolve. See
+    chartink_signal_service.resolve_breakout_alerts()."""
+    try:
+        from app.services.chartink_signal_service import resolve_breakout_alerts
+
+        closed = await resolve_breakout_alerts()
+        log.info("scheduler.chartink_breakout_resolve.done", closed=closed)
+    except Exception as exc:
+        log.error("scheduler.chartink_breakout_resolve.error", error=str(exc))
+
+
 async def _run_mcx_candle_collect() -> None:
     """Every 5 min, 09:00-23:30 IST weekdays: persist closed 5-minute OHLCV
     candles for every tracked NG + Metals contract to Mongo (mcx_candles).
@@ -1570,6 +1585,21 @@ def start_scheduler() -> None:
         ),
         id="chartink_scan_link_poll",
         name="Chartink — Scan Link Poll",
+        max_instances=1,
+        misfire_grace_time=180,
+    )
+
+    # Chartink breakout alert resolution: every 15 min, 09:15-15:30 IST
+    # weekdays -- checks each OPEN breakout's live LTP against its own
+    # entry/stop_loss/target, closing WIN/LOSS/EXPIRED.
+    _scheduler.add_job(
+        _run_chartink_breakout_resolve,
+        CronTrigger(
+            day_of_week="mon-fri", hour="9-15", minute="*/15", second=30,
+            timezone="Asia/Kolkata",
+        ),
+        id="chartink_breakout_resolve",
+        name="Chartink — Breakout Alert Resolution",
         max_instances=1,
         misfire_grace_time=180,
     )

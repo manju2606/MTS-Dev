@@ -107,7 +107,7 @@ function SourceCard({
   token: string
   days: number | null
 }) {
-  const [expanded, setExpanded] = useState<'win' | 'loss' | null>(null)
+  const [expanded, setExpanded] = useState<'win' | 'loss' | 'open' | null>(null)
   const [calls, setCalls] = useState<PerformanceCall[] | null>(null)
   const [callsLoading, setCallsLoading] = useState(false)
   const [callsError, setCallsError] = useState<string | null>(null)
@@ -120,7 +120,7 @@ function SourceCard({
     setCalls(null)
   }, [days])
 
-  function toggle(outcome: 'win' | 'loss') {
+  function toggle(outcome: 'win' | 'loss' | 'open') {
     if (expanded === outcome) { setExpanded(null); return }
     setExpanded(outcome)
     setCalls(null)
@@ -157,7 +157,11 @@ function SourceCard({
               active={expanded === 'loss'}
               onClick={source.losses ? () => toggle('loss') : undefined}
             />
-            <StatChip label="Open" value={source.open ?? 0} />
+            <StatChip
+              label="Open" value={source.open ?? 0}
+              active={expanded === 'open'}
+              onClick={source.open ? () => toggle('open') : undefined}
+            />
           </div>
           <div className="flex items-center justify-between border-t border-zinc-100 pt-3 dark:border-zinc-800">
             <div>
@@ -246,8 +250,9 @@ export function PerformanceView() {
             <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">Performance</h1>
             <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
               Win/loss across every AI-generated trading call — MCX, Golden Stock, BTST, Stock of the Day,
-              and Paper Trades have real resolved outcomes; Chartink and Golden Egg only score once and
-              show call counts until outcome tracking exists for them too.
+              Paper Trades, and Chartink&apos;s Breakout Watchlist have real resolved outcomes; Golden Egg and
+              raw Chartink candidates outside the Breakout Watchlist only score once and show call counts
+              until outcome tracking exists for them too.
             </p>
           </div>
           <div className="flex items-center gap-1 rounded-lg border border-zinc-200 bg-white p-1 dark:border-zinc-800 dark:bg-zinc-900">

@@ -234,30 +234,155 @@ async def process_chartink_alert(
 
 async def _record_and_alert_breakouts(scan_name: str, symbols: list[str]) -> None:
     """Part 5 (Alerts): a symbol just crossed the 3-consecutive-batch
-    streak threshold (see chartink_repo.detect_new_breakouts) -- persist
-    one ChartinkBreakoutAlert per symbol and send a dedicated breakout
+    streak threshold (see chartink_repo.detect_new_breakouts) -- scores
+    each one with the same AI engine regular Chartink candidates use
+    (confidence/entry/stop_loss/target/rsi/adx/volume_ratio), persists
+    one ChartinkBreakoutAlert per symbol, and sends a dedicated breakout
     email, separate from the regular per-batch alert every candidate
-    already gets via _send_alert_email."""
+    already gets via _send_alert_email. A symbol whose scorer call fails
+    (e.g. delisted) still gets recorded/emailed, just without the AI
+    fields -- see get_breakout_watchlist() and resolve_breakout_alerts(),
+    both of which treat those as "can't resolve yet" rather than erroring."""
     from app.infra.db.repositories.chartink_breakout_repo import (
         SQLChartinkBreakoutAlertRepository,
     )
+    from app.infra.db.repositories.chartink_scoring_config_repo import (
+        SQLChartinkScoringConfigRepository,
+    )
     from app.infra.db.session import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as cfg_session:
+        cfg = await SQLChartinkScoringConfigRepository(cfg_session).get()
+
+    scores: dict[str, dict] = {}
+    try:
+        technicals = await _fetch_technicals_async(symbols)
+        for c in technicals:
+            try:
+                adx = _compute_adx(c["high"], c["low"], c["close"])
+                macd_bullish = _macd_bullish_crossover(c["close"])
+                confidence, explanation = _confidence_and_explanation(c, adx, macd_bullish, cfg)
+                entry, stop_loss, target, rr = _size_entry_sl_target(c, cfg)
+                scores[c["symbol"]] = {
+                    "confidence": confidence,
+                    "entry_price": entry,
+                    "stop_loss": stop_loss,
+                    "target": target,
+                    "risk_reward_ratio": rr,
+                    "rsi": round(c["rsi"], 1),
+                    "adx": round(adx, 1),
+                    "volume_ratio": round(c["volume_ratio"], 2),
+                    "explanation": explanation,
+                }
+            except Exception as exc:
+                log.warning(
+                    "chartink_signal.breakout_score_error", symbol=c.get("symbol"), error=str(exc)
+                )
+    except Exception as exc:
+        log.warning("chartink_signal.breakout_score_error", scan_name=scan_name, error=str(exc))
 
     appeared_date = datetime.now(IST).strftime("%Y-%m-%d")
     async with AsyncSessionLocal() as session:
         repo = SQLChartinkBreakoutAlertRepository(session)
         for symbol in symbols:
+            s = scores.get(symbol, {})
             await repo.create(
                 ChartinkBreakoutAlert(
                     scan_name=scan_name,
                     symbol=symbol,
                     appeared_date=appeared_date,
                     streak_count=3,
+                    confidence=s.get("confidence"),
+                    entry_price=s.get("entry_price"),
+                    stop_loss=s.get("stop_loss"),
+                    target=s.get("target"),
+                    risk_reward_ratio=s.get("risk_reward_ratio"),
+                    rsi=s.get("rsi"),
+                    adx=s.get("adx"),
+                    volume_ratio=s.get("volume_ratio"),
+                    explanation=s.get("explanation"),
                 )
             )
 
     log.info("chartink_signal.breakout_detected", scan_name=scan_name, symbols=symbols)
     await _send_breakout_email(scan_name, symbols)
+
+
+# Breakout alerts without a resolved outcome after this many days are
+# closed EXPIRED at current price -- same convention/window as MCX's
+# MCX_SIGNAL_EXPIRY_DAYS (mcx_signal_service.py).
+BREAKOUT_EXPIRY_DAYS = 5
+
+
+async def resolve_breakout_alerts() -> int:
+    """Checks every OPEN breakout alert (that has a real entry/SL/target
+    from the scorer) against its live LTP -- closes it WIN if target is
+    hit, LOSS if stop_loss is hit, or EXPIRED if BREAKOUT_EXPIRY_DAYS has
+    passed with neither. Cash-equity long-only, same as the rest of
+    Chartink, so only the BUY direction applies (unlike MCX's
+    resolve_open_signals, which also handles SELL). Returns how many
+    closed."""
+    import yfinance as yf
+
+    from app.infra.db.repositories.chartink_breakout_repo import (
+        SQLChartinkBreakoutAlertRepository,
+    )
+    from app.infra.db.session import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as session:
+        repo = SQLChartinkBreakoutAlertRepository(session)
+        open_alerts = await repo.list_open()
+        resolvable = [a for a in open_alerts if a.entry_price and a.stop_loss and a.target]
+        if not resolvable:
+            return 0
+
+        symbols = sorted({a.symbol for a in resolvable})
+        try:
+            loop = asyncio.get_event_loop()
+            raw = await loop.run_in_executor(
+                None, partial(yf.download, symbols, period="5d", auto_adjust=True, progress=False)
+            )
+        except Exception as exc:
+            log.warning("chartink_signal.breakout_resolve.download_error", error=str(exc))
+            return 0
+
+        import pandas as pd
+
+        is_multi = isinstance(raw.columns, pd.MultiIndex)
+
+        def _ltp(sym: str) -> float | None:
+            if raw is None or raw.empty:
+                return None
+            try:
+                series = raw[("Close", sym)] if is_multi else raw["Close"]
+                series = series.dropna()
+                return float(series.iloc[-1]) if len(series) else None
+            except KeyError:
+                return None
+
+        now = datetime.utcnow()
+        closed = 0
+        for alert in resolvable:
+            ltp = _ltp(alert.symbol)
+            if ltp is None:
+                continue
+
+            status: str | None = None
+            exit_price: float | None = None
+            if ltp >= alert.target:
+                status, exit_price = "WIN", alert.target
+            elif ltp <= alert.stop_loss:
+                status, exit_price = "LOSS", alert.stop_loss
+
+            age_days = (now - alert.created_at).total_seconds() / 86400
+            if status is None and age_days >= BREAKOUT_EXPIRY_DAYS:
+                status, exit_price = "EXPIRED", ltp
+
+            if status is not None and exit_price is not None:
+                await repo.close(alert.id, status, exit_price, now)
+                closed += 1
+
+        return closed
 
 
 async def _get_recipients() -> list[str]:
@@ -398,6 +523,22 @@ async def get_breakout_watchlist(limit: int = 100) -> list[dict]:
                 "week_pnl_pct": weekly_pnl_pct,
                 "month_pnl_pct": monthly_pnl_pct,
                 "created_at": alert.created_at.isoformat(),
+                # AI analysis at breakout time (see _record_and_alert_breakouts) --
+                # None if the scorer failed for this symbol.
+                "confidence": alert.confidence,
+                "entry_price": alert.entry_price,
+                "stop_loss": alert.stop_loss,
+                "target": alert.target,
+                "risk_reward_ratio": alert.risk_reward_ratio,
+                "rsi": alert.rsi,
+                "adx": alert.adx,
+                "volume_ratio": alert.volume_ratio,
+                "explanation": alert.explanation,
+                # Resolution against entry_price/stop_loss/target -- see
+                # resolve_breakout_alerts().
+                "status": alert.status,
+                "exit_price": alert.exit_price,
+                "closed_at": alert.closed_at.isoformat() if alert.closed_at else None,
             }
         )
     return rows

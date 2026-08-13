@@ -1,27 +1,33 @@
 """Cross-engine Performance dashboard -- aggregates win/loss stats across
 every AI-generated trading signal source in the app.
 
-MCX (NG + Metals), Golden Stock, BTST, Stock of the Day, and paper trades
-all have real, automatically-resolved WIN/LOSS/EXPIRED-style outcomes
-(see each source's own resolver: mcx_signal_service.resolve_open_signals,
+MCX (NG + Metals), Golden Stock, BTST, Stock of the Day, paper trades,
+and Chartink's Breakout Watchlist all have real, automatically-resolved
+WIN/LOSS/EXPIRED-style outcomes (see each source's own resolver:
+mcx_signal_service.resolve_open_signals,
 golden_stock_service.resolve_btst_outcomes, btst_service's function of
 the same name, stock_of_day_service.run_sotd_price_check/
-expire_open_picks, or a paper trade's own exit_price) and get a
-normalized win-rate here.
+expire_open_picks, a paper trade's own exit_price, or
+chartink_signal_service.resolve_breakout_alerts()) and get a normalized
+win-rate here.
 
-Chartink and Golden Egg only ever score entry/SL/target once and never
-check what actually happened to the price afterward -- no outcome
-tracking exists for either yet -- so they contribute a "total calls"
-count only, with win/loss explicitly left untracked (None) rather than
-fabricated from e.g. a live-LTP snapshot, which is just a point-in-time
-read, not a resolved outcome.
+Golden Egg only ever scores entry/SL/target once and never checks what
+actually happened to the price afterward -- no outcome tracking exists
+for it yet -- so it contributes a "total calls" count only, with
+win/loss explicitly left untracked (None) rather than fabricated from
+e.g. a live-LTP snapshot, which is just a point-in-time read, not a
+resolved outcome. The rest of raw Chartink (every candidate outside the
+Breakout Watchlist) is the same story -- scored once, never resolved --
+which is why Chartink's tracked numbers here are scoped to just the
+Breakout Watchlist subset, not every candidate that's ever come through.
 
 Each source's own win/target thresholds differ (Golden Stock: target
 >=5%/SL <=-2.5%; BTST: target >=5%/SL <=-3%; SOTD: real SL/target price
-levels, or a +-0.2% pnl_pct band for the end-of-day NEUTRAL bucket; MCX:
-real SL/target price levels) -- this module does not attempt to
-renormalize those thresholds against each other, only the resulting
-WIN/LOSS/other-shaped counts into one common shape.
+levels, or a +-0.2% pnl_pct band for the end-of-day NEUTRAL bucket; MCX
+and Chartink Breakout Watchlist: real SL/target price levels) -- this
+module does not attempt to renormalize those thresholds against each
+other, only the resulting WIN/LOSS/other-shaped counts into one common
+shape.
 """
 
 from __future__ import annotations
@@ -157,12 +163,36 @@ async def _paper_trades_stats(user_id: UUID, days: int | None) -> dict:
 
 
 async def _chartink_stats(days: int | None) -> dict:
-    from app.infra.db.repositories.chartink_repo import SQLChartinkCandidateRepository
+    """Unlike every other Chartink candidate (scored once, never
+    checked again -- see module docstring), a breakout alert gets a
+    real entry/stop_loss/target from the AI scorer at breakout time and
+    is resolved WIN/LOSS/EXPIRED against them (see
+    chartink_signal_service.resolve_breakout_alerts()), so Chartink is
+    "tracked" here scoped to just those -- the raw candidate flood
+    underneath the Breakout Watchlist still has no outcome data."""
+    from app.infra.db.repositories.chartink_breakout_repo import (
+        SQLChartinkBreakoutAlertRepository,
+    )
     from app.infra.db.session import AsyncSessionLocal
 
     async with AsyncSessionLocal() as session:
-        total = await SQLChartinkCandidateRepository(session).count_calls_since(_since_dt(days))
-    return _make("chartink", "Chartink", False, total)
+        alerts = await SQLChartinkBreakoutAlertRepository(session).list_all_since(_since_dt(days))
+
+    wins = sum(1 for a in alerts if a.status == "WIN")
+    losses = sum(1 for a in alerts if a.status == "LOSS")
+    expired = sum(1 for a in alerts if a.status == "EXPIRED")
+
+    pct_returns = [
+        (a.exit_price - a.entry_price) / a.entry_price * 100
+        for a in alerts
+        if a.exit_price is not None and a.entry_price
+    ]
+    avg_return_pct = round(sum(pct_returns) / len(pct_returns), 2) if pct_returns else None
+
+    return _make(
+        "chartink", "Chartink (Breakout Watchlist)", True, len(alerts),
+        wins, losses, expired, avg_return_pct,
+    )
 
 
 async def _golden_egg_stats(days: int | None) -> dict:
@@ -193,38 +223,49 @@ def _call_row(
 async def _mcx_calls(outcome: str, days: int | None) -> list[dict]:
     from app.infra.db.repositories.mcx_signal_repo import McxSignalRepository
 
-    result = "WIN" if outcome == "win" else "LOSS"
     signals = await McxSignalRepository().list_all_since(_since_dt(days))
     rows = []
     for s in signals:
-        if s.get("result") != result:
-            continue
+        if outcome == "open":
+            if s.get("status") != "OPEN":
+                continue
+            label = "OPEN"
+        else:
+            label = "WIN" if outcome == "win" else "LOSS"
+            if s.get("result") != label:
+                continue
         pnl, entry = s.get("pnl"), s.get("entry_price")
         pct = pnl / entry * 100 if pnl is not None and entry else None
-        closed_at = s.get("closed_at")
-        date = closed_at.isoformat() if hasattr(closed_at, "isoformat") else closed_at
+        # Open signals have no closed_at yet -- fall back to when they fired.
+        raw_date = s.get("closed_at") or s.get("generated_at")
+        date = raw_date.isoformat() if hasattr(raw_date, "isoformat") else raw_date
         symbol = s.get("contract", s.get("tradingsymbol", "?"))
-        rows.append(_call_row(symbol, date, entry, s.get("exit_price"), pct, result))
+        rows.append(_call_row(symbol, date, entry, s.get("exit_price"), pct, label))
     rows.sort(key=lambda r: r["date"] or "", reverse=True)
     return rows
 
 
-def _pick_row(p: dict) -> dict:
+def _pick_row(p: dict, label_override: str | None = None) -> dict:
     """Shared row-mapper for Golden Stock/BTST/SOTD pick docs -- all
-    three's list_picks_by_outcome() return the same shape."""
+    three's list_picks_by_outcome() return the same shape. Open picks'
+    own `outcome` field is null, so the caller passes an explicit label
+    for those instead."""
     return _call_row(
         p["symbol"],
         p.get("resolved_at") or p.get("scan_date"),
         p.get("entry_price"),
         p.get("exit_price"),
         p.get("return_pct"),
-        p["outcome"],
+        label_override or p["outcome"],
     )
 
 
 async def _golden_stock_calls(outcome: str, days: int | None) -> list[dict]:
     from app.infra.db.repositories.golden_stock_repo import GoldenStockRepository
 
+    if outcome == "open":
+        picks = await GoldenStockRepository().list_picks_by_outcome(None, _since_date_str(days))
+        return [_pick_row(p, "OPEN") for p in picks]
     outcomes = ["target_hit"] if outcome == "win" else ["sl_hit"]
     picks = await GoldenStockRepository().list_picks_by_outcome(outcomes, _since_date_str(days))
     return [_pick_row(p) for p in picks]
@@ -233,6 +274,9 @@ async def _golden_stock_calls(outcome: str, days: int | None) -> list[dict]:
 async def _btst_calls(outcome: str, days: int | None) -> list[dict]:
     from app.infra.db.repositories.btst_repo import BTSTRepository
 
+    if outcome == "open":
+        picks = await BTSTRepository().list_picks_by_outcome(None, _since_date_str(days))
+        return [_pick_row(p, "OPEN") for p in picks]
     outcomes = ["target_hit"] if outcome == "win" else ["sl_hit"]
     picks = await BTSTRepository().list_picks_by_outcome(outcomes, _since_date_str(days))
     return [_pick_row(p) for p in picks]
@@ -241,6 +285,9 @@ async def _btst_calls(outcome: str, days: int | None) -> list[dict]:
 async def _sotd_calls(outcome: str, days: int | None) -> list[dict]:
     from app.infra.db.repositories.stock_of_day_repo import StockOfDayRepository
 
+    if outcome == "open":
+        picks = await StockOfDayRepository().list_picks_by_outcome(None, _since_date_str(days))
+        return [_pick_row(p, "OPEN") for p in picks]
     outcomes = ["WIN"] if outcome == "win" else ["LOSS"]
     picks = await StockOfDayRepository().list_picks_by_outcome(outcomes, _since_date_str(days))
     return [_pick_row(p) for p in picks]
@@ -257,18 +304,55 @@ async def _paper_trades_calls(outcome: str, user_id: UUID, days: int | None) -> 
     since = _since_dt(days)
     if since is not None:
         trades = [t for t in trades if t.created_at >= since]
-    closed = [t for t in trades if t.status == TradeStatus.CLOSED]
 
     rows = []
-    for t in closed:
-        is_win = (t.pnl or 0) > 0
-        if (outcome == "win") != is_win:
-            continue
-        can_pct = t.pnl is not None and t.entry_price and t.quantity
-        pct = t.pnl / (t.entry_price * t.quantity) * 100 if can_pct else None
-        date = t.closed_at.isoformat() if t.closed_at else t.created_at.isoformat()
-        label = "WIN" if is_win else "LOSS"
-        rows.append(_call_row(t.symbol, date, t.entry_price, t.exit_price, pct, label))
+    if outcome == "open":
+        open_statuses = (TradeStatus.OPEN, TradeStatus.PENDING)
+        for t in trades:
+            if t.status not in open_statuses:
+                continue
+            date = t.opened_at.isoformat() if t.opened_at else t.created_at.isoformat()
+            status_label = t.status.value.upper()
+            rows.append(_call_row(t.symbol, date, t.entry_price, None, None, status_label))
+    else:
+        for t in trades:
+            if t.status != TradeStatus.CLOSED:
+                continue
+            is_win = (t.pnl or 0) > 0
+            if (outcome == "win") != is_win:
+                continue
+            can_pct = t.pnl is not None and t.entry_price and t.quantity
+            pct = t.pnl / (t.entry_price * t.quantity) * 100 if can_pct else None
+            date = t.closed_at.isoformat() if t.closed_at else t.created_at.isoformat()
+            label = "WIN" if is_win else "LOSS"
+            rows.append(_call_row(t.symbol, date, t.entry_price, t.exit_price, pct, label))
+    rows.sort(key=lambda r: r["date"] or "", reverse=True)
+    return rows
+
+
+async def _chartink_calls(outcome: str, days: int | None) -> list[dict]:
+    from app.infra.db.repositories.chartink_breakout_repo import (
+        SQLChartinkBreakoutAlertRepository,
+    )
+    from app.infra.db.session import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as session:
+        alerts = await SQLChartinkBreakoutAlertRepository(session).list_all_since(_since_dt(days))
+
+    rows = []
+    for a in alerts:
+        if outcome == "open":
+            if a.status != "OPEN":
+                continue
+            label = "OPEN"
+        else:
+            label = "WIN" if outcome == "win" else "LOSS"
+            if a.status != label:
+                continue
+        can_pct = a.exit_price is not None and a.entry_price
+        pct = (a.exit_price - a.entry_price) / a.entry_price * 100 if can_pct else None
+        date = (a.closed_at or a.created_at).isoformat()
+        rows.append(_call_row(a.symbol, date, a.entry_price, a.exit_price, pct, label))
     rows.sort(key=lambda r: r["date"] or "", reverse=True)
     return rows
 
@@ -279,13 +363,14 @@ _CALL_FETCHERS = {
     "btst": lambda outcome, user_id, days: _btst_calls(outcome, days),
     "stock_of_day": lambda outcome, user_id, days: _sotd_calls(outcome, days),
     "paper_trades": lambda outcome, user_id, days: _paper_trades_calls(outcome, user_id, days),
+    "chartink": lambda outcome, user_id, days: _chartink_calls(outcome, days),
 }
 
 
 async def get_calls(source_key: str, outcome: str, user_id: UUID, days: int | None) -> list[dict]:
-    """The actual calls behind a source's win/loss count -- Chartink and
-    Golden Egg aren't in _CALL_FETCHERS since they have no outcome data
-    to list (see module docstring)."""
+    """The actual calls behind a source's win/loss count -- Golden Egg
+    isn't in _CALL_FETCHERS since it has no outcome data to list (see
+    module docstring)."""
     fetcher = _CALL_FETCHERS.get(source_key)
     if fetcher is None:
         return []

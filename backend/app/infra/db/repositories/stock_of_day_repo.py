@@ -143,14 +143,16 @@ class StockOfDayRepository:
         return await self._col.count_documents({"date": date_str, "auto_traded": True})
 
     async def list_picks_by_outcome(
-        self, outcomes: list[str], since_date: str | None = None, limit: int = 200
+        self, outcomes: list[str] | None, since_date: str | None = None, limit: int = 200
     ) -> list[dict]:
-        """Flat list of resolved picks whose outcome is one of `outcomes`
-        (e.g. ["WIN"], ["LOSS"]), most recent first -- one pick per day
-        here, unlike Golden Stock/BTST's per-scan pick arrays. For the
-        Performance dashboard's click-through from a win/loss count to
-        the actual calls behind it."""
-        query: dict = {"outcome": {"$in": outcomes}}
+        """Flat list of picks whose outcome is one of `outcomes` (e.g.
+        ["WIN"], ["LOSS"]), most recent first -- one pick per day here,
+        unlike Golden Stock/BTST's per-scan pick arrays -- or, when
+        `outcomes` is None, picks that haven't resolved yet (the "open"
+        bucket, i.e. still WATCHING/TRADING). For the Performance
+        dashboard's click-through from a win/loss/open count to the
+        actual calls behind it."""
+        query: dict = {"outcome": None} if outcomes is None else {"outcome": {"$in": outcomes}}
         if since_date is not None:
             query["date"] = {"$gte": since_date}
         cursor = self._col.aggregate(

@@ -523,6 +523,21 @@ function fmtPct(v: number | null) {
   return `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`
 }
 
+const BREAKOUT_STATUS_STYLE: Record<ChartinkBreakoutRow['status'], string> = {
+  OPEN: 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400',
+  WIN: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400',
+  LOSS: 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400',
+  EXPIRED: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400',
+}
+
+function BreakoutStatusBadge({ status }: { status: ChartinkBreakoutRow['status'] }) {
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${BREAKOUT_STATUS_STYLE[status]}`}>
+      {status}
+    </span>
+  )
+}
+
 function BreakoutWatchlist({ token }: { token: string }) {
   const [rows, setRows] = useState<ChartinkBreakoutRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -575,22 +590,27 @@ function BreakoutWatchlist({ token }: { token: string }) {
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/50">
-                {['Stock', 'Scan', 'Appeared', 'LTP', 'Change', 'Day %', 'Week %', 'Month %'].map(h => (
-                  <th key={h} className="px-3 py-2.5 text-left font-semibold text-zinc-500 dark:text-zinc-400">{h}</th>
+                {['Stock', 'Scan', 'Appeared', 'AI Score', 'Entry', 'Target', 'SL', 'LTP', 'Change', 'Day %', 'Week %', 'Month %', 'Status'].map(h => (
+                  <th key={h} className="whitespace-nowrap px-3 py-2.5 text-left font-semibold text-zinc-500 dark:text-zinc-400">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {rows.map(r => (
-                <tr key={r.id} className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/30">
-                  <td className="px-3 py-2 font-bold text-zinc-800 dark:text-zinc-200">{r.symbol.replace(/\.(NS|BO)$/, '')}</td>
-                  <td className="px-3 py-2 text-zinc-500 dark:text-zinc-400">{r.scan_name}</td>
-                  <td className="px-3 py-2 text-zinc-500 dark:text-zinc-400">{r.appeared_date}</td>
-                  <td className="px-3 py-2 font-mono text-zinc-700 dark:text-zinc-300">{r.ltp !== null ? `₹${fmt(r.ltp)}` : '—'}</td>
-                  <td className={`px-3 py-2 font-mono ${pctCls(r.change)}`}>{r.change !== null ? r.change.toFixed(2) : '—'}</td>
-                  <td className={`px-3 py-2 font-mono ${pctCls(r.day_pnl_pct)}`}>{fmtPct(r.day_pnl_pct)}</td>
-                  <td className={`px-3 py-2 font-mono ${pctCls(r.week_pnl_pct)}`}>{fmtPct(r.week_pnl_pct)}</td>
-                  <td className={`px-3 py-2 font-mono ${pctCls(r.month_pnl_pct)}`}>{fmtPct(r.month_pnl_pct)}</td>
+                <tr key={r.id} className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/30" title={r.explanation ?? undefined}>
+                  <td className="whitespace-nowrap px-3 py-2 font-bold text-zinc-800 dark:text-zinc-200">{r.symbol.replace(/\.(NS|BO)$/, '')}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-zinc-500 dark:text-zinc-400">{r.scan_name}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-zinc-500 dark:text-zinc-400">{r.appeared_date}</td>
+                  <td className="whitespace-nowrap px-3 py-2 font-mono text-indigo-600 dark:text-indigo-400">{r.confidence !== null ? `${Math.round(r.confidence * 100)}%` : '—'}</td>
+                  <td className="whitespace-nowrap px-3 py-2 font-mono text-zinc-700 dark:text-zinc-300">{r.entry_price !== null ? `₹${fmt(r.entry_price)}` : '—'}</td>
+                  <td className="whitespace-nowrap px-3 py-2 font-mono text-emerald-600 dark:text-emerald-400">{r.target !== null ? `₹${fmt(r.target)}` : '—'}</td>
+                  <td className="whitespace-nowrap px-3 py-2 font-mono text-red-500 dark:text-red-400">{r.stop_loss !== null ? `₹${fmt(r.stop_loss)}` : '—'}</td>
+                  <td className="whitespace-nowrap px-3 py-2 font-mono text-zinc-700 dark:text-zinc-300">{r.ltp !== null ? `₹${fmt(r.ltp)}` : '—'}</td>
+                  <td className={`whitespace-nowrap px-3 py-2 font-mono ${pctCls(r.change)}`}>{r.change !== null ? r.change.toFixed(2) : '—'}</td>
+                  <td className={`whitespace-nowrap px-3 py-2 font-mono ${pctCls(r.day_pnl_pct)}`}>{fmtPct(r.day_pnl_pct)}</td>
+                  <td className={`whitespace-nowrap px-3 py-2 font-mono ${pctCls(r.week_pnl_pct)}`}>{fmtPct(r.week_pnl_pct)}</td>
+                  <td className={`whitespace-nowrap px-3 py-2 font-mono ${pctCls(r.month_pnl_pct)}`}>{fmtPct(r.month_pnl_pct)}</td>
+                  <td className="whitespace-nowrap px-3 py-2"><BreakoutStatusBadge status={r.status} /></td>
                 </tr>
               ))}
             </tbody>

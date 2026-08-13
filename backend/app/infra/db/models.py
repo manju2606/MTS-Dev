@@ -604,6 +604,20 @@ class ChartinkBreakoutAlertORM(Base):
     streak_count: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    entry_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    stop_loss: Mapped[float | None] = mapped_column(Float, nullable=True)
+    target: Mapped[float | None] = mapped_column(Float, nullable=True)
+    risk_reward_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rsi: Mapped[float | None] = mapped_column(Float, nullable=True)
+    adx: Mapped[float | None] = mapped_column(Float, nullable=True)
+    volume_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="OPEN", index=True)
+    exit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     def to_domain(self) -> ChartinkBreakoutAlert:
         return ChartinkBreakoutAlert(
             id=self.id,
@@ -612,6 +626,18 @@ class ChartinkBreakoutAlertORM(Base):
             appeared_date=self.appeared_date,
             streak_count=self.streak_count,
             created_at=self.created_at,
+            confidence=self.confidence,
+            entry_price=self.entry_price,
+            stop_loss=self.stop_loss,
+            target=self.target,
+            risk_reward_ratio=self.risk_reward_ratio,
+            rsi=self.rsi,
+            adx=self.adx,
+            volume_ratio=self.volume_ratio,
+            explanation=self.explanation,
+            status=self.status,
+            exit_price=self.exit_price,
+            closed_at=self.closed_at,
         )
 
     @classmethod
@@ -623,6 +649,18 @@ class ChartinkBreakoutAlertORM(Base):
             appeared_date=a.appeared_date,
             streak_count=a.streak_count,
             created_at=a.created_at,
+            confidence=a.confidence,
+            entry_price=a.entry_price,
+            stop_loss=a.stop_loss,
+            target=a.target,
+            risk_reward_ratio=a.risk_reward_ratio,
+            rsi=a.rsi,
+            adx=a.adx,
+            volume_ratio=a.volume_ratio,
+            explanation=a.explanation,
+            status=a.status,
+            exit_price=a.exit_price,
+            closed_at=a.closed_at,
         )
 
 

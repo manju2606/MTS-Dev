@@ -1277,6 +1277,20 @@ export type ChartinkBreakoutRow = {
   week_pnl_pct: number | null
   month_pnl_pct: number | null
   created_at: string
+  // AI analysis at breakout time -- null if the scorer failed for this symbol.
+  confidence: number | null
+  entry_price: number | null
+  stop_loss: number | null
+  target: number | null
+  risk_reward_ratio: number | null
+  rsi: number | null
+  adx: number | null
+  volume_ratio: number | null
+  explanation: string | null
+  // Resolution against entry_price/stop_loss/target.
+  status: 'OPEN' | 'WIN' | 'LOSS' | 'EXPIRED'
+  exit_price: number | null
+  closed_at: string | null
 }
 
 export async function getChartinkBreakouts(token: string, limit = 100): Promise<ChartinkBreakoutRow[]> {
@@ -5437,7 +5451,7 @@ export type PerformanceCall = {
 }
 
 export async function getPerformanceCalls(
-  token: string, source: string, outcome: 'win' | 'loss', days: number | null = 90,
+  token: string, source: string, outcome: 'win' | 'loss' | 'open', days: number | null = 90,
 ): Promise<PerformanceCall[]> {
   const params = new URLSearchParams({ source, outcome })
   if (days != null) params.set('days', String(days))

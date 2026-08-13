@@ -7,7 +7,7 @@ matching actual close becomes available.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import motor.motor_asyncio
 
@@ -59,18 +59,44 @@ class McxPredictionRepository:
                 upsert=True,
             )
 
+    # How long a still-unresolved prediction is given to find a matching
+    # candle before we give up on it. get_history()'s Kite interval map
+    # (mcx_service._HISTORY_PERIOD_MAP) only looks back 5-30 days for the
+    # short intraday periods (vs. 90 for 1h), so a prediction that's missed
+    # its candle window this long is *never* going to resolve -- every
+    # future resolve_pending() call fetches the same trailing window and
+    # will never again reach that far back. Left alone, that one stuck doc
+    # sorts first in every get_soonest_pending()/"soonest pending" query
+    # forever, permanently hiding all fresher predictions behind it.
+    _EXPIRE_AFTER = timedelta(days=1)
+
     async def resolve_pending(
         self, user_id: str, contract: str, period: str, candles: list[dict]
     ) -> None:
         """Match any not-yet-resolved predictions against real candles that
-        have since arrived at their predicted_time, and record hit/miss."""
+        have since arrived at their predicted_time, and record hit/miss.
+        Anything left unresolved past _EXPIRE_AFTER is marked expired (not
+        counted as a hit or miss -- see get_accuracy_stats) purely so it
+        stops blocking fresher predictions from being read as "pending"."""
         by_time = {c["time"]: c for c in candles}
         cursor = self._col.find(
             {"user_id": user_id, "contract": contract.upper(), "period": period, "resolved": False}
         )
+        expire_cutoff = int((datetime.utcnow() - self._EXPIRE_AFTER).timestamp())
         async for doc in cursor:
             actual = by_time.get(doc["predicted_time"])
             if actual is None:
+                if doc["predicted_time"] < expire_cutoff:
+                    await self._col.update_one(
+                        {"_id": doc["_id"]},
+                        {
+                            "$set": {
+                                "resolved": True,
+                                "expired": True,
+                                "resolved_at": datetime.utcnow(),
+                            }
+                        },
+                    )
                 continue
             actual_close = float(actual["close"])
             hit = doc["lower"] <= actual_close <= doc["upper"]
@@ -217,6 +243,7 @@ class McxPredictionRepository:
             "contract": contract.upper(),
             "period": period,
             "resolved": True,
+            "expired": {"$ne": True},
         }
         if since is not None:
             query["resolved_at"] = {"$gte": since}

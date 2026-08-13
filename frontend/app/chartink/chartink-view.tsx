@@ -5,8 +5,11 @@ import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NavBar } from '@/components/nav-bar'
 import { AddToWatchlistBtn } from '@/components/add-to-watchlist-btn'
-import { getChartinkCandidates, getChartinkToday, listWatchlists } from '@/lib/api'
-import type { ChartinkCandidate, Watchlist } from '@/lib/api'
+import {
+  getChartinkCandidates, getChartinkToday, getChartinkScoringConfig,
+  getMe, listWatchlists, updateChartinkScoringConfig,
+} from '@/lib/api'
+import type { ChartinkCandidate, ChartinkScoringConfig, User, Watchlist } from '@/lib/api'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -130,6 +133,180 @@ function CandidatesTable({
   )
 }
 
+// ── Scoring parameters ───────────────────────────────────────────────────────
+
+const inputCls =
+  'w-full rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 disabled:opacity-60 disabled:cursor-not-allowed'
+
+function ParamField({
+  label, value, onChange, disabled, step = 0.01,
+}: {
+  label: string
+  value: number
+  onChange: (v: string) => void
+  disabled: boolean
+  step?: number
+}) {
+  return (
+    <div>
+      <label className="mb-1 block text-[10px] font-medium text-zinc-400">{label}</label>
+      <input
+        type="number" step={step} value={value}
+        onChange={e => onChange(e.target.value)}
+        disabled={disabled}
+        className={inputCls}
+      />
+    </div>
+  )
+}
+
+function ScoringConfigCard({
+  token, isAdmin,
+}: {
+  token: string
+  isAdmin: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const [config, setConfig] = useState<ChartinkScoringConfig | null>(null)
+  const [form, setForm] = useState<ChartinkScoringConfig | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+
+  useEffect(() => {
+    if (!open || config) return
+    getChartinkScoringConfig(token).then(c => { setConfig(c); setForm(c) }).catch(() => {})
+  }, [open, token, config])
+
+  function set<K extends keyof ChartinkScoringConfig>(key: K, raw: string) {
+    if (!form) return
+    const n = parseFloat(raw)
+    setForm({ ...form, [key]: Number.isNaN(n) ? form[key] : n })
+  }
+
+  async function save() {
+    if (!form) return
+    setSaving(true)
+    setMsg(null)
+    try {
+      const updated = await updateChartinkScoringConfig(token, form)
+      setConfig(updated)
+      setForm(updated)
+      setMsg({ ok: true, text: 'Scoring parameters updated — applies to the next scan alert scored.' })
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof Error ? e.message : 'Failed to save' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const maxConfidence = form
+    ? form.rsi_healthy_score + form.adx_strong_score + form.vol_strong_score
+      + form.macd_bullish_score + form.trend_score
+    : null
+
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex w-full items-center justify-between px-5 py-4 text-left"
+      >
+        <div>
+          <h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Scoring Parameters</h3>
+          <p className="mt-0.5 text-[11px] text-zinc-400">
+            {isAdmin ? 'Weights & thresholds behind the confidence score and ATR sizing — editable' : 'Weights & thresholds behind the confidence score and ATR sizing — view only (admin-editable)'}
+          </p>
+        </div>
+        <span className="text-zinc-400">{open ? '−' : '+'}</span>
+      </button>
+
+      {open && (
+        <div className="border-t border-zinc-100 px-5 py-4 dark:border-zinc-800">
+          {!form ? (
+            <div className="h-32 animate-pulse rounded-lg bg-zinc-50 dark:bg-zinc-800/40" />
+          ) : (
+            <div className="space-y-5">
+              {maxConfidence != null && Math.abs(maxConfidence - 1) > 0.001 && (
+                <p className="rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
+                  ⚠ The five max scores below sum to {maxConfidence.toFixed(2)}, not 1.00 — confidence is still capped at 100%, but the components are no longer proportional to each other.
+                </p>
+              )}
+
+              <div>
+                <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-zinc-400">RSI Zone</p>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+                  <ParamField label="Healthy min" value={form.rsi_healthy_min} disabled={!isAdmin} step={1} onChange={v => set('rsi_healthy_min', v)} />
+                  <ParamField label="Healthy max" value={form.rsi_healthy_max} disabled={!isAdmin} step={1} onChange={v => set('rsi_healthy_max', v)} />
+                  <ParamField label="Healthy score" value={form.rsi_healthy_score} disabled={!isAdmin} onChange={v => set('rsi_healthy_score', v)} />
+                  <ParamField label="Moderate score" value={form.rsi_moderate_score} disabled={!isAdmin} onChange={v => set('rsi_moderate_score', v)} />
+                  <ParamField label="Extended score" value={form.rsi_extended_score} disabled={!isAdmin} onChange={v => set('rsi_extended_score', v)} />
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-zinc-400">ADX Trend Strength</p>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+                  <ParamField label="Strong threshold" value={form.adx_strong_threshold} disabled={!isAdmin} step={1} onChange={v => set('adx_strong_threshold', v)} />
+                  <ParamField label="Strong score" value={form.adx_strong_score} disabled={!isAdmin} onChange={v => set('adx_strong_score', v)} />
+                  <ParamField label="Rising threshold" value={form.adx_rising_threshold} disabled={!isAdmin} step={1} onChange={v => set('adx_rising_threshold', v)} />
+                  <ParamField label="Rising score" value={form.adx_rising_score} disabled={!isAdmin} onChange={v => set('adx_rising_score', v)} />
+                  <ParamField label="Weak score" value={form.adx_weak_score} disabled={!isAdmin} onChange={v => set('adx_weak_score', v)} />
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-zinc-400">Volume vs 20-day Average</p>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <ParamField label="Strong threshold (x)" value={form.vol_strong_threshold} disabled={!isAdmin} onChange={v => set('vol_strong_threshold', v)} />
+                  <ParamField label="Strong score" value={form.vol_strong_score} disabled={!isAdmin} onChange={v => set('vol_strong_score', v)} />
+                  <ParamField label="Moderate threshold (x)" value={form.vol_moderate_threshold} disabled={!isAdmin} onChange={v => set('vol_moderate_threshold', v)} />
+                  <ParamField label="Moderate score" value={form.vol_moderate_score} disabled={!isAdmin} onChange={v => set('vol_moderate_score', v)} />
+                  <ParamField label="Mild threshold (x)" value={form.vol_mild_threshold} disabled={!isAdmin} onChange={v => set('vol_mild_threshold', v)} />
+                  <ParamField label="Mild score" value={form.vol_mild_score} disabled={!isAdmin} onChange={v => set('vol_mild_score', v)} />
+                  <ParamField label="Weak score" value={form.vol_weak_score} disabled={!isAdmin} onChange={v => set('vol_weak_score', v)} />
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-zinc-400">MACD / Trend</p>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <ParamField label="MACD bullish score" value={form.macd_bullish_score} disabled={!isAdmin} onChange={v => set('macd_bullish_score', v)} />
+                  <ParamField label="SMA20>SMA50 score" value={form.trend_score} disabled={!isAdmin} onChange={v => set('trend_score', v)} />
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-zinc-400">ATR-14 Sizing</p>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <ParamField label="Min ATR %" value={form.atr_min_pct} disabled={!isAdmin} step={0.1} onChange={v => set('atr_min_pct', v)} />
+                  <ParamField label="Max ATR %" value={form.atr_max_pct} disabled={!isAdmin} step={0.1} onChange={v => set('atr_max_pct', v)} />
+                  <ParamField label="Target multiplier" value={form.atr_target_multiplier} disabled={!isAdmin} step={0.1} onChange={v => set('atr_target_multiplier', v)} />
+                </div>
+              </div>
+
+              {isAdmin && (
+                <div>
+                  <button
+                    onClick={save}
+                    disabled={saving}
+                    className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-60"
+                  >
+                    {saving ? 'Saving…' : 'Save Scoring Parameters'}
+                  </button>
+                  {msg && (
+                    <p className={`mt-2 text-xs ${msg.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                      {msg.text}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main view ─────────────────────────────────────────────────────────────────
 
 export function ChartinkView() {
@@ -142,6 +319,7 @@ export function ChartinkView() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [authChecked, setAuthChecked] = useState(false)
+  const [user, setUser] = useState<User | null>(null)
 
   const load = useCallback(async (t: string, opts: { scanName: string; todayOnly: boolean }) => {
     setLoading(true)
@@ -164,6 +342,7 @@ export function ChartinkView() {
     tokenRef.current = t
     setAuthChecked(true)
     listWatchlists(t).then(setWatchlists).catch(() => {})
+    getMe(t).then(setUser).catch(() => {})
     load(t, { scanName: scanFilter, todayOnly })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router])
@@ -252,6 +431,7 @@ export function ChartinkView() {
           <div className="space-y-6">
             <SummaryStrip candidates={candidates} />
             <CandidatesTable candidates={candidates} token={tokenRef.current} watchlists={watchlists} />
+            <ScoringConfigCard token={tokenRef.current} isAdmin={user?.role === 'admin'} />
           </div>
         )}
       </div>

@@ -1066,6 +1066,53 @@ export async function getChartinkToday(token: string): Promise<ChartinkCandidate
   return res.json()
 }
 
+export type ChartinkScoringConfig = {
+  rsi_healthy_min: number
+  rsi_healthy_max: number
+  rsi_healthy_score: number
+  rsi_moderate_score: number
+  rsi_extended_score: number
+  adx_strong_threshold: number
+  adx_strong_score: number
+  adx_rising_threshold: number
+  adx_rising_score: number
+  adx_weak_score: number
+  vol_strong_threshold: number
+  vol_strong_score: number
+  vol_moderate_threshold: number
+  vol_moderate_score: number
+  vol_mild_threshold: number
+  vol_mild_score: number
+  vol_weak_score: number
+  macd_bullish_score: number
+  trend_score: number
+  atr_min_pct: number
+  atr_max_pct: number
+  atr_target_multiplier: number
+}
+
+export async function getChartinkScoringConfig(token: string): Promise<ChartinkScoringConfig> {
+  const res = await fetch(`${BASE}/api/v1/chartink/config`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error('Failed to fetch Chartink scoring config')
+  return res.json()
+}
+
+export async function updateChartinkScoringConfig(
+  token: string,
+  patch: Partial<ChartinkScoringConfig>,
+): Promise<ChartinkScoringConfig> {
+  const res = await fetch(`${BASE}/api/v1/chartink/config`, {
+    method: 'PATCH',
+    headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to update Chartink scoring config')
+  }
+  return res.json()
+}
+
 // ── Legacy ──────────────────────────────────────────────────────────────────
 
 export async function seedDefaultWatchlist(token: string): Promise<{ added: number }> {

@@ -9,6 +9,7 @@ from app.domain.models.ai_signal import AISignal
 from app.domain.models.alert import Alert
 from app.domain.models.api_key import ApiKey
 from app.domain.models.chartink_candidate import ChartinkCandidate
+from app.domain.models.chartink_scoring_config import ChartinkScoringConfig
 from app.domain.models.trade import Trade, TradeMode, TradeSignal, TradeStatus
 from app.domain.models.user import SubscriptionTier, User, UserRole
 from app.domain.models.watchlist import Watchlist, WatchlistItem
@@ -450,4 +451,88 @@ class ChartinkCandidateORM(Base):
             adx=c.adx,
             volume_ratio=c.volume_ratio,
             received_at=c.received_at,
+        )
+
+
+class ChartinkScoringConfigORM(Base):
+    """Single global row (id fixed to 1) -- see ChartinkScoringConfig."""
+
+    __tablename__ = "chartink_scoring_config"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    rsi_healthy_min: Mapped[float] = mapped_column(Float, nullable=False)
+    rsi_healthy_max: Mapped[float] = mapped_column(Float, nullable=False)
+    rsi_healthy_score: Mapped[float] = mapped_column(Float, nullable=False)
+    rsi_moderate_score: Mapped[float] = mapped_column(Float, nullable=False)
+    rsi_extended_score: Mapped[float] = mapped_column(Float, nullable=False)
+    adx_strong_threshold: Mapped[float] = mapped_column(Float, nullable=False)
+    adx_strong_score: Mapped[float] = mapped_column(Float, nullable=False)
+    adx_rising_threshold: Mapped[float] = mapped_column(Float, nullable=False)
+    adx_rising_score: Mapped[float] = mapped_column(Float, nullable=False)
+    adx_weak_score: Mapped[float] = mapped_column(Float, nullable=False)
+    vol_strong_threshold: Mapped[float] = mapped_column(Float, nullable=False)
+    vol_strong_score: Mapped[float] = mapped_column(Float, nullable=False)
+    vol_moderate_threshold: Mapped[float] = mapped_column(Float, nullable=False)
+    vol_moderate_score: Mapped[float] = mapped_column(Float, nullable=False)
+    vol_mild_threshold: Mapped[float] = mapped_column(Float, nullable=False)
+    vol_mild_score: Mapped[float] = mapped_column(Float, nullable=False)
+    vol_weak_score: Mapped[float] = mapped_column(Float, nullable=False)
+    macd_bullish_score: Mapped[float] = mapped_column(Float, nullable=False)
+    trend_score: Mapped[float] = mapped_column(Float, nullable=False)
+    atr_min_pct: Mapped[float] = mapped_column(Float, nullable=False)
+    atr_max_pct: Mapped[float] = mapped_column(Float, nullable=False)
+    atr_target_multiplier: Mapped[float] = mapped_column(Float, nullable=False)
+
+    def to_domain(self) -> ChartinkScoringConfig:
+        return ChartinkScoringConfig(
+            rsi_healthy_min=self.rsi_healthy_min,
+            rsi_healthy_max=self.rsi_healthy_max,
+            rsi_healthy_score=self.rsi_healthy_score,
+            rsi_moderate_score=self.rsi_moderate_score,
+            rsi_extended_score=self.rsi_extended_score,
+            adx_strong_threshold=self.adx_strong_threshold,
+            adx_strong_score=self.adx_strong_score,
+            adx_rising_threshold=self.adx_rising_threshold,
+            adx_rising_score=self.adx_rising_score,
+            adx_weak_score=self.adx_weak_score,
+            vol_strong_threshold=self.vol_strong_threshold,
+            vol_strong_score=self.vol_strong_score,
+            vol_moderate_threshold=self.vol_moderate_threshold,
+            vol_moderate_score=self.vol_moderate_score,
+            vol_mild_threshold=self.vol_mild_threshold,
+            vol_mild_score=self.vol_mild_score,
+            vol_weak_score=self.vol_weak_score,
+            macd_bullish_score=self.macd_bullish_score,
+            trend_score=self.trend_score,
+            atr_min_pct=self.atr_min_pct,
+            atr_max_pct=self.atr_max_pct,
+            atr_target_multiplier=self.atr_target_multiplier,
+        )
+
+    @classmethod
+    def from_domain(cls, c: ChartinkScoringConfig) -> "ChartinkScoringConfigORM":
+        return cls(
+            id=1,
+            rsi_healthy_min=c.rsi_healthy_min,
+            rsi_healthy_max=c.rsi_healthy_max,
+            rsi_healthy_score=c.rsi_healthy_score,
+            rsi_moderate_score=c.rsi_moderate_score,
+            rsi_extended_score=c.rsi_extended_score,
+            adx_strong_threshold=c.adx_strong_threshold,
+            adx_strong_score=c.adx_strong_score,
+            adx_rising_threshold=c.adx_rising_threshold,
+            adx_rising_score=c.adx_rising_score,
+            adx_weak_score=c.adx_weak_score,
+            vol_strong_threshold=c.vol_strong_threshold,
+            vol_strong_score=c.vol_strong_score,
+            vol_moderate_threshold=c.vol_moderate_threshold,
+            vol_moderate_score=c.vol_moderate_score,
+            vol_mild_threshold=c.vol_mild_threshold,
+            vol_mild_score=c.vol_mild_score,
+            vol_weak_score=c.vol_weak_score,
+            macd_bullish_score=c.macd_bullish_score,
+            trend_score=c.trend_score,
+            atr_min_pct=c.atr_min_pct,
+            atr_max_pct=c.atr_max_pct,
+            atr_target_multiplier=c.atr_target_multiplier,
         )

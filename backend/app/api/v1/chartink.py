@@ -7,12 +7,44 @@ the (future) dashboard -- see services/chartink_signal_service.py for the
 scoring pipeline this triggers.
 """
 
-from fastapi import APIRouter, Body, Header, HTTPException, Query, status
+from dataclasses import asdict
 
-from app.api.deps import CurrentUser, DBSession
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, status
+from pydantic import BaseModel, Field
+
+from app.api.deps import CurrentUser, DBSession, require_role
 from app.domain.models.chartink_candidate import ChartinkCandidate
+from app.domain.models.user import UserRole
 
 router = APIRouter(prefix="/chartink", tags=["chartink"])
+
+
+class UpdateChartinkScoringConfigRequest(BaseModel):
+    """All-optional patch, same shape as risk.py's UpdateRiskConfigRequest --
+    only fields the caller actually sent get applied."""
+
+    rsi_healthy_min: float | None = Field(default=None, ge=0, le=100)
+    rsi_healthy_max: float | None = Field(default=None, ge=0, le=100)
+    rsi_healthy_score: float | None = Field(default=None, ge=0, le=1)
+    rsi_moderate_score: float | None = Field(default=None, ge=0, le=1)
+    rsi_extended_score: float | None = Field(default=None, ge=0, le=1)
+    adx_strong_threshold: float | None = Field(default=None, ge=0, le=100)
+    adx_strong_score: float | None = Field(default=None, ge=0, le=1)
+    adx_rising_threshold: float | None = Field(default=None, ge=0, le=100)
+    adx_rising_score: float | None = Field(default=None, ge=0, le=1)
+    adx_weak_score: float | None = Field(default=None, ge=0, le=1)
+    vol_strong_threshold: float | None = Field(default=None, ge=0)
+    vol_strong_score: float | None = Field(default=None, ge=0, le=1)
+    vol_moderate_threshold: float | None = Field(default=None, ge=0)
+    vol_moderate_score: float | None = Field(default=None, ge=0, le=1)
+    vol_mild_threshold: float | None = Field(default=None, ge=0)
+    vol_mild_score: float | None = Field(default=None, ge=0, le=1)
+    vol_weak_score: float | None = Field(default=None, ge=0, le=1)
+    macd_bullish_score: float | None = Field(default=None, ge=0, le=1)
+    trend_score: float | None = Field(default=None, ge=0, le=1)
+    atr_min_pct: float | None = Field(default=None, gt=0)
+    atr_max_pct: float | None = Field(default=None, gt=0)
+    atr_target_multiplier: float | None = Field(default=None, gt=0)
 
 
 def _candidate_dict(c: ChartinkCandidate) -> dict:
@@ -113,3 +145,29 @@ async def list_today(current_user: CurrentUser, db: DBSession) -> list[dict]:
     repo = SQLChartinkCandidateRepository(db)
     candidates = await repo.list_today()
     return [_candidate_dict(c) for c in candidates]
+
+
+@router.get("/config")
+async def get_scoring_config(current_user: CurrentUser, db: DBSession) -> dict:
+    from app.infra.db.repositories.chartink_scoring_config_repo import (
+        SQLChartinkScoringConfigRepository,
+    )
+
+    repo = SQLChartinkScoringConfigRepository(db)
+    return asdict(await repo.get())
+
+
+@router.patch("/config", dependencies=[Depends(require_role(UserRole.ADMIN))])
+async def update_scoring_config(
+    body: UpdateChartinkScoringConfigRequest,
+    current_user: CurrentUser,
+    db: DBSession,
+) -> dict:
+    from app.infra.db.repositories.chartink_scoring_config_repo import (
+        SQLChartinkScoringConfigRepository,
+    )
+
+    patch = {k: v for k, v in body.model_dump().items() if v is not None}
+    repo = SQLChartinkScoringConfigRepository(db)
+    updated = await repo.update(patch)
+    return asdict(updated)

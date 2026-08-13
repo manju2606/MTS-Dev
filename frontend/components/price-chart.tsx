@@ -112,6 +112,96 @@ function formatIstTickTime(time: number): string {
   })
 }
 
+// SMMA (smoothed moving average, aka Wilder's smoothing -- the same
+// formula this codebase already uses for RSI/ATR/ADX on the backend, see
+// strategy_lab/indicators.py): seeded with a plain SMA of the first
+// `length` closes, then each later value blends in one new close at
+// weight 1/length. Null before the seed point since there's no valid
+// value yet.
+function computeSmma(closes: number[], length: number): (number | null)[] {
+  const result: (number | null)[] = new Array(closes.length).fill(null)
+  if (closes.length < length) return result
+  let sum = 0
+  for (let i = 0; i < length; i++) sum += closes[i]
+  let prev = sum / length
+  result[length - 1] = prev
+  for (let i = length; i < closes.length; i++) {
+    prev = (prev * (length - 1) + closes[i]) / length
+    result[i] = prev
+  }
+  return result
+}
+
+const HTF_EMA_LENGTH = 20
+
+// Auto-scales the higher timeframe relative to the chart's own selected
+// period: any intraday period (bucket < 1 day) gets a Daily HTF context
+// line; any daily-candle-or-slower period (1D and up all share an
+// 86400s bucket in PERIOD_BUCKET_SECONDS) gets a Weekly one instead.
+function pickHtfBucketSeconds(ltfBucketSeconds: number): number {
+  const DAY = 86400
+  const WEEK = 604800
+  return ltfBucketSeconds < DAY ? DAY : WEEK
+}
+
+// Resamples the chart's own bars into HTF buckets (no separate API
+// fetch -- reuses the same data already on screen), then runs an EMA
+// over each bucket's close. Look-ahead is a non-issue here: every LTF
+// bar within a still-forming HTF bucket shows that bucket's
+// running-so-far EMA, the same live-updating behaviour as the actual
+// candle it belongs to (and how this indicator behaves on TradingView
+// itself) -- not a backtest signal that needs to stay frozen.
+// `emaLength` shrinks to whatever history is actually available (e.g. a
+// short intraday fetch window might only resample into a handful of
+// distinct daily buckets) so the line still renders, just over less
+// smoothing, rather than not rendering at all -- the returned label
+// reflects the length actually used.
+function computeHtfMovingAverage(
+  bars: HistoryBar[],
+  ltfBucketSeconds: number,
+  emaLength: number,
+): { points: { time: number; value: number }[]; label: string } {
+  const htfBucketSeconds = pickHtfBucketSeconds(ltfBucketSeconds)
+  const htfLabel = htfBucketSeconds === 86400 ? 'Daily' : 'Weekly'
+  if (bars.length === 0) return { points: [], label: '' }
+
+  const bucketCloses: number[] = []
+  const bucketStartTimes: number[] = []
+  let currentBucketStart = -1
+  for (const bar of bars) {
+    const bucketStart = Math.floor(bar.time / htfBucketSeconds) * htfBucketSeconds
+    if (bucketStart !== currentBucketStart) {
+      bucketCloses.push(bar.close)
+      bucketStartTimes.push(bucketStart)
+      currentBucketStart = bucketStart
+    } else {
+      bucketCloses[bucketCloses.length - 1] = bar.close
+    }
+  }
+  if (bucketCloses.length < 2) return { points: [], label: '' }
+
+  const effectiveLength = Math.min(emaLength, bucketCloses.length)
+  const k = 2 / (effectiveLength + 1)
+  let seedSum = 0
+  for (let i = 0; i < effectiveLength; i++) seedSum += bucketCloses[i]
+  let prevEma = seedSum / effectiveLength
+
+  const bucketEmaMap = new Map<number, number>()
+  bucketEmaMap.set(bucketStartTimes[effectiveLength - 1], prevEma)
+  for (let i = effectiveLength; i < bucketCloses.length; i++) {
+    prevEma = bucketCloses[i] * k + prevEma * (1 - k)
+    bucketEmaMap.set(bucketStartTimes[i], prevEma)
+  }
+
+  const points: { time: number; value: number }[] = []
+  for (const bar of bars) {
+    const bucketStart = Math.floor(bar.time / htfBucketSeconds) * htfBucketSeconds
+    const value = bucketEmaMap.get(bucketStart)
+    if (value != null) points.push({ time: bar.time, value })
+  }
+  return { points, label: `${htfLabel} EMA${effectiveLength}` }
+}
+
 export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLevels, currentPrice, exchangeLabel, refLines, prediction, periods, periodBucketSeconds, defaultVisibleBars, currencySymbol = '₹', indicators, showVolume = false }: PriceChartProps) {
   const bucketSecondsMap = useMemo(
     () => ({ ...PERIOD_BUCKET_SECONDS, ...periodBucketSeconds }),
@@ -455,6 +545,44 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
           upperSeries.setData(prediction.map(p => ({ time: p.time as UTCTimestamp, value: p.upper })))
           const lowerSeries = chart.addSeries(LineSeries, { ...bandOpts, title: 'Prediction lower' })
           lowerSeries.setData(prediction.map(p => ({ time: p.time as UTCTimestamp, value: p.lower })))
+        }
+
+        // SMMA5 / SMMA13 — fast/slow smoothed-moving-average pair on the
+        // chart's own timeframe, plotted directly on the price pane like
+        // the AI prediction line above.
+        const closes = data.map(b => b.close)
+        const smma5 = computeSmma(closes, 5)
+        const smma13 = computeSmma(closes, 13)
+        const smma5Points = data
+          .map((b, i) => ({ time: b.time as UTCTimestamp, value: smma5[i] }))
+          .filter((p): p is { time: UTCTimestamp; value: number } => p.value != null)
+        const smma13Points = data
+          .map((b, i) => ({ time: b.time as UTCTimestamp, value: smma13[i] }))
+          .filter((p): p is { time: UTCTimestamp; value: number } => p.value != null)
+
+        if (smma5Points.length > 0) {
+          const smma5Series = chart.addSeries(LineSeries, {
+            color: '#06b6d4', lineWidth: 1, priceScaleId: 'left', title: 'SMMA5',
+          })
+          smma5Series.setData(smma5Points)
+        }
+        if (smma13Points.length > 0) {
+          const smma13Series = chart.addSeries(LineSeries, {
+            color: '#ec4899', lineWidth: 1, priceScaleId: 'left', title: 'SMMA13',
+          })
+          smma13Series.setData(smma13Points)
+        }
+
+        // Moving Average HTF — auto-scaled higher-timeframe context line
+        // (Daily on intraday charts, Weekly on daily-and-up charts), see
+        // computeHtfMovingAverage's own docstring.
+        const htf = computeHtfMovingAverage(data, bucketSecondsMap[period] ?? 86400, HTF_EMA_LENGTH)
+        if (htf.points.length > 0) {
+          const htfSeries = chart.addSeries(LineSeries, {
+            color: '#64748b', lineWidth: 2, lineStyle: LineStyle.Dashed, priceScaleId: 'left',
+            title: `MA HTF (${htf.label})`,
+          })
+          htfSeries.setData(htf.points.map(p => ({ time: p.time as UTCTimestamp, value: p.value })))
         }
 
         // LTP line — current/live price, kept separate from the AI levels so it can be

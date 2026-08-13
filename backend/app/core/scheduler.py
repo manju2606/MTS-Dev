@@ -465,13 +465,14 @@ async def _run_mcx_prediction_check() -> None:
 
 
 async def _run_chartink_scan_link_poll() -> None:
-    """Every 5 min, 09:00-15:30 IST weekdays (NSE cash session): poll every
-    enabled ChartinkScanLink whose own poll_interval_minutes has elapsed --
-    the "pull" half of the Chartink integration, alongside the webhook's
-    "push" half. One bad link (dead URL, stale scan_clause) can't take the
-    others down with it -- poll_scan_link() catches its own errors and
-    records them on the link (last_poll_status), same as the per-contract
-    try/except in _run_mcx_prediction_check above."""
+    """On the hour+15 mark, 09:15-15:15 IST weekdays (7 runs across the NSE
+    cash session): poll every enabled ChartinkScanLink whose own
+    poll_interval_minutes has elapsed -- the "pull" half of the Chartink
+    integration, alongside the webhook's "push" half. One bad link (dead
+    URL, stale scan_clause) can't take the others down with it --
+    poll_scan_link() catches its own errors and records them on the link
+    (last_poll_status), same as the per-contract try/except in
+    _run_mcx_prediction_check above."""
     try:
         from app.infra.db.repositories.chartink_scan_link_repo import (
             SQLChartinkScanLinkRepository,
@@ -1548,16 +1549,18 @@ def start_scheduler() -> None:
         misfire_grace_time=180,
     )
 
-    # Chartink scan-link poll check every 5 min, NSE cash session (same
-    # window as the discovery scan above) -- the "pull" half of the
-    # Chartink integration. Ticks every 5 min but only actually polls a
-    # given link once its own poll_interval_minutes has elapsed (see
-    # chartink_poll_service.is_due()), same "tick often, act on what's
-    # due" shape as the MCX prediction check just above.
+    # Chartink scan-link poll: fires exactly on the hour+15 mark,
+    # 09:15-15:15 IST weekdays (9:15, 10:15, 11:15, 12:15, 13:15, 14:15,
+    # 15:15 -- 7 runs across the NSE cash session) -- the "pull" half of
+    # the Chartink integration. is_due() still gates each link (see
+    # chartink_poll_service.py) so a link with a poll_interval_minutes
+    # other than 60 doesn't get polled at every one of these hourly ticks,
+    # but with the default 60-min interval every enabled link fires at
+    # every tick.
     _scheduler.add_job(
         _run_chartink_scan_link_poll,
         CronTrigger(
-            day_of_week="mon-fri", hour="9-15", minute="*/5", second=20,
+            day_of_week="mon-fri", hour="9-15", minute="15", second=20,
             timezone="Asia/Kolkata",
         ),
         id="chartink_scan_link_poll",

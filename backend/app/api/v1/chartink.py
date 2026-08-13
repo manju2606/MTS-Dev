@@ -47,6 +47,36 @@ class UpdateChartinkScoringConfigRequest(BaseModel):
     atr_target_multiplier: float | None = Field(default=None, gt=0)
 
 
+class PreviewScoreRequest(BaseModel):
+    """Full (not partial) snapshot of the config form -- unlike the PATCH
+    body, this scores against draft values that may not be saved yet, so
+    every field must be present rather than falling back to the DB."""
+
+    symbol: str
+    rsi_healthy_min: float = Field(ge=0, le=100)
+    rsi_healthy_max: float = Field(ge=0, le=100)
+    rsi_healthy_score: float = Field(ge=0, le=1)
+    rsi_moderate_score: float = Field(ge=0, le=1)
+    rsi_extended_score: float = Field(ge=0, le=1)
+    adx_strong_threshold: float = Field(ge=0, le=100)
+    adx_strong_score: float = Field(ge=0, le=1)
+    adx_rising_threshold: float = Field(ge=0, le=100)
+    adx_rising_score: float = Field(ge=0, le=1)
+    adx_weak_score: float = Field(ge=0, le=1)
+    vol_strong_threshold: float = Field(ge=0)
+    vol_strong_score: float = Field(ge=0, le=1)
+    vol_moderate_threshold: float = Field(ge=0)
+    vol_moderate_score: float = Field(ge=0, le=1)
+    vol_mild_threshold: float = Field(ge=0)
+    vol_mild_score: float = Field(ge=0, le=1)
+    vol_weak_score: float = Field(ge=0, le=1)
+    macd_bullish_score: float = Field(ge=0, le=1)
+    trend_score: float = Field(ge=0, le=1)
+    atr_min_pct: float = Field(gt=0)
+    atr_max_pct: float = Field(gt=0)
+    atr_target_multiplier: float = Field(gt=0)
+
+
 def _candidate_dict(c: ChartinkCandidate) -> dict:
     return {
         "id": str(c.id),
@@ -171,3 +201,24 @@ async def update_scoring_config(
     repo = SQLChartinkScoringConfigRepository(db)
     updated = await repo.update(patch)
     return asdict(updated)
+
+
+@router.post("/config/preview", dependencies=[Depends(require_role(UserRole.ADMIN))])
+async def preview_scoring_config(body: PreviewScoreRequest, current_user: CurrentUser) -> dict:
+    """Manually run the scorer against a real symbol using draft (possibly
+    unsaved) parameter values -- lets an admin see the effect of an edit
+    before committing it via PATCH /config."""
+    from app.domain.models.chartink_scoring_config import ChartinkScoringConfig
+    from app.services.chartink_signal_service import preview_score
+
+    fields = body.model_dump(exclude={"symbol"})
+    cfg = ChartinkScoringConfig(**fields)
+
+    symbol = body.symbol.strip().upper()
+    if "." not in symbol:
+        symbol = f"{symbol}.NS"
+
+    try:
+        return await preview_score(symbol, cfg)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

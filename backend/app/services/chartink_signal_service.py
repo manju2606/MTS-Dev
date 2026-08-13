@@ -117,6 +117,37 @@ async def _fetch_technicals_async(symbols: list[str]) -> list[dict]:
     return await loop.run_in_executor(None, partial(fetch_technicals, symbols))
 
 
+async def preview_score(symbol: str, cfg: ChartinkScoringConfig) -> dict:
+    """Score one live symbol against a caller-supplied config -- doesn't
+    touch the DB or send email, unlike process_chartink_alert(). Lets the
+    admin-editable /chartink/config panel show what a candidate's score
+    would look like under draft (not-yet-saved) parameter values before
+    committing them."""
+    technicals = await _fetch_technicals_async([symbol])
+    if not technicals:
+        raise ValueError(f"No technical data available for {symbol}")
+
+    c = technicals[0]
+    adx = _compute_adx(c["high"], c["low"], c["close"])
+    macd_bullish = _macd_bullish_crossover(c["close"])
+    confidence, explanation = _confidence_and_explanation(c, adx, macd_bullish, cfg)
+    entry, stop_loss, target, rr = _size_entry_sl_target(c, cfg)
+
+    return {
+        "symbol": c["symbol"],
+        "signal": "BUY",
+        "confidence": confidence,
+        "entry_price": entry,
+        "stop_loss": stop_loss,
+        "target": target,
+        "risk_reward_ratio": rr,
+        "explanation": explanation,
+        "rsi": round(c["rsi"], 1),
+        "adx": round(adx, 1),
+        "volume_ratio": round(c["volume_ratio"], 2),
+    }
+
+
 async def process_chartink_alert(
     scan_name: str, symbols: list[str], trigger_prices: list[float], triggered_at: str
 ) -> list[ChartinkCandidate]:

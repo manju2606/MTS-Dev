@@ -7,9 +7,9 @@ import { NavBar } from '@/components/nav-bar'
 import { AddToWatchlistBtn } from '@/components/add-to-watchlist-btn'
 import {
   getChartinkCandidates, getChartinkToday, getChartinkScoringConfig,
-  getMe, listWatchlists, updateChartinkScoringConfig,
+  getMe, listWatchlists, previewChartinkScoringConfig, updateChartinkScoringConfig,
 } from '@/lib/api'
-import type { ChartinkCandidate, ChartinkScoringConfig, User, Watchlist } from '@/lib/api'
+import type { ChartinkCandidate, ChartinkScorePreview, ChartinkScoringConfig, User, Watchlist } from '@/lib/api'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -171,6 +171,10 @@ function ScoringConfigCard({
   const [form, setForm] = useState<ChartinkScoringConfig | null>(null)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [testSymbol, setTestSymbol] = useState('')
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<ChartinkScorePreview | null>(null)
+  const [testError, setTestError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!open || config) return
@@ -196,6 +200,21 @@ function ScoringConfigCard({
       setMsg({ ok: false, text: e instanceof Error ? e.message : 'Failed to save' })
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function runTest() {
+    if (!form || !testSymbol.trim()) return
+    setTesting(true)
+    setTestError(null)
+    setTestResult(null)
+    try {
+      const result = await previewChartinkScoringConfig(token, testSymbol.trim(), form)
+      setTestResult(result)
+    } catch (e) {
+      setTestError(e instanceof Error ? e.message : 'Failed to score symbol')
+    } finally {
+      setTesting(false)
     }
   }
 
@@ -282,6 +301,58 @@ function ScoringConfigCard({
                   <ParamField label="Target multiplier" value={form.atr_target_multiplier} disabled={!isAdmin} step={0.1} onChange={v => set('atr_target_multiplier', v)} />
                 </div>
               </div>
+
+              {isAdmin && (
+                <div className="rounded-lg border border-zinc-100 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-800/40">
+                  <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-zinc-400">
+                    Test — run these values (including unsaved edits) against a real stock
+                  </p>
+                  <div className="flex flex-wrap items-end gap-2">
+                    <div className="flex-1 min-w-[140px]">
+                      <label className="mb-1 block text-[10px] font-medium text-zinc-400">Symbol</label>
+                      <input
+                        value={testSymbol}
+                        onChange={e => setTestSymbol(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && runTest()}
+                        placeholder="e.g. RELIANCE"
+                        className={inputCls}
+                      />
+                    </div>
+                    <button
+                      onClick={runTest}
+                      disabled={testing || !testSymbol.trim()}
+                      className="rounded-lg bg-zinc-700 px-4 py-1.5 text-xs font-semibold text-white hover:bg-zinc-600 disabled:opacity-60 dark:bg-zinc-600 dark:hover:bg-zinc-500"
+                    >
+                      {testing ? 'Scoring…' : '▶ Run Test'}
+                    </button>
+                  </div>
+
+                  {testError && (
+                    <p className="mt-3 text-xs text-red-500 dark:text-red-400">{testError}</p>
+                  )}
+                  {testResult && (
+                    <div className="mt-3 rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-bold text-zinc-800 dark:text-zinc-200">
+                          {testResult.symbol.replace(/\.(NS|BO)$/, '')}
+                        </span>
+                        <span className={`text-sm font-bold ${confidenceColor(testResult.confidence)}`}>
+                          {Math.round(testResult.confidence * 100)}% confidence
+                        </span>
+                      </div>
+                      <div className="mt-2 grid grid-cols-3 gap-2 text-xs sm:grid-cols-6">
+                        <div><p className="text-[10px] text-zinc-400">Entry</p><p className="font-mono font-semibold">₹{fmt(testResult.entry_price)}</p></div>
+                        <div><p className="text-[10px] text-zinc-400">SL</p><p className="font-mono font-semibold text-red-600 dark:text-red-400">₹{fmt(testResult.stop_loss)}</p></div>
+                        <div><p className="text-[10px] text-zinc-400">Target</p><p className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">₹{fmt(testResult.target)}</p></div>
+                        <div><p className="text-[10px] text-zinc-400">R:R</p><p className="font-semibold">{testResult.risk_reward_ratio.toFixed(2)}x</p></div>
+                        <div><p className="text-[10px] text-zinc-400">RSI</p><p className="font-semibold">{testResult.rsi.toFixed(0)}</p></div>
+                        <div><p className="text-[10px] text-zinc-400">ADX</p><p className="font-semibold">{testResult.adx.toFixed(0)}</p></div>
+                      </div>
+                      <p className="mt-2 text-[11px] text-zinc-500 dark:text-zinc-400">{testResult.explanation}</p>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {isAdmin && (
                 <div>

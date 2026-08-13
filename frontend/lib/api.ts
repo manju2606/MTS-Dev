@@ -1113,6 +1113,37 @@ export async function updateChartinkScoringConfig(
   return res.json()
 }
 
+export type ChartinkScorePreview = {
+  symbol: string
+  signal: 'BUY'
+  confidence: number
+  entry_price: number
+  stop_loss: number
+  target: number
+  risk_reward_ratio: number
+  explanation: string
+  rsi: number
+  adx: number
+  volume_ratio: number
+}
+
+export async function previewChartinkScoringConfig(
+  token: string,
+  symbol: string,
+  config: ChartinkScoringConfig,
+): Promise<ChartinkScorePreview> {
+  const res = await fetch(`${BASE}/api/v1/chartink/config/preview`, {
+    method: 'POST',
+    headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ symbol, ...config }),
+  })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to preview score')
+  }
+  return res.json()
+}
+
 // ── Legacy ──────────────────────────────────────────────────────────────────
 
 export async function seedDefaultWatchlist(token: string): Promise<{ added: number }> {

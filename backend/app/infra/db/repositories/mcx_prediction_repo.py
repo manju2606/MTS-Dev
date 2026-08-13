@@ -8,6 +8,7 @@ matching actual close becomes available.
 from __future__ import annotations
 
 import bisect
+import contextlib
 from datetime import datetime, timedelta
 
 import motor.motor_asyncio
@@ -41,25 +42,27 @@ class McxPredictionRepository:
         documents (predictions are never deleted, see get_by_date_range),
         that alone was enough to pin MongoDB's CPU and starve the whole
         droplet of memory. A basic count query went from 20s+ timeout to
-        under a second once this index existed."""
-        await self._col.create_index(
-            [
-                ("user_id", 1),
-                ("contract", 1),
-                ("period", 1),
-                ("predicted_time", 1),
-            ],
-            unique=True,
-        )
-        await self._col.create_index(
-            [
-                ("user_id", 1),
-                ("contract", 1),
-                ("period", 1),
-                ("resolved", 1),
-                ("predicted_time", 1),
-            ]
-        )
+        under a second once this index existed.
+
+        Not unique: save_predictions()'s upsert is meant to enforce one doc
+        per (user_id, contract, period, predicted_time), but production
+        already has pre-existing duplicates from before this index existed
+        -- a unique index here throws IndexKeyLength/DuplicateKey and fails
+        to build at all, taking every prediction request down with it (this
+        broke prod once already). create_index is a no-op once the index
+        exists, so failures are swallowed rather than surfaced on every
+        single call -- this is a perf optimization, not a correctness
+        requirement, and a request should still work without it."""
+        with contextlib.suppress(Exception):
+            await self._col.create_index(
+                [
+                    ("user_id", 1),
+                    ("contract", 1),
+                    ("period", 1),
+                    ("resolved", 1),
+                    ("predicted_time", 1),
+                ]
+            )
 
     async def save_predictions(
         self, user_id: str, contract: str, period: str, predictions: list[dict]

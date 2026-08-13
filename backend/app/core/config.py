@@ -27,6 +27,13 @@ class Settings(BaseSettings):
     # publicly along with the rest of /api/) can't be spammed by strangers.
     ALERTMANAGER_WEBHOOK_SECRET: str | None = None
 
+    # Chartink — shared secret Chartink's scan-alert webhook must send
+    # (Authorization: Bearer <secret>) so the receiver at
+    # /api/v1/chartink/webhook, also proxied publicly, can't have fake
+    # candidates injected by strangers. Same pattern as the Alertmanager
+    # secret above.
+    CHARTINK_WEBHOOK_SECRET: str | None = None
+
     # Phase 2
     ANTHROPIC_API_KEY: str | None = None
     PAPER_CAPITAL: float = 100_000.0  # default paper trading capital in INR

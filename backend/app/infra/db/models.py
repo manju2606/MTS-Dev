@@ -8,6 +8,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from app.domain.models.ai_signal import AISignal
 from app.domain.models.alert import Alert
 from app.domain.models.api_key import ApiKey
+from app.domain.models.chartink_candidate import ChartinkCandidate
 from app.domain.models.trade import Trade, TradeMode, TradeSignal, TradeStatus
 from app.domain.models.user import SubscriptionTier, User, UserRole
 from app.domain.models.watchlist import Watchlist, WatchlistItem
@@ -383,4 +384,70 @@ class AlertORM(Base):
             triggered_at=a.triggered_at,
             triggered_price=a.triggered_price,
             created_at=a.created_at,
+        )
+
+
+class ChartinkCandidateORM(Base):
+    __tablename__ = "chartink_candidates"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    scan_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    trigger_price: Mapped[float] = mapped_column(Float, nullable=False)
+    signal: Mapped[str] = mapped_column(String(10), nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    entry_price: Mapped[float] = mapped_column(Float, nullable=False)
+    stop_loss: Mapped[float] = mapped_column(Float, nullable=False)
+    target: Mapped[float] = mapped_column(Float, nullable=False)
+    risk_reward_ratio: Mapped[float] = mapped_column(Float, nullable=False)
+    holding_period: Mapped[str] = mapped_column(String(50), nullable=False)
+    explanation: Mapped[str] = mapped_column(Text, nullable=False)
+    rsi: Mapped[float] = mapped_column(Float, nullable=False)
+    adx: Mapped[float] = mapped_column(Float, nullable=False)
+    volume_ratio: Mapped[float] = mapped_column(Float, nullable=False)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, index=True
+    )
+
+    def to_domain(self) -> ChartinkCandidate:
+        return ChartinkCandidate(
+            id=self.id,
+            scan_name=self.scan_name,
+            symbol=self.symbol,
+            trigger_price=self.trigger_price,
+            signal=self.signal,
+            confidence=self.confidence,
+            entry_price=self.entry_price,
+            stop_loss=self.stop_loss,
+            target=self.target,
+            risk_reward_ratio=self.risk_reward_ratio,
+            holding_period=self.holding_period,
+            explanation=self.explanation,
+            rsi=self.rsi,
+            adx=self.adx,
+            volume_ratio=self.volume_ratio,
+            received_at=self.received_at,
+        )
+
+    @classmethod
+    def from_domain(cls, c: ChartinkCandidate) -> "ChartinkCandidateORM":
+        return cls(
+            id=c.id,
+            scan_name=c.scan_name,
+            symbol=c.symbol,
+            trigger_price=c.trigger_price,
+            signal=c.signal,
+            confidence=c.confidence,
+            entry_price=c.entry_price,
+            stop_loss=c.stop_loss,
+            target=c.target,
+            risk_reward_ratio=c.risk_reward_ratio,
+            holding_period=c.holding_period,
+            explanation=c.explanation,
+            rsi=c.rsi,
+            adx=c.adx,
+            volume_ratio=c.volume_ratio,
+            received_at=c.received_at,
         )

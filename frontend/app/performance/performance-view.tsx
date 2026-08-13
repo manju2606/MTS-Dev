@@ -7,11 +7,11 @@ import { getPerformanceCalls, getPerformanceSummary } from '@/lib/api'
 import type { PerformanceCall, PerformanceSummary } from '@/lib/api'
 
 const DAY_OPTIONS: { label: string; value: number | null }[] = [
-  { label: '7D', value: 7 },
+  { label: '1D', value: 1 },
+  { label: '5D', value: 5 },
   { label: '30D', value: 30 },
   { label: '90D', value: 90 },
   { label: '1Y', value: 365 },
-  { label: 'All', value: null },
 ]
 
 function pctColor(pct: number | null): string {

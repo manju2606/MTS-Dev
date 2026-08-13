@@ -1043,6 +1043,7 @@ export type ChartinkCandidate = {
   rsi: number
   adx: number
   volume_ratio: number
+  batch_id: string | null
   received_at: string
 }
 
@@ -1141,6 +1142,107 @@ export async function previewChartinkScoringConfig(
     const b = await res.json().catch(() => ({}))
     throw new Error((b as { detail?: string }).detail ?? 'Failed to preview score')
   }
+  return res.json()
+}
+
+// ── Chartink scan-link poller ("pull" half, alongside the webhook) ─────────
+
+export type ChartinkScanLink = {
+  id: string
+  scan_name: string
+  url: string
+  poll_interval_minutes: number
+  enabled: boolean
+  scan_clause: string | null
+  last_polled_at: string | null
+  last_poll_status: string | null
+  last_poll_count: number
+  created_at: string
+}
+
+export async function listChartinkScanLinks(token: string): Promise<ChartinkScanLink[]> {
+  const res = await fetch(`${BASE}/api/v1/chartink/scan-links`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error('Failed to fetch scan links')
+  return res.json()
+}
+
+export async function createChartinkScanLink(token: string, body: {
+  scan_name: string; url: string; poll_interval_minutes?: number; scan_clause?: string
+}): Promise<ChartinkScanLink> {
+  const res = await fetch(`${BASE}/api/v1/chartink/scan-links`, {
+    method: 'POST',
+    headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to create scan link')
+  }
+  return res.json()
+}
+
+export async function updateChartinkScanLink(
+  token: string,
+  id: string,
+  patch: Partial<Pick<ChartinkScanLink, 'scan_name' | 'url' | 'poll_interval_minutes' | 'enabled' | 'scan_clause'>>,
+): Promise<ChartinkScanLink> {
+  const res = await fetch(`${BASE}/api/v1/chartink/scan-links/${id}`, {
+    method: 'PATCH',
+    headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to update scan link')
+  }
+  return res.json()
+}
+
+export async function deleteChartinkScanLink(token: string, id: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/v1/chartink/scan-links/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders(token),
+  })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to delete scan link')
+  }
+}
+
+export type ChartinkPollResult = {
+  scan_name: string
+  ok: boolean
+  scored: number
+  error?: string
+}
+
+export async function pollChartinkScanLinkNow(token: string, id: string): Promise<ChartinkPollResult> {
+  const res = await fetch(`${BASE}/api/v1/chartink/scan-links/${id}/poll-now`, {
+    method: 'POST',
+    headers: authHeaders(token),
+  })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to poll scan link')
+  }
+  return res.json()
+}
+
+export type ChartinkCompareResult = {
+  scan_name: string
+  latest_received_at: string | null
+  previous_received_at: string | null
+  new: ChartinkCandidate[]
+  persistent: ChartinkCandidate[]
+  dropped: ChartinkCandidate[]
+}
+
+export async function compareChartinkBatches(token: string, scanName: string): Promise<ChartinkCompareResult> {
+  const res = await fetch(
+    `${BASE}/api/v1/chartink/compare?scan_name=${encodeURIComponent(scanName)}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) throw new Error('Failed to compare scan batches')
   return res.json()
 }
 

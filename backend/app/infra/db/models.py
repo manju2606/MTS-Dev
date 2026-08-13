@@ -9,6 +9,7 @@ from app.domain.models.ai_signal import AISignal
 from app.domain.models.alert import Alert
 from app.domain.models.api_key import ApiKey
 from app.domain.models.chartink_candidate import ChartinkCandidate
+from app.domain.models.chartink_scan_link import ChartinkScanLink
 from app.domain.models.chartink_scoring_config import ChartinkScoringConfig
 from app.domain.models.trade import Trade, TradeMode, TradeSignal, TradeStatus
 from app.domain.models.user import SubscriptionTier, User, UserRole
@@ -408,6 +409,9 @@ class ChartinkCandidateORM(Base):
     rsi: Mapped[float] = mapped_column(Float, nullable=False)
     adx: Mapped[float] = mapped_column(Float, nullable=False)
     volume_ratio: Mapped[float] = mapped_column(Float, nullable=False)
+    batch_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), nullable=True, index=True
+    )
     received_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, index=True
     )
@@ -429,6 +433,7 @@ class ChartinkCandidateORM(Base):
             rsi=self.rsi,
             adx=self.adx,
             volume_ratio=self.volume_ratio,
+            batch_id=self.batch_id,
             received_at=self.received_at,
         )
 
@@ -450,6 +455,7 @@ class ChartinkCandidateORM(Base):
             rsi=c.rsi,
             adx=c.adx,
             volume_ratio=c.volume_ratio,
+            batch_id=c.batch_id,
             received_at=c.received_at,
         )
 
@@ -535,4 +541,50 @@ class ChartinkScoringConfigORM(Base):
             atr_min_pct=c.atr_min_pct,
             atr_max_pct=c.atr_max_pct,
             atr_target_multiplier=c.atr_target_multiplier,
+        )
+
+
+class ChartinkScanLinkORM(Base):
+    __tablename__ = "chartink_scan_links"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    scan_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    poll_interval_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    scan_clause: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_polled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_poll_status: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    last_poll_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    def to_domain(self) -> ChartinkScanLink:
+        return ChartinkScanLink(
+            id=self.id,
+            scan_name=self.scan_name,
+            url=self.url,
+            poll_interval_minutes=self.poll_interval_minutes,
+            enabled=self.enabled,
+            scan_clause=self.scan_clause,
+            last_polled_at=self.last_polled_at,
+            last_poll_status=self.last_poll_status,
+            last_poll_count=self.last_poll_count,
+            created_at=self.created_at,
+        )
+
+    @classmethod
+    def from_domain(cls, s: ChartinkScanLink) -> "ChartinkScanLinkORM":
+        return cls(
+            id=s.id,
+            scan_name=s.scan_name,
+            url=s.url,
+            poll_interval_minutes=s.poll_interval_minutes,
+            enabled=s.enabled,
+            scan_clause=s.scan_clause,
+            last_polled_at=s.last_polled_at,
+            last_poll_status=s.last_poll_status,
+            last_poll_count=s.last_poll_count,
+            created_at=s.created_at,
         )

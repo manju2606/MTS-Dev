@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timedelta, timezone
 from functools import partial
+from uuid import uuid4
 
 import structlog
 
@@ -172,6 +173,13 @@ async def process_chartink_alert(
     async with AsyncSessionLocal() as cfg_session:
         cfg = await SQLChartinkScoringConfigRepository(cfg_session).get()
 
+    # One id shared by every candidate this call saves -- see
+    # ChartinkCandidate.batch_id's docstring for why received_at can't be
+    # used to group a batch instead. Used by chartink_repo's
+    # compare_latest_batches() (Part 3: new/persistent/dropped vs. the
+    # previous batch for this scan_name).
+    batch_id = uuid4()
+
     candidates: list[ChartinkCandidate] = []
     for c in technicals:
         try:
@@ -193,6 +201,7 @@ async def process_chartink_alert(
                     risk_reward_ratio=rr,
                     holding_period="1-3 days",
                     explanation=explanation,
+                    batch_id=batch_id,
                     rsi=round(c["rsi"], 1),
                     adx=round(adx, 1),
                     volume_ratio=round(c["volume_ratio"], 2),

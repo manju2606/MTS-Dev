@@ -8,7 +8,7 @@ one of the core Phase-1/2 entities that interface abstracts over.
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.models.chartink_candidate import ChartinkCandidate
@@ -56,3 +56,59 @@ class SQLChartinkCandidateRepository:
         )
         row = result.scalar_one_or_none()
         return row.to_domain() if row else None
+
+    async def get_latest_two_batches(
+        self, scan_name: str
+    ) -> tuple[list[ChartinkCandidate], list[ChartinkCandidate]]:
+        """(latest_batch, previous_batch) for a scan_name, each a full list
+        of candidates -- grouped by batch_id, not received_at (see
+        ChartinkCandidate.batch_id's docstring for why). Either list is
+        empty if there haven't been that many batches yet."""
+        batch_order = (
+            select(
+                ChartinkCandidateORM.batch_id,
+                func.min(ChartinkCandidateORM.received_at).label("batch_time"),
+            )
+            .where(
+                ChartinkCandidateORM.scan_name == scan_name,
+                ChartinkCandidateORM.batch_id.is_not(None),
+            )
+            .group_by(ChartinkCandidateORM.batch_id)
+            .order_by(func.min(ChartinkCandidateORM.received_at).desc())
+            .limit(2)
+        )
+        batch_result = await self._session.execute(batch_order)
+        batch_ids = [row.batch_id for row in batch_result]
+
+        batches: list[list[ChartinkCandidate]] = []
+        for batch_id in batch_ids:
+            result = await self._session.execute(
+                select(ChartinkCandidateORM).where(ChartinkCandidateORM.batch_id == batch_id)
+            )
+            batches.append([row.to_domain() for row in result.scalars()])
+
+        latest = batches[0] if len(batches) > 0 else []
+        previous = batches[1] if len(batches) > 1 else []
+        return latest, previous
+
+    async def compare_latest_batches(self, scan_name: str) -> dict:
+        """Part 3 (Comparison Logic): diff the two most recent scan-alert
+        batches for scan_name by symbol -- new (in latest, not previous),
+        persistent (in both), dropped (in previous, not latest)."""
+        latest, previous = await self.get_latest_two_batches(scan_name)
+        latest_by_symbol = {c.symbol: c for c in latest}
+        previous_symbols = {c.symbol for c in previous}
+        latest_symbols = set(latest_by_symbol)
+
+        new = [latest_by_symbol[s] for s in latest_symbols - previous_symbols]
+        persistent = [latest_by_symbol[s] for s in latest_symbols & previous_symbols]
+        dropped = [c for c in previous if c.symbol not in latest_symbols]
+
+        return {
+            "scan_name": scan_name,
+            "latest_received_at": latest[0].received_at.isoformat() if latest else None,
+            "previous_received_at": previous[0].received_at.isoformat() if previous else None,
+            "new": new,
+            "persistent": persistent,
+            "dropped": dropped,
+        }

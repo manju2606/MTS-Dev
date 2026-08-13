@@ -85,6 +85,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/market-pulse', label: 'Market Pulse',  icon: 'activity',  desc: 'Live prices, indices & news' },
       { href: '/scanner',      label: 'Scanner',       icon: 'search',    desc: '16 technical & institutional scans' },
       { href: '/chartink',     label: 'Chartink',      icon: 'activity',  desc: 'Scan-alert candidates scored by RSI/ADX/volume/MACD · entry/SL/target' },
+      { href: '/chartink/scanner', label: 'Chartink Scanner', icon: 'clock', desc: 'Poll a Chartink scan link on a schedule · compare new/persistent/dropped stocks across runs' },
       { href: '/research',     label: 'Research',      icon: 'cpu',       desc: 'AI-powered stock screener' },
       { href: '/ai',           label: 'AI Analysis',   icon: 'sparkles',  desc: 'Signal generation & history' },
       { href: '/ml',           label: 'ML Signals',    icon: 'cpu',       desc: 'Machine learning predictions' },

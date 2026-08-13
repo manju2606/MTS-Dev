@@ -464,6 +464,42 @@ async def _run_mcx_prediction_check() -> None:
         log.error("scheduler.mcx_prediction.error", error=str(exc))
 
 
+async def _run_chartink_scan_link_poll() -> None:
+    """Every 5 min, 09:00-15:30 IST weekdays (NSE cash session): poll every
+    enabled ChartinkScanLink whose own poll_interval_minutes has elapsed --
+    the "pull" half of the Chartink integration, alongside the webhook's
+    "push" half. One bad link (dead URL, stale scan_clause) can't take the
+    others down with it -- poll_scan_link() catches its own errors and
+    records them on the link (last_poll_status), same as the per-contract
+    try/except in _run_mcx_prediction_check above."""
+    try:
+        from app.infra.db.repositories.chartink_scan_link_repo import (
+            SQLChartinkScanLinkRepository,
+        )
+        from app.infra.db.session import AsyncSessionLocal
+        from app.services.chartink_poll_service import is_due, poll_scan_link
+
+        async with AsyncSessionLocal() as session:
+            links = await SQLChartinkScanLinkRepository(session).list_enabled()
+
+        due = [link for link in links if is_due(link)]
+        polled = 0
+        for link in due:
+            try:
+                await poll_scan_link(link)
+                polled += 1
+            except Exception as exc:
+                log.warning(
+                    "scheduler.chartink_scan_link.error",
+                    scan_name=link.scan_name,
+                    error=str(exc),
+                )
+            await asyncio.sleep(0)
+        log.info("scheduler.chartink_scan_link.done", checked=len(links), polled=polled)
+    except Exception as exc:
+        log.error("scheduler.chartink_scan_link.error", error=str(exc))
+
+
 async def _run_mcx_candle_collect() -> None:
     """Every 5 min, 09:00-23:30 IST weekdays: persist closed 5-minute OHLCV
     candles for every tracked NG + Metals contract to Mongo (mcx_candles).
@@ -1508,6 +1544,24 @@ def start_scheduler() -> None:
         ),
         id="mcx_prediction_check",
         name="MCX — Prediction Generation + Accuracy Resolution",
+        max_instances=1,
+        misfire_grace_time=180,
+    )
+
+    # Chartink scan-link poll check every 5 min, NSE cash session (same
+    # window as the discovery scan above) -- the "pull" half of the
+    # Chartink integration. Ticks every 5 min but only actually polls a
+    # given link once its own poll_interval_minutes has elapsed (see
+    # chartink_poll_service.is_due()), same "tick often, act on what's
+    # due" shape as the MCX prediction check just above.
+    _scheduler.add_job(
+        _run_chartink_scan_link_poll,
+        CronTrigger(
+            day_of_week="mon-fri", hour="9-15", minute="*/5", second=20,
+            timezone="Asia/Kolkata",
+        ),
+        id="chartink_scan_link_poll",
+        name="Chartink — Scan Link Poll",
         max_instances=1,
         misfire_grace_time=180,
     )

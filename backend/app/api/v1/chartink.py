@@ -8,15 +8,32 @@ scoring pipeline this triggers.
 """
 
 from dataclasses import asdict
+from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from app.api.deps import CurrentUser, DBSession, require_role
 from app.domain.models.chartink_candidate import ChartinkCandidate
+from app.domain.models.chartink_scan_link import ChartinkScanLink
 from app.domain.models.user import UserRole
 
 router = APIRouter(prefix="/chartink", tags=["chartink"])
+
+
+class CreateScanLinkRequest(BaseModel):
+    scan_name: str = Field(min_length=1, max_length=255)
+    url: str = Field(min_length=1, max_length=1000)
+    poll_interval_minutes: int = Field(default=60, ge=5, le=1440)
+    scan_clause: str | None = None
+
+
+class UpdateScanLinkRequest(BaseModel):
+    scan_name: str | None = Field(default=None, min_length=1, max_length=255)
+    url: str | None = Field(default=None, min_length=1, max_length=1000)
+    poll_interval_minutes: int | None = Field(default=None, ge=5, le=1440)
+    enabled: bool | None = None
+    scan_clause: str | None = None
 
 
 class UpdateChartinkScoringConfigRequest(BaseModel):
@@ -94,7 +111,23 @@ def _candidate_dict(c: ChartinkCandidate) -> dict:
         "rsi": c.rsi,
         "adx": c.adx,
         "volume_ratio": c.volume_ratio,
+        "batch_id": str(c.batch_id) if c.batch_id else None,
         "received_at": c.received_at.isoformat(),
+    }
+
+
+def _scan_link_dict(link: ChartinkScanLink) -> dict:
+    return {
+        "id": str(link.id),
+        "scan_name": link.scan_name,
+        "url": link.url,
+        "poll_interval_minutes": link.poll_interval_minutes,
+        "enabled": link.enabled,
+        "scan_clause": link.scan_clause,
+        "last_polled_at": link.last_polled_at.isoformat() if link.last_polled_at else None,
+        "last_poll_status": link.last_poll_status,
+        "last_poll_count": link.last_poll_count,
+        "created_at": link.created_at.isoformat(),
     }
 
 
@@ -222,3 +255,106 @@ async def preview_scoring_config(body: PreviewScoreRequest, current_user: Curren
         return await preview_score(symbol, cfg)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+# ── Scan-link poller (the "pull" half, alongside the webhook) ───────────────
+
+
+@router.get("/scan-links")
+async def list_scan_links(current_user: CurrentUser, db: DBSession) -> list[dict]:
+    from app.infra.db.repositories.chartink_scan_link_repo import (
+        SQLChartinkScanLinkRepository,
+    )
+
+    repo = SQLChartinkScanLinkRepository(db)
+    links = await repo.list_all()
+    return [_scan_link_dict(link) for link in links]
+
+
+@router.post("/scan-links", dependencies=[Depends(require_role(UserRole.ADMIN))])
+async def create_scan_link(
+    body: CreateScanLinkRequest, current_user: CurrentUser, db: DBSession
+) -> dict:
+    from app.infra.db.repositories.chartink_scan_link_repo import (
+        SQLChartinkScanLinkRepository,
+    )
+
+    link = ChartinkScanLink(
+        scan_name=body.scan_name,
+        url=body.url,
+        poll_interval_minutes=body.poll_interval_minutes,
+        scan_clause=body.scan_clause,
+    )
+    repo = SQLChartinkScanLinkRepository(db)
+    created = await repo.create(link)
+    return _scan_link_dict(created)
+
+
+@router.patch("/scan-links/{link_id}", dependencies=[Depends(require_role(UserRole.ADMIN))])
+async def update_scan_link(
+    link_id: UUID, body: UpdateScanLinkRequest, current_user: CurrentUser, db: DBSession
+) -> dict:
+    from app.infra.db.repositories.chartink_scan_link_repo import (
+        SQLChartinkScanLinkRepository,
+    )
+
+    patch = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not patch:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
+
+    repo = SQLChartinkScanLinkRepository(db)
+    updated = await repo.update(link_id, patch)
+    if updated is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan link not found")
+    return _scan_link_dict(updated)
+
+
+@router.delete("/scan-links/{link_id}", dependencies=[Depends(require_role(UserRole.ADMIN))])
+async def delete_scan_link(link_id: UUID, current_user: CurrentUser, db: DBSession) -> dict:
+    from app.infra.db.repositories.chartink_scan_link_repo import (
+        SQLChartinkScanLinkRepository,
+    )
+
+    repo = SQLChartinkScanLinkRepository(db)
+    deleted = await repo.delete(link_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan link not found")
+    return {"deleted": True}
+
+
+@router.post(
+    "/scan-links/{link_id}/poll-now", dependencies=[Depends(require_role(UserRole.ADMIN))]
+)
+async def poll_scan_link_now(link_id: UUID, current_user: CurrentUser, db: DBSession) -> dict:
+    """Manually run one scan link right now, regardless of its
+    poll_interval_minutes schedule -- the "Run Now" workflow."""
+    from app.infra.db.repositories.chartink_scan_link_repo import (
+        SQLChartinkScanLinkRepository,
+    )
+    from app.services.chartink_poll_service import poll_scan_link
+
+    repo = SQLChartinkScanLinkRepository(db)
+    link = await repo.get_by_id(link_id)
+    if link is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan link not found")
+
+    return await poll_scan_link(link)
+
+
+@router.get("/compare")
+async def compare_scan_batches(
+    current_user: CurrentUser, db: DBSession, scan_name: str = Query(...)
+) -> dict:
+    """Part 3 (Comparison Logic): new/persistent/dropped candidates
+    between this scan_name's two most recent batches (webhook delivery or
+    scan-link poll -- either way, same chartink_candidates table)."""
+    from app.infra.db.repositories.chartink_repo import SQLChartinkCandidateRepository
+
+    repo = SQLChartinkCandidateRepository(db)
+    result = await repo.compare_latest_batches(scan_name)
+    return {
+        **result,
+        "new": [_candidate_dict(c) for c in result["new"]],
+        "persistent": [_candidate_dict(c) for c in result["persistent"]],
+        "dropped": [_candidate_dict(c) for c in result["dropped"]],
+    }

@@ -33,6 +33,34 @@ class McxPredictionRepository:
     def _recal_col(self) -> motor.motor_asyncio.AsyncIOMotorCollection:  # type: ignore[type-arg]
         return _get_db()["mcx_recalibrations"]
 
+    async def ensure_indexes(self) -> None:
+        """mcx_predictions had *no* index beyond the default _id -- every
+        query here (get_soonest_pending's sort, resolve_pending's find/
+        update_many, get_accuracy_stats) was a full collection scan. Seen in
+        prod: with the collection grown into the hundreds of thousands of
+        documents (predictions are never deleted, see get_by_date_range),
+        that alone was enough to pin MongoDB's CPU and starve the whole
+        droplet of memory. A basic count query went from 20s+ timeout to
+        under a second once this index existed."""
+        await self._col.create_index(
+            [
+                ("user_id", 1),
+                ("contract", 1),
+                ("period", 1),
+                ("predicted_time", 1),
+            ],
+            unique=True,
+        )
+        await self._col.create_index(
+            [
+                ("user_id", 1),
+                ("contract", 1),
+                ("period", 1),
+                ("resolved", 1),
+                ("predicted_time", 1),
+            ]
+        )
+
     async def save_predictions(
         self, user_id: str, contract: str, period: str, predictions: list[dict]
     ) -> None:
@@ -93,12 +121,28 @@ class McxPredictionRepository:
         candle). Pass the caller's own bucket width so a bucket only ever
         matches a candle that's genuinely "close enough", never reaching
         into a neighboring bucket's candle."""
+        base_query = {
+            "user_id": user_id,
+            "contract": contract.upper(),
+            "period": period,
+            "resolved": False,
+        }
+        expire_cutoff = int((datetime.utcnow() - self._EXPIRE_AFTER).timestamp())
+
+        # Bulk-expire anything already past _EXPIRE_AFTER in one round trip
+        # *before* the per-document loop below -- a backlog that built up
+        # while this was still exact-match-only (seen in prod: thousands of
+        # docs stuck behind an overnight market-closed gap) would otherwise
+        # mean thousands of individual update_one calls every single time
+        # this runs, on every 5-min scheduler tick, for every contract.
+        await self._col.update_many(
+            {**base_query, "predicted_time": {"$lt": expire_cutoff}},
+            {"$set": {"resolved": True, "expired": True, "resolved_at": datetime.utcnow()}},
+        )
+
         by_time = {c["time"]: c for c in candles}
         sorted_times = sorted(by_time) if tolerance_seconds else []
-        cursor = self._col.find(
-            {"user_id": user_id, "contract": contract.upper(), "period": period, "resolved": False}
-        )
-        expire_cutoff = int((datetime.utcnow() - self._EXPIRE_AFTER).timestamp())
+        cursor = self._col.find(base_query)
         async for doc in cursor:
             actual = by_time.get(doc["predicted_time"])
             if actual is None and tolerance_seconds and sorted_times:
@@ -106,17 +150,6 @@ class McxPredictionRepository:
                     by_time, sorted_times, doc["predicted_time"], tolerance_seconds
                 )
             if actual is None:
-                if doc["predicted_time"] < expire_cutoff:
-                    await self._col.update_one(
-                        {"_id": doc["_id"]},
-                        {
-                            "$set": {
-                                "resolved": True,
-                                "expired": True,
-                                "resolved_at": datetime.utcnow(),
-                            }
-                        },
-                    )
                 continue
             actual_close = float(actual["close"])
             hit = doc["lower"] <= actual_close <= doc["upper"]
@@ -230,6 +263,17 @@ class McxPredictionRepository:
         docs.reverse()
         return docs
 
+    # A still-unresolved prediction older than this is treated as if it
+    # doesn't exist for "soonest pending" purposes -- e.g. a bucket
+    # generated for a slot the market was closed for (seen in prod: a
+    # 1-minute bucket sitting unresolved for 9.5+ hours across an overnight
+    # NG trading halt) will never get a real candle to match against.
+    # resolve_pending()'s _EXPIRE_AFTER (1 day) eventually marks these
+    # resolved=true in the DB too, but that only runs as a side effect of
+    # get_prediction() -- this filter makes the dashboard stop surfacing
+    # them as "the current prediction" immediately, without waiting on that.
+    _SOONEST_PENDING_MAX_AGE = timedelta(hours=1)
+
     async def get_soonest_pending(self, user_id: str, contract: str, period: str) -> dict | None:
         """Nearest still-unresolved predicted bucket for (contract, period) --
         a plain read of whatever the 5-min mcx_prediction_check /
@@ -239,11 +283,13 @@ class McxPredictionRepository:
         live historical-candle fetch per call -- fine for one contract's
         Prediction tab, too slow against Kite's historical-data rate limit
         once you're covering many contracts on one page."""
+        min_time = int((datetime.utcnow() - self._SOONEST_PENDING_MAX_AGE).timestamp())
         query = {
             "user_id": user_id,
             "contract": contract.upper(),
             "period": period,
             "resolved": False,
+            "predicted_time": {"$gte": min_time},
         }
         return await self._col.find_one(query, {"_id": 0}, sort=[("predicted_time", 1)])
 

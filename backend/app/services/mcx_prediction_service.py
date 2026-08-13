@@ -347,6 +347,7 @@ async def _sync_recalibrate_other_periods(
 async def get_prediction(
     user_id: str, contract: str, period: str, repo: McxPredictionRepository
 ) -> dict:
+    await repo.ensure_indexes()
     is_calendar = period in CALENDAR_PERIODS
     if is_calendar:
         # "1Y" requests the longest lookback mcx_service._HISTORY_PERIOD_MAP

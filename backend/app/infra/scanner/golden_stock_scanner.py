@@ -170,17 +170,23 @@ def fetch_technicals(symbols: list[str]) -> list[dict]:
         return []
 
     candidates: list[dict] = []
-    single_sym = len(symbols) == 1
+    # yfinance's column shape for group_by="ticker" isn't reliably keyed off
+    # len(symbols) == 1 -- a single-ticker download can still come back with
+    # a MultiIndex (ticker as the outer level), same as multi-ticker ones,
+    # depending on version/inputs. Check the actual frame instead of
+    # assuming: this is what fetch_technicals(['ONE_SYMBOL']) needs (see
+    # chartink_signal_service.preview_score, the first single-symbol caller).
+    is_multi = isinstance(raw.columns, pd.MultiIndex)
 
     for sym in symbols:
         try:
-            if single_sym:
-                df = raw
-            else:
+            if is_multi:
                 try:
                     df = raw[sym]
                 except KeyError:
                     continue
+            else:
+                df = raw
 
             if df is None or df.empty:
                 continue

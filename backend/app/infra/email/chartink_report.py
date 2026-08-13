@@ -105,3 +105,60 @@ def chartink_alert_html(
 </div>
 </body>
 </html>"""
+
+
+def chartink_breakout_html(scan_name: str, symbols: list[str]) -> str:
+    """Sent once per symbol-streak when it crosses 3 consecutive scan
+    batches -- see chartink_signal_service._record_and_alert_breakouts().
+    Deliberately separate from chartink_alert_html's per-batch table: this
+    is a distinct, rarer, higher-signal event, not another row in the
+    regular batch alert."""
+    rows = "".join(
+        f"""
+    <tr style="border-bottom:1px solid #f3f4f6;">
+      <td style="padding:10px 8px;font-size:14px;font-weight:800;color:#111827;">
+        {sym.replace('.NS', '').replace('.BO', '')}
+      </td>
+      <td style="padding:10px 8px;font-size:12px;color:#6b7280;">3 consecutive scans</td>
+    </tr>"""
+        for sym in symbols
+    )
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Chartink Breakout — {scan_name}</title>
+</head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:Arial,Helvetica,sans-serif;">
+
+<div style="max-width:560px;margin:24px auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+
+  <!-- Header -->
+  <div style="background:linear-gradient(135deg,#dc2626,#b91c1c);padding:28px 32px;">
+    <p style="margin:0;font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:rgba(255,255,255,0.75);">Manju Trade AI Pro</p>
+    <h1 style="margin:6px 0 0;font-size:22px;font-weight:800;color:#fff;">\U0001f6a8 Breakout Alert — {scan_name}</h1>
+    <p style="margin:4px 0 0;color:rgba(255,255,255,0.85);font-size:13px;">
+      {len(symbols)} stock(s) have now appeared in this scan 3 times in a row — breakout possible.
+    </p>
+  </div>
+
+  <div style="padding:20px 32px 4px;">
+    <table style="width:100%;border-collapse:collapse;">
+      <tbody>{rows}</tbody>
+    </table>
+  </div>
+
+  <!-- Disclaimer -->
+  <div style="padding:16px 32px 24px;border-top:1px solid #f3f4f6;">
+    <p style="margin:0;font-size:10px;color:#9ca3af;line-height:1.6;">
+      Not financial advice. Repeated scan appearances reflect this scan's own technical condition holding
+      across 3 consecutive checks, not a guarantee of any price move -- always verify with your own research.
+      See the Chartink Scanner page's breakout list for live price and P&amp;L on every flagged stock.
+    </p>
+  </div>
+
+</div>
+</body>
+</html>"""

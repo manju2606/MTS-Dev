@@ -57,13 +57,13 @@ class SQLChartinkCandidateRepository:
         row = result.scalar_one_or_none()
         return row.to_domain() if row else None
 
-    async def get_latest_two_batches(
-        self, scan_name: str
-    ) -> tuple[list[ChartinkCandidate], list[ChartinkCandidate]]:
-        """(latest_batch, previous_batch) for a scan_name, each a full list
-        of candidates -- grouped by batch_id, not received_at (see
-        ChartinkCandidate.batch_id's docstring for why). Either list is
-        empty if there haven't been that many batches yet."""
+    async def get_last_n_batches(
+        self, scan_name: str, n: int
+    ) -> list[list[ChartinkCandidate]]:
+        """Up to the last n batches for a scan_name, most-recent-first, each
+        a full list of candidates -- grouped by batch_id, not received_at
+        (see ChartinkCandidate.batch_id's docstring for why). Fewer than n
+        lists come back if there isn't that much history yet."""
         batch_order = (
             select(
                 ChartinkCandidateORM.batch_id,
@@ -75,7 +75,7 @@ class SQLChartinkCandidateRepository:
             )
             .group_by(ChartinkCandidateORM.batch_id)
             .order_by(func.min(ChartinkCandidateORM.received_at).desc())
-            .limit(2)
+            .limit(n)
         )
         batch_result = await self._session.execute(batch_order)
         batch_ids = [row.batch_id for row in batch_result]
@@ -86,10 +86,48 @@ class SQLChartinkCandidateRepository:
                 select(ChartinkCandidateORM).where(ChartinkCandidateORM.batch_id == batch_id)
             )
             batches.append([row.to_domain() for row in result.scalars()])
+        return batches
 
+    async def get_latest_two_batches(
+        self, scan_name: str
+    ) -> tuple[list[ChartinkCandidate], list[ChartinkCandidate]]:
+        """(latest_batch, previous_batch) for a scan_name -- either list is
+        empty if there haven't been that many batches yet."""
+        batches = await self.get_last_n_batches(scan_name, 2)
         latest = batches[0] if len(batches) > 0 else []
         previous = batches[1] if len(batches) > 1 else []
         return latest, previous
+
+    async def detect_new_breakouts(self, scan_name: str, streak_threshold: int = 3) -> list[str]:
+        """Symbols whose consecutive-batch streak *just* reached
+        streak_threshold as of the latest batch -- i.e. present in each of
+        the last streak_threshold batches, but either there's no batch
+        before that window or the symbol wasn't in it. That "just crossed"
+        framing (as opposed to "present in the last N batches", which
+        would also match every later poll once a streak is already past
+        the threshold) is what keeps this a one-time event per streak
+        instead of re-firing on every subsequent appearance."""
+        batches = await self.get_last_n_batches(scan_name, streak_threshold + 1)
+        if len(batches) < streak_threshold:
+            return []
+
+        batch_symbol_sets = [{c.symbol for c in batch} for batch in batches]
+        latest_symbols = batch_symbol_sets[0]
+
+        breakouts = []
+        for symbol in latest_symbols:
+            in_window = all(symbol in batch_symbol_sets[i] for i in range(streak_threshold))
+            if not in_window:
+                continue
+            # No (streak_threshold+1)-th batch to check against means the
+            # streak can't be longer than streak_threshold anyway.
+            already_longer = (
+                len(batch_symbol_sets) > streak_threshold
+                and symbol in batch_symbol_sets[streak_threshold]
+            )
+            if not already_longer:
+                breakouts.append(symbol)
+        return breakouts
 
     async def compare_latest_batches(self, scan_name: str) -> dict:
         """Part 3 (Comparison Logic): diff the two most recent scan-alert

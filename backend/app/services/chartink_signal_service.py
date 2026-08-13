@@ -26,6 +26,7 @@ from uuid import uuid4
 
 import structlog
 
+from app.domain.models.chartink_breakout_alert import ChartinkBreakoutAlert
 from app.domain.models.chartink_candidate import ChartinkCandidate
 from app.domain.models.chartink_scoring_config import ChartinkScoringConfig
 from app.infra.scanner.golden_stock_scanner import (
@@ -216,6 +217,7 @@ async def process_chartink_alert(
     async with AsyncSessionLocal() as session:
         repo = SQLChartinkCandidateRepository(session)
         await repo.save_many(candidates)
+        breakout_symbols = await repo.detect_new_breakouts(scan_name)
 
     log.info(
         "chartink_signal.processed",
@@ -225,7 +227,37 @@ async def process_chartink_alert(
     )
 
     await _send_alert_email(scan_name, candidates, triggered_at)
+    if breakout_symbols:
+        await _record_and_alert_breakouts(scan_name, breakout_symbols)
     return candidates
+
+
+async def _record_and_alert_breakouts(scan_name: str, symbols: list[str]) -> None:
+    """Part 5 (Alerts): a symbol just crossed the 3-consecutive-batch
+    streak threshold (see chartink_repo.detect_new_breakouts) -- persist
+    one ChartinkBreakoutAlert per symbol and send a dedicated breakout
+    email, separate from the regular per-batch alert every candidate
+    already gets via _send_alert_email."""
+    from app.infra.db.repositories.chartink_breakout_repo import (
+        SQLChartinkBreakoutAlertRepository,
+    )
+    from app.infra.db.session import AsyncSessionLocal
+
+    appeared_date = datetime.now(IST).strftime("%Y-%m-%d")
+    async with AsyncSessionLocal() as session:
+        repo = SQLChartinkBreakoutAlertRepository(session)
+        for symbol in symbols:
+            await repo.create(
+                ChartinkBreakoutAlert(
+                    scan_name=scan_name,
+                    symbol=symbol,
+                    appeared_date=appeared_date,
+                    streak_count=3,
+                )
+            )
+
+    log.info("chartink_signal.breakout_detected", scan_name=scan_name, symbols=symbols)
+    await _send_breakout_email(scan_name, symbols)
 
 
 async def _get_recipients() -> list[str]:
@@ -257,3 +289,115 @@ async def _send_alert_email(
             await send_email(to=to, subject=subject, html=html)
         except Exception as exc:
             log.warning("chartink_signal.email.failed", to=to, error=str(exc))
+
+
+async def _send_breakout_email(scan_name: str, symbols: list[str]) -> None:
+    from app.infra.email.chartink_report import chartink_breakout_html
+    from app.infra.email.client import send_email
+
+    recipients = await _get_recipients()
+    if not recipients:
+        log.warning("chartink_signal.breakout_email.no_recipients")
+        return
+
+    html = chartink_breakout_html(scan_name, symbols)
+    today = datetime.now(IST).strftime("%Y-%m-%d")
+    subject = f"\U0001f6a8 Breakout: {scan_name} · {len(symbols)} stock(s) 3x in a row · {today}"
+    for to in recipients:
+        try:
+            await send_email(to=to, subject=subject, html=html)
+        except Exception as exc:
+            log.warning("chartink_signal.breakout_email.failed", to=to, error=str(exc))
+
+
+# Trading-day offsets for "a week ago"/"a month ago", same convention
+# portfolio_ohlc_service.py uses for the identical weekly/monthly change
+# figures on portfolio holdings.
+_WEEK_MONTH_LOOKBACK = {"week": 5, "month": 21}
+
+
+async def get_breakout_watchlist(limit: int = 100) -> list[dict]:
+    """The "separate list" of breakout-flagged stocks -- each
+    ChartinkBreakoutAlert enriched with a live LTP/change/%change/weekly/
+    monthly P&L, computed fresh on every read the same way
+    portfolio_ohlc_service.compute_portfolio_ohlc() does for holdings,
+    rather than freezing prices at alert time and letting them go stale."""
+    import pandas as pd
+    import yfinance as yf
+
+    from app.infra.db.repositories.chartink_breakout_repo import (
+        SQLChartinkBreakoutAlertRepository,
+    )
+    from app.infra.db.session import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as session:
+        alerts = await SQLChartinkBreakoutAlertRepository(session).list_recent(limit)
+    if not alerts:
+        return []
+
+    symbols = sorted({a.symbol for a in alerts})
+    try:
+        raw = yf.download(symbols, period="2mo", auto_adjust=True, progress=False)
+    except Exception as exc:
+        log.warning("chartink_signal.breakout_watchlist.download_error", error=str(exc))
+        raw = None
+
+    is_multi = raw is not None and isinstance(raw.columns, pd.MultiIndex)
+
+    def _field(field: str, sym: str) -> pd.Series | None:
+        if raw is None or raw.empty:
+            return None
+        if is_multi:
+            if (field, sym) not in raw.columns:
+                return None
+            return raw[(field, sym)].dropna()
+        if field not in raw.columns:
+            return None
+        return raw[field].dropna()
+
+    def _at(series: pd.Series | None, offset: int) -> float | None:
+        if series is None or len(series) == 0:
+            return None
+        j = -1 - offset
+        if -j > len(series):
+            return None
+        return float(series.iloc[j])
+
+    rows = []
+    for alert in alerts:
+        close = _field("Close", alert.symbol)
+        c_now = _at(close, 0)
+        c_prev = _at(close, 1)
+        change = round(c_now - c_prev, 2) if c_now is not None and c_prev else None
+        change_pct = round(change / c_prev * 100, 2) if change is not None and c_prev else None
+
+        week_ago = _at(close, _WEEK_MONTH_LOOKBACK["week"])
+        month_ago = _at(close, _WEEK_MONTH_LOOKBACK["month"])
+        weekly_pnl_pct = (
+            round((c_now - week_ago) / week_ago * 100, 2)
+            if c_now is not None and week_ago
+            else None
+        )
+        monthly_pnl_pct = (
+            round((c_now - month_ago) / month_ago * 100, 2)
+            if c_now is not None and month_ago
+            else None
+        )
+
+        rows.append(
+            {
+                "id": str(alert.id),
+                "scan_name": alert.scan_name,
+                "symbol": alert.symbol,
+                "appeared_date": alert.appeared_date,
+                "streak_count": alert.streak_count,
+                "ltp": round(c_now, 2) if c_now is not None else None,
+                "change": change,
+                "change_pct": change_pct,
+                "day_pnl_pct": change_pct,
+                "week_pnl_pct": weekly_pnl_pct,
+                "month_pnl_pct": monthly_pnl_pct,
+                "created_at": alert.created_at.isoformat(),
+            }
+        )
+    return rows

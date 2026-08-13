@@ -1246,6 +1246,32 @@ export async function compareChartinkBatches(token: string, scanName: string): P
   return res.json()
 }
 
+// ── Chartink breakout watchlist (3-in-a-row alerts) ─────────────────────────
+
+export type ChartinkBreakoutRow = {
+  id: string
+  scan_name: string
+  symbol: string
+  appeared_date: string
+  streak_count: number
+  ltp: number | null
+  change: number | null
+  change_pct: number | null
+  day_pnl_pct: number | null
+  week_pnl_pct: number | null
+  month_pnl_pct: number | null
+  created_at: string
+}
+
+export async function getChartinkBreakouts(token: string, limit = 100): Promise<ChartinkBreakoutRow[]> {
+  const res = await fetch(
+    `${BASE}/api/v1/chartink/breakouts?limit=${limit}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) throw new Error('Failed to fetch breakout watchlist')
+  return res.json()
+}
+
 // ── Legacy ──────────────────────────────────────────────────────────────────
 
 export async function seedDefaultWatchlist(token: string): Promise<{ added: number }> {

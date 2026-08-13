@@ -358,3 +358,16 @@ async def compare_scan_batches(
         "persistent": [_candidate_dict(c) for c in result["persistent"]],
         "dropped": [_candidate_dict(c) for c in result["dropped"]],
     }
+
+
+@router.get("/breakouts")
+async def list_breakouts(
+    current_user: CurrentUser,
+    limit: int = Query(default=100, ge=1, le=500),
+) -> list[dict]:
+    """Part 5 (Alerts): the "separate list" of stocks that have appeared in
+    a scan 3 times in a row, each enriched with a live LTP/change/day-week-
+    month P&L -- see chartink_signal_service.get_breakout_watchlist()."""
+    from app.services.chartink_signal_service import get_breakout_watchlist
+
+    return await get_breakout_watchlist(limit)

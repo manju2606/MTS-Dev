@@ -8,6 +8,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from app.domain.models.ai_signal import AISignal
 from app.domain.models.alert import Alert
 from app.domain.models.api_key import ApiKey
+from app.domain.models.chartink_breakout_alert import ChartinkBreakoutAlert
 from app.domain.models.chartink_candidate import ChartinkCandidate
 from app.domain.models.chartink_scan_link import ChartinkScanLink
 from app.domain.models.chartink_scoring_config import ChartinkScoringConfig
@@ -587,4 +588,38 @@ class ChartinkScanLinkORM(Base):
             last_poll_status=s.last_poll_status,
             last_poll_count=s.last_poll_count,
             created_at=s.created_at,
+        )
+
+
+class ChartinkBreakoutAlertORM(Base):
+    __tablename__ = "chartink_breakout_alerts"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    scan_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    appeared_date: Mapped[str] = mapped_column(String(10), nullable=False)
+    streak_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    def to_domain(self) -> ChartinkBreakoutAlert:
+        return ChartinkBreakoutAlert(
+            id=self.id,
+            scan_name=self.scan_name,
+            symbol=self.symbol,
+            appeared_date=self.appeared_date,
+            streak_count=self.streak_count,
+            created_at=self.created_at,
+        )
+
+    @classmethod
+    def from_domain(cls, a: ChartinkBreakoutAlert) -> "ChartinkBreakoutAlertORM":
+        return cls(
+            id=a.id,
+            scan_name=a.scan_name,
+            symbol=a.symbol,
+            appeared_date=a.appeared_date,
+            streak_count=a.streak_count,
+            created_at=a.created_at,
         )

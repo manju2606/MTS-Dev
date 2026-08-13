@@ -4,11 +4,11 @@ import { useRouter } from 'next/navigation'
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { NavBar } from '@/components/nav-bar'
 import {
-  compareChartinkBatches, createChartinkScanLink, deleteChartinkScanLink, getMe,
+  compareChartinkBatches, createChartinkScanLink, deleteChartinkScanLink, getChartinkBreakouts, getMe,
   listChartinkScanLinks, pollChartinkScanLinkNow, updateChartinkScanLink,
 } from '@/lib/api'
 import type {
-  ChartinkCandidate, ChartinkCompareResult, ChartinkScanLink, User,
+  ChartinkBreakoutRow, ChartinkCandidate, ChartinkCompareResult, ChartinkScanLink, User,
 } from '@/lib/api'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -455,6 +455,96 @@ function ComparisonSection({ token, scanNames }: { token: string; scanNames: str
   )
 }
 
+// ── Breakout watchlist (Part 5 alerts: 3-in-a-row) ──────────────────────────
+
+function pctCls(v: number | null) {
+  if (v === null) return 'text-zinc-400'
+  return v >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'
+}
+
+function fmtPct(v: number | null) {
+  if (v === null) return '—'
+  return `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`
+}
+
+function BreakoutWatchlist({ token }: { token: string }) {
+  const [rows, setRows] = useState<ChartinkBreakoutRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      setRows(await getChartinkBreakouts(token))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load breakout watchlist')
+    } finally {
+      setLoading(false)
+    }
+  }, [token])
+
+  useEffect(() => { load() }, [load])
+
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">🚨 Breakout Watchlist</h2>
+          <p className="text-[11px] text-zinc-400">
+            Stocks that appeared in a scan 3 times in a row — an email goes out the moment each streak crosses 3.
+          </p>
+        </div>
+        <button
+          onClick={load}
+          disabled={loading}
+          className="rounded-lg bg-zinc-700 px-3 py-2 text-xs font-semibold text-white hover:bg-zinc-600 disabled:opacity-60 dark:bg-zinc-600 dark:hover:bg-zinc-500"
+        >
+          {loading ? 'Refreshing…' : '↻ Refresh'}
+        </button>
+      </div>
+
+      {error && (
+        <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950 dark:text-red-300">{error}</p>
+      )}
+
+      {!loading && rows.length === 0 && !error ? (
+        <div className="rounded-2xl border border-dashed border-zinc-300 py-8 text-center dark:border-zinc-700">
+          <p className="text-2xl">🎯</p>
+          <p className="mt-2 text-sm font-medium text-zinc-600 dark:text-zinc-300">No breakouts yet</p>
+          <p className="mt-1 text-xs text-zinc-400">A stock lands here once it appears in the same scan 3 times in a row.</p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/50">
+                {['Stock', 'Scan', 'Appeared', 'LTP', 'Change', 'Day %', 'Week %', 'Month %'].map(h => (
+                  <th key={h} className="px-3 py-2.5 text-left font-semibold text-zinc-500 dark:text-zinc-400">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => (
+                <tr key={r.id} className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/30">
+                  <td className="px-3 py-2 font-bold text-zinc-800 dark:text-zinc-200">{r.symbol.replace(/\.(NS|BO)$/, '')}</td>
+                  <td className="px-3 py-2 text-zinc-500 dark:text-zinc-400">{r.scan_name}</td>
+                  <td className="px-3 py-2 text-zinc-500 dark:text-zinc-400">{r.appeared_date}</td>
+                  <td className="px-3 py-2 font-mono text-zinc-700 dark:text-zinc-300">{r.ltp !== null ? `₹${fmt(r.ltp)}` : '—'}</td>
+                  <td className={`px-3 py-2 font-mono ${pctCls(r.change)}`}>{r.change !== null ? r.change.toFixed(2) : '—'}</td>
+                  <td className={`px-3 py-2 font-mono ${pctCls(r.day_pnl_pct)}`}>{fmtPct(r.day_pnl_pct)}</td>
+                  <td className={`px-3 py-2 font-mono ${pctCls(r.week_pnl_pct)}`}>{fmtPct(r.week_pnl_pct)}</td>
+                  <td className={`px-3 py-2 font-mono ${pctCls(r.month_pnl_pct)}`}>{fmtPct(r.month_pnl_pct)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main view ─────────────────────────────────────────────────────────────────
 
 export function ChartinkScannerView() {
@@ -512,6 +602,8 @@ export function ChartinkScannerView() {
         )}
 
         <ComparisonSection token={tokenRef.current} scanNames={scanNames} />
+
+        <BreakoutWatchlist token={tokenRef.current} />
       </div>
     </div>
   )

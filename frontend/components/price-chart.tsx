@@ -134,6 +134,15 @@ function computeSmma(closes: number[], length: number): (number | null)[] {
 
 const HTF_EMA_LENGTH = 20
 
+// Shared between the chart series themselves and the legend swatches so
+// the two can never drift out of sync. SMMA13/MA HTF both land in the
+// red/green family per request -- MA HTF uses a darker green + dashed
+// style specifically so it doesn't read as "just another SMMA5" next to
+// it on screen.
+const SMMA5_COLOR = '#16a34a'
+const SMMA13_COLOR = '#dc2626'
+const HTF_COLOR = '#166534'
+
 // Auto-scales the higher timeframe relative to the chart's own selected
 // period: any intraday period (bucket < 1 day) gets a Daily HTF context
 // line; any daily-candle-or-slower period (1D and up all share an
@@ -226,6 +235,32 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
   const predictionKey = JSON.stringify(prediction ?? [])
   const indicatorsKey = JSON.stringify(indicators ?? [])
   const chartHeight = indicators && indicators.length > 0 ? 420 : 300
+
+  // Computed once here (not inside the chart-building effect below) so the
+  // color-swatch legend can read the exact same points the chart plots --
+  // e.g. it only lists "SMMA13" when there was actually enough data for
+  // that line to render, and shows the real HTF label ("Daily EMA20" vs.
+  // "Weekly EMA20"/a shorter effective length) rather than a static guess.
+  const smma5Points = useMemo(() => {
+    const closes = data.map(b => b.close)
+    const values = computeSmma(closes, 5)
+    return data
+      .map((b, i) => ({ time: b.time as UTCTimestamp, value: values[i] }))
+      .filter((p): p is { time: UTCTimestamp; value: number } => p.value != null)
+  }, [data])
+  const smma13Points = useMemo(() => {
+    const closes = data.map(b => b.close)
+    const values = computeSmma(closes, 13)
+    return data
+      .map((b, i) => ({ time: b.time as UTCTimestamp, value: values[i] }))
+      .filter((p): p is { time: UTCTimestamp; value: number } => p.value != null)
+  }, [data])
+  const htf = useMemo(
+    () => computeHtfMovingAverage(data, bucketSecondsMap[period] ?? 86400, HTF_EMA_LENGTH),
+    [data, period, bucketSecondsMap],
+  )
+  const showPredictionLegend = !!prediction && prediction.length > 0
+  const showLegend = showPredictionLegend || smma5Points.length > 0 || smma13Points.length > 0 || htf.points.length > 0
 
   // Shared by both the amber "actual price" ball (always at the current
   // bar's time) and the blue "predicted price" ball (at its own target
@@ -549,37 +584,28 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
 
         // SMMA5 / SMMA13 — fast/slow smoothed-moving-average pair on the
         // chart's own timeframe, plotted directly on the price pane like
-        // the AI prediction line above.
-        const closes = data.map(b => b.close)
-        const smma5 = computeSmma(closes, 5)
-        const smma13 = computeSmma(closes, 13)
-        const smma5Points = data
-          .map((b, i) => ({ time: b.time as UTCTimestamp, value: smma5[i] }))
-          .filter((p): p is { time: UTCTimestamp; value: number } => p.value != null)
-        const smma13Points = data
-          .map((b, i) => ({ time: b.time as UTCTimestamp, value: smma13[i] }))
-          .filter((p): p is { time: UTCTimestamp; value: number } => p.value != null)
-
+        // the AI prediction line above. Points come from the component-level
+        // useMemo above (shared with the legend, see its comment).
         if (smma5Points.length > 0) {
           const smma5Series = chart.addSeries(LineSeries, {
-            color: '#06b6d4', lineWidth: 1, priceScaleId: 'left', title: 'SMMA5',
+            color: SMMA5_COLOR, lineWidth: 3, priceScaleId: 'left', title: 'SMMA5',
           })
           smma5Series.setData(smma5Points)
         }
         if (smma13Points.length > 0) {
           const smma13Series = chart.addSeries(LineSeries, {
-            color: '#ec4899', lineWidth: 1, priceScaleId: 'left', title: 'SMMA13',
+            color: SMMA13_COLOR, lineWidth: 3, priceScaleId: 'left', title: 'SMMA13',
           })
           smma13Series.setData(smma13Points)
         }
 
         // Moving Average HTF — auto-scaled higher-timeframe context line
         // (Daily on intraday charts, Weekly on daily-and-up charts), see
-        // computeHtfMovingAverage's own docstring.
-        const htf = computeHtfMovingAverage(data, bucketSecondsMap[period] ?? 86400, HTF_EMA_LENGTH)
+        // computeHtfMovingAverage's own docstring. Also from the
+        // component-level useMemo above.
         if (htf.points.length > 0) {
           const htfSeries = chart.addSeries(LineSeries, {
-            color: '#64748b', lineWidth: 2, lineStyle: LineStyle.Dashed, priceScaleId: 'left',
+            color: HTF_COLOR, lineWidth: 3, lineStyle: LineStyle.Dashed, priceScaleId: 'left',
             title: `MA HTF (${htf.label})`,
           })
           htfSeries.setData(htf.points.map(p => ({ time: p.time as UTCTimestamp, value: p.value })))
@@ -790,6 +816,34 @@ export function PriceChart({ symbol, data, period, onPeriodChange, loading, aiLe
           </div>
         )}
         <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+        {showLegend && (
+          <div className="pointer-events-none absolute left-2 top-2 z-10 space-y-1 rounded-md bg-white/85 px-2 py-1.5 text-[10px] leading-tight text-zinc-700 shadow-sm backdrop-blur-sm dark:bg-zinc-900/85 dark:text-zinc-300">
+            {showPredictionLegend && (
+              <div className="flex items-center gap-1.5">
+                <span className="inline-block h-0.5 w-3 rounded-full bg-[#a855f7]" />
+                AI Prediction
+              </div>
+            )}
+            {smma5Points.length > 0 && (
+              <div className="flex items-center gap-1.5">
+                <span className="inline-block h-1 w-3 rounded-full" style={{ backgroundColor: SMMA5_COLOR }} />
+                SMMA5
+              </div>
+            )}
+            {smma13Points.length > 0 && (
+              <div className="flex items-center gap-1.5">
+                <span className="inline-block h-1 w-3 rounded-full" style={{ backgroundColor: SMMA13_COLOR }} />
+                SMMA13
+              </div>
+            )}
+            {htf.points.length > 0 && (
+              <div className="flex items-center gap-1.5">
+                <span className="inline-block h-0 w-3 border-t-[3px] border-dashed" style={{ borderColor: HTF_COLOR }} />
+                MA HTF ({htf.label})
+              </div>
+            )}
+          </div>
+        )}
         <div
           ref={ballRef}
           className="pointer-events-none absolute z-20 opacity-0 transition-all duration-300 ease-out"

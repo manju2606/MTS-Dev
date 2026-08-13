@@ -28,6 +28,23 @@ import structlog
 log = structlog.get_logger()
 
 _PROCESS_URL = "https://chartink.com/screener/process"
+
+# Sent as column_clause on every poll, overriding whatever display columns
+# the scan itself is configured with on chartink.com -- confirmed against a
+# real request/response pair. Deliberately just close/%chg/volume: RSI/ADX/
+# etc. get computed by chartink_signal_service's own yfinance-backed
+# pipeline regardless of what Chartink sends, so there's no need to ask
+# Chartink for indicator columns too, and this way every scan's response
+# uses the same field names (scan-column-default-*) no matter how that
+# scan's own UI happens to be configured.
+_COLUMN_CLAUSE = (
+    "Daily Close as 'scan-column-default-close', "
+    "Daily \"close - 1 candle ago close / 1 candle ago close * 100\" "
+    "as 'scan-column-default-percent-change', "
+    "filternumber( daily close >  1 day ago close,1) "
+    "as 'default-percent-change-conditional-filters-color', "
+    "Daily Volume as 'scan-column-default-volume'"
+)
 _USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"
@@ -70,18 +87,31 @@ def _extract_scan_clause(html: str) -> str | None:
     return None
 
 
+def _first(row: dict, *keys: str) -> object:
+    for key in keys:
+        if key in row and row[key] is not None:
+            return row[key]
+    return None
+
+
 def _parse_result_row(row: dict) -> dict:
-    """Chartink's /screener/process response rows use short keys
-    (nsecode/bsecode/name/close/volume/per_chg, sometimes more depending on
-    the scan's own selected columns) -- normalize to what
+    """Chartink's /screener/process response rows use nsecode/bsecode/name
+    for identity, but price/volume/change are namespaced under whatever
+    display columns the scan itself is configured with -- e.g.
+    scan-column-default-close, not close (confirmed against a real
+    response; the plain names are kept as a fallback in case a
+    differently-configured scan uses them instead). Normalizes to what
     chartink_poll_service.py needs."""
     symbol = str(row.get("nsecode") or row.get("bsecode") or "").strip()
+    close = _first(row, "scan-column-default-close", "close")
+    volume = _first(row, "scan-column-default-volume", "volume")
+    per_chg = _first(row, "scan-column-default-percent-change", "per_chg", "percent_change")
     return {
         "symbol": symbol,
         "name": str(row.get("name") or symbol).strip(),
-        "close": float(row.get("close") or 0.0),
-        "volume": int(float(row.get("volume") or 0)),
-        "per_chg": float(row.get("per_chg") or 0.0),
+        "close": float(close or 0.0),
+        "volume": int(float(volume or 0)),
+        "per_chg": float(per_chg or 0.0),
     }
 
 
@@ -117,7 +147,7 @@ async def fetch_chartink_screener(url: str, scan_clause: str | None = None) -> l
         try:
             resp = await client.post(
                 _PROCESS_URL,
-                data={"scan_clause": clause},
+                data={"scan_clause": clause, "column_clause": _COLUMN_CLAUSE},
                 headers={
                     "X-CSRF-TOKEN": csrf_token,
                     "X-Requested-With": "XMLHttpRequest",

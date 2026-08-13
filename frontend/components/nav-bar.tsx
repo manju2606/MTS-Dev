@@ -95,6 +95,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/calendar',       label: 'Economic Calendar', icon: 'calendar', desc: 'F&O expiries, RBI MPC, earnings & holidays' },
       { href: '/screener',       label: 'Custom Screener', icon: 'sliders', desc: 'Multi-factor stock screen across Nifty universes' },
       { href: '/historical-data', label: 'Historical Data', icon: 'database', desc: 'Download & browse OHLCV history via Zerodha' },
+      { href: '/chartink',        label: 'Chartink',        icon: 'activity', desc: 'Scan-alert candidates scored by RSI/ADX/volume/MACD · entry/SL/target' },
     ],
   },
   {
@@ -104,7 +105,6 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: '/watchlists', label: 'Watchlists',       icon: 'list',       desc: 'Track stocks with live quotes' },
       { href: '/dsws',       label: 'DSWS',             icon: 'list',       desc: 'Daily Discovery Watchlist Summary · Strong Buy/Buy/Sell/Strong Sell tracked intraday' },
-      { href: '/chartink',   label: 'Chartink',         icon: 'activity',   desc: 'Scan-alert candidates scored by RSI/ADX/volume/MACD · entry/SL/target' },
       { href: '/tradingview', label: 'TradingView',     icon: 'trendingUp', desc: 'Candlestick chart, volume, RSI/MACD/SMA/Bollinger + AI signal' },
       { href: '/stock-analysis', label: 'Stock Analysis', icon: 'search', desc: 'Search any stock · AI signal · multi-timeframe forecast · day/week/month prediction' },
       { href: '/trade',      label: 'Quick Trade',      icon: 'zap',        desc: 'Pick a stock, see indicators + AI signal, place a paper trade' },

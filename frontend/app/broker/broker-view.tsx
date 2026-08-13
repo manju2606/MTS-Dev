@@ -59,7 +59,10 @@ export default function BrokerView() {
   }, [router])
 
   async function handleSaveAutoLogin() {
-    if (!alKiteUserId.trim() || !alPassword.trim() || !alTotpSecret.trim()) return
+    if (!alKiteUserId.trim() || !alPassword.trim() || !alTotpSecret.trim()) {
+      setMsg({ type: 'err', text: 'Fill in Kite user ID, password, and TOTP secret first.' })
+      return
+    }
     setAlLoading(true); setMsg(null)
     try {
       await saveZerodhaAutoLogin(tokenRef.current, {
@@ -352,7 +355,7 @@ export default function BrokerView() {
                     <div className="flex gap-2">
                       <button
                         onClick={handleSaveAutoLogin}
-                        disabled={alLoading || !alKiteUserId.trim() || !alPassword.trim() || !alTotpSecret.trim()}
+                        disabled={alLoading}
                         className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
                       >
                         Save

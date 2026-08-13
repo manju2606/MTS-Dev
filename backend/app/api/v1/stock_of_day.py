@@ -1,5 +1,7 @@
 """Stock-of-the-Day API routes."""
 
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.deps import CurrentUser, require_role
@@ -10,11 +12,43 @@ router = APIRouter(prefix="/stock-of-day", tags=["stock-of-day"])
 
 _admin_only = Depends(require_role(UserRole.ADMIN))
 
+_OPEN_STATUSES = ("WATCHING", "TRADING")
 
-def _serialize(s: object) -> dict:
+
+async def _fetch_ltp_map(symbols: list[str]) -> dict[str, float]:
+    """Batch-fetch live prices for a list of NSE/BSE symbols."""
+    from app.infra.market_data.yfinance_client import YFinanceClient
+
+    unique = sorted({s for s in symbols if s})
+    if not unique:
+        return {}
+    client = YFinanceClient()
+    results = await asyncio.gather(
+        *[client.get_quote(sym) for sym in unique], return_exceptions=True
+    )
+    return {
+        sym: r.price
+        for sym, r in zip(unique, results, strict=True)
+        if not isinstance(r, Exception)
+    }
+
+
+def _serialize(s: object, ltp: float | None = None) -> dict:
     from app.domain.models.stock_of_day import StockOfDay
 
     d: StockOfDay = s  # type: ignore[assignment]
+
+    # Once resolved (exit_price set), P&L is the frozen outcome. While still
+    # open (WATCHING/TRADING), show a live estimate against the current
+    # quote instead -- `ltp` is only ever passed in for open picks.
+    pnl_pct = d.pnl_pct
+    pnl_amount = None
+    if d.exit_price is not None:
+        pnl_amount = round(d.exit_price - d.entry_price, 2)
+    elif ltp is not None and d.entry_price:
+        pnl_amount = round(ltp - d.entry_price, 2)
+        pnl_pct = round((ltp - d.entry_price) / d.entry_price * 100, 2)
+
     return {
         "id": d.id,
         "date": d.date,
@@ -40,7 +74,9 @@ def _serialize(s: object) -> dict:
         "status": d.status,
         "exit_price": d.exit_price,
         "exit_time": d.exit_time,
-        "pnl_pct": d.pnl_pct,
+        "ltp": ltp if d.exit_price is None else d.exit_price,
+        "pnl_amount": pnl_amount,
+        "pnl_pct": pnl_pct,
         "outcome": d.outcome,
     }
 
@@ -56,7 +92,11 @@ async def get_today(_: CurrentUser) -> dict:
     sotd = await repo.get_by_date(today)
     if sotd is None:
         return {"data": None, "today": today}
-    return {"data": _serialize(sotd), "today": today}
+    ltp = None
+    if sotd.status in _OPEN_STATUSES:
+        ltp_map = await _fetch_ltp_map([sotd.symbol])
+        ltp = ltp_map.get(sotd.symbol)
+    return {"data": _serialize(sotd, ltp), "today": today}
 
 
 @router.get("/history")
@@ -67,7 +107,12 @@ async def get_history(
     """Return historical SotD picks sorted newest-first."""
     repo = StockOfDayRepository()
     items = await repo.list_history(limit)
-    return [_serialize(s) for s in items]
+    open_symbols = [s.symbol for s in items if s.status in _OPEN_STATUSES]
+    ltp_map = await _fetch_ltp_map(open_symbols)
+    return [
+        _serialize(s, ltp_map.get(s.symbol) if s.status in _OPEN_STATUSES else None)
+        for s in items
+    ]
 
 
 @router.get("/journal/{date_str}")
@@ -98,7 +143,11 @@ async def trigger_generate(_: CurrentUser) -> dict:
         raise HTTPException(
             status_code=503, detail="No candidates found — run a discovery scan first"
         )
-    return _serialize(sotd)
+    ltp = None
+    if sotd.status in _OPEN_STATUSES:
+        ltp_map = await _fetch_ltp_map([sotd.symbol])
+        ltp = ltp_map.get(sotd.symbol)
+    return _serialize(sotd, ltp)
 
 
 @router.post("/check-positions", dependencies=[_admin_only])

@@ -88,6 +88,7 @@ class BTSTRepository:
                     "pick_count": doc.get("pick_count", len(picks)),
                     "top_symbol": top.get("symbol", ""),
                     "top_score": top.get("confidence_score", 0),
+                    "top_entry_price": top.get("entry_price"),
                     "created_at": doc.get("created_at", ""),
                 }
             )

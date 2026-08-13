@@ -112,6 +112,7 @@ function TodayCard({
   const pctSl  = ((sotd.stop_loss  - sotd.entry_price) / sotd.entry_price * 100)
   const pctTgt = ((sotd.target     - sotd.entry_price) / sotd.entry_price * 100)
   const ltpChg = ltp ? ((ltp - sotd.entry_price) / sotd.entry_price * 100) : null
+  const ltpChgAmt = ltp ? (ltp - sotd.entry_price) : null
   const genTime = sotd.generated_at
     ? new Date(sotd.generated_at).toLocaleString('en-IN', {
         timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short',
@@ -137,7 +138,8 @@ function TodayCard({
                 </span>
                 {ltpChg != null && (
                   <span className={`text-xs font-semibold ${ltpChg >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
-                    {ltpChg >= 0 ? '+' : ''}{ltpChg.toFixed(2)}% vs entry
+                    {ltpChgAmt != null && `${ltpChgAmt >= 0 ? '+' : ''}₹${fmt(ltpChgAmt)} `}
+                    ({ltpChg >= 0 ? '+' : ''}{ltpChg.toFixed(2)}%) vs entry
                   </span>
                 )}
               </>
@@ -327,7 +329,7 @@ function HistoryTable({ history, token, watchlists }: { history: StockOfDay[]; t
       <table className="w-full text-xs">
         <thead>
           <tr className="border-b border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/50">
-            {['Date', 'Symbol', 'Sector', 'Score', 'Entry ₹', 'SL ₹', 'Target ₹', 'R:R', 'Status', 'Exit ₹', 'P&L', ''].map(h => (
+            {['Date', 'Symbol', 'Sector', 'Score', 'Entry ₹', 'SL ₹', 'Target ₹', 'R:R', 'Status', 'LTP', 'Exit ₹', 'P&L', ''].map(h => (
               <th key={h} className="px-3 py-2.5 text-left font-semibold text-zinc-500 dark:text-zinc-400">{h}</th>
             ))}
           </tr>
@@ -335,7 +337,9 @@ function HistoryTable({ history, token, watchlists }: { history: StockOfDay[]; t
         <tbody>
           {history.map(row => {
             const sym = row.symbol.replace(/\.(NS|BO)$/, '')
+            const isOpen = row.status === 'WATCHING' || row.status === 'TRADING'
             const pnl = row.pnl_pct
+            const pnlAmt = row.pnl_amount
             const pnlColor = pnl == null ? '' : pnl >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'
             const genDt = row.generated_at
               ? new Date(row.generated_at).toLocaleString('en-IN', {
@@ -366,9 +370,14 @@ function HistoryTable({ history, token, watchlists }: { history: StockOfDay[]; t
                 <td className="px-3 py-2 font-mono text-emerald-600 dark:text-emerald-400">₹{fmt(row.target)}</td>
                 <td className="px-3 py-2 font-semibold text-indigo-600 dark:text-indigo-400">{row.risk_reward.toFixed(2)}x</td>
                 <td className="px-3 py-2"><StatusBadge status={row.status} /></td>
+                <td className="px-3 py-2 font-mono text-zinc-700 dark:text-zinc-300">
+                  {isOpen && row.ltp != null ? `₹${fmt(row.ltp)}` : '—'}
+                </td>
                 <td className="px-3 py-2 font-mono text-zinc-700 dark:text-zinc-300">{row.exit_price ? `₹${fmt(row.exit_price)}` : '—'}</td>
                 <td className={`px-3 py-2 font-bold font-mono ${pnlColor}`}>
-                  {pnl != null ? `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}%` : '—'}
+                  {pnl != null
+                    ? <>{pnlAmt != null && `${pnlAmt >= 0 ? '+' : ''}₹${fmt(pnlAmt)} `}({pnl >= 0 ? '+' : ''}{pnl.toFixed(2)}%)</>
+                    : '—'}
                 </td>
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-2">

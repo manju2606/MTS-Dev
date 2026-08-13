@@ -84,6 +84,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: '/market-pulse', label: 'Market Pulse',  icon: 'activity',  desc: 'Live prices, indices & news' },
       { href: '/scanner',      label: 'Scanner',       icon: 'search',    desc: '16 technical & institutional scans' },
+      { href: '/chartink',     label: 'Chartink',      icon: 'activity',  desc: 'Scan-alert candidates scored by RSI/ADX/volume/MACD · entry/SL/target' },
       { href: '/research',     label: 'Research',      icon: 'cpu',       desc: 'AI-powered stock screener' },
       { href: '/ai',           label: 'AI Analysis',   icon: 'sparkles',  desc: 'Signal generation & history' },
       { href: '/ml',           label: 'ML Signals',    icon: 'cpu',       desc: 'Machine learning predictions' },
@@ -95,7 +96,6 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/calendar',       label: 'Economic Calendar', icon: 'calendar', desc: 'F&O expiries, RBI MPC, earnings & holidays' },
       { href: '/screener',       label: 'Custom Screener', icon: 'sliders', desc: 'Multi-factor stock screen across Nifty universes' },
       { href: '/historical-data', label: 'Historical Data', icon: 'database', desc: 'Download & browse OHLCV history via Zerodha' },
-      { href: '/chartink',        label: 'Chartink',        icon: 'activity', desc: 'Scan-alert candidates scored by RSI/ADX/volume/MACD · entry/SL/target' },
     ],
   },
   {

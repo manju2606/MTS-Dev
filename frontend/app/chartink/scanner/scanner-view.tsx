@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { NavBar } from '@/components/nav-bar'
 import {
   compareChartinkBatches, createChartinkScanLink, deleteChartinkScanLink, getMe,
@@ -105,6 +105,85 @@ function AddScanLinkForm({ token, onCreated }: { token: string; onCreated: (l: C
   )
 }
 
+// ── Edit scan link form ──────────────────────────────────────────────────────
+
+function EditScanLinkForm({
+  link, token, onSaved, onCancel,
+}: {
+  link: ChartinkScanLink
+  token: string
+  onSaved: (l: ChartinkScanLink) => void
+  onCancel: () => void
+}) {
+  const [scanName, setScanName] = useState(link.scan_name)
+  const [url, setUrl] = useState(link.url)
+  const [interval, setIntervalMin] = useState(String(link.poll_interval_minutes))
+  const [scanClause, setScanClause] = useState(link.scan_clause ?? '')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  async function save() {
+    if (!scanName.trim() || !url.trim()) { setErr('Scan name and URL are required'); return }
+    setBusy(true)
+    setErr(null)
+    try {
+      const updated = await updateChartinkScanLink(token, link.id, {
+        scan_name: scanName.trim(),
+        url: url.trim(),
+        poll_interval_minutes: parseInt(interval, 10) || link.poll_interval_minutes,
+        scan_clause: scanClause.trim() || undefined,
+      })
+      onSaved(updated)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed to save')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      {err && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950 dark:text-red-300">{err}</p>}
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div>
+          <label className="mb-1 block text-[10px] font-medium text-zinc-400">Scan name</label>
+          <input value={scanName} onChange={e => setScanName(e.target.value)} className={inputCls} />
+        </div>
+        <div>
+          <label className="mb-1 block text-[10px] font-medium text-zinc-400">Chartink screener URL</label>
+          <input value={url} onChange={e => setUrl(e.target.value)} className={inputCls} />
+        </div>
+        <div>
+          <label className="mb-1 block text-[10px] font-medium text-zinc-400">Poll every (minutes)</label>
+          <input type="number" min={5} max={1440} value={interval} onChange={e => setIntervalMin(e.target.value)} className={inputCls} />
+        </div>
+      </div>
+      <div>
+        <label className="mb-1 block text-[10px] font-medium text-zinc-400">
+          Scan clause — paste the value from your browser&apos;s Network tab (screener/process request payload)
+        </label>
+        <textarea
+          value={scanClause}
+          onChange={e => setScanClause(e.target.value)}
+          rows={3}
+          placeholder="( {cash} ( daily rsi(14) > 55 ... ) )"
+          className={`${inputCls} font-mono`}
+        />
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={save}
+          disabled={busy}
+          className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-60"
+        >
+          {busy ? 'Saving…' : 'Save Changes'}
+        </button>
+        <button onClick={onCancel} className="text-xs text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200">Cancel</button>
+      </div>
+    </div>
+  )
+}
+
 // ── Scan links table ─────────────────────────────────────────────────────────
 
 function ScanLinksTable({
@@ -117,6 +196,7 @@ function ScanLinksTable({
 }) {
   const [pollingId, setPollingId] = useState<string | null>(null)
   const [pollMsg, setPollMsg] = useState<{ id: string; ok: boolean; text: string } | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
 
   async function pollNow(link: ChartinkScanLink) {
     setPollingId(link.id)
@@ -167,7 +247,8 @@ function ScanLinksTable({
         </thead>
         <tbody>
           {links.map(link => (
-            <tr key={link.id} className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/30">
+            <React.Fragment key={link.id}>
+            <tr className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/30">
               <td className="px-3 py-2">
                 <p className="font-bold text-zinc-800 dark:text-zinc-200">{link.scan_name}</p>
                 <p className="max-w-[220px] truncate text-[10px] text-zinc-400" title={link.url}>{link.url}</p>
@@ -197,6 +278,12 @@ function ScanLinksTable({
                         {pollingId === link.id ? 'Polling…' : '▶ Run Now'}
                       </button>
                       <button
+                        onClick={() => setEditingId(id => id === link.id ? null : link.id)}
+                        className="text-[10px] font-semibold text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+                      >
+                        {editingId === link.id ? 'Close' : 'Edit'}
+                      </button>
+                      <button
                         onClick={() => toggleEnabled(link)}
                         className={`text-[10px] font-semibold ${link.enabled ? 'text-amber-600 hover:text-amber-800 dark:text-amber-400' : 'text-emerald-600 hover:text-emerald-800 dark:text-emerald-400'}`}
                       >
@@ -208,6 +295,19 @@ function ScanLinksTable({
                 </div>
               </td>
             </tr>
+            {editingId === link.id && (
+              <tr className="border-b border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/40">
+                <td colSpan={6} className="px-3 py-3">
+                  <EditScanLinkForm
+                    link={link}
+                    token={token}
+                    onSaved={updated => { onChanged(updated); setEditingId(null) }}
+                    onCancel={() => setEditingId(null)}
+                  />
+                </td>
+              </tr>
+            )}
+            </React.Fragment>
           ))}
         </tbody>
       </table>

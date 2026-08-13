@@ -7,6 +7,7 @@ matching actual close becomes available.
 
 from __future__ import annotations
 
+import bisect
 from datetime import datetime, timedelta
 
 import motor.motor_asyncio
@@ -71,20 +72,39 @@ class McxPredictionRepository:
     _EXPIRE_AFTER = timedelta(days=1)
 
     async def resolve_pending(
-        self, user_id: str, contract: str, period: str, candles: list[dict]
+        self,
+        user_id: str,
+        contract: str,
+        period: str,
+        candles: list[dict],
+        tolerance_seconds: int = 0,
     ) -> None:
         """Match any not-yet-resolved predictions against real candles that
         have since arrived at their predicted_time, and record hit/miss.
         Anything left unresolved past _EXPIRE_AFTER is marked expired (not
         counted as a hit or miss -- see get_accuracy_stats) purely so it
-        stops blocking fresher predictions from being read as "pending"."""
+        stops blocking fresher predictions from being read as "pending".
+
+        tolerance_seconds lets a prediction match the nearest candle within
+        that window instead of requiring an exact predicted_time hit --
+        Kite's minute/15minute candle series can simply omit a quiet minute
+        with no trades, which otherwise permanently strands that one bucket
+        (seen in prod: 1m/15m/30m stuck for hours behind a single missing
+        candle). Pass the caller's own bucket width so a bucket only ever
+        matches a candle that's genuinely "close enough", never reaching
+        into a neighboring bucket's candle."""
         by_time = {c["time"]: c for c in candles}
+        sorted_times = sorted(by_time) if tolerance_seconds else []
         cursor = self._col.find(
             {"user_id": user_id, "contract": contract.upper(), "period": period, "resolved": False}
         )
         expire_cutoff = int((datetime.utcnow() - self._EXPIRE_AFTER).timestamp())
         async for doc in cursor:
             actual = by_time.get(doc["predicted_time"])
+            if actual is None and tolerance_seconds and sorted_times:
+                actual = self._nearest_candle(
+                    by_time, sorted_times, doc["predicted_time"], tolerance_seconds
+                )
             if actual is None:
                 if doc["predicted_time"] < expire_cutoff:
                     await self._col.update_one(
@@ -117,6 +137,19 @@ class McxPredictionRepository:
                     }
                 },
             )
+
+    @staticmethod
+    def _nearest_candle(
+        by_time: dict[int, dict], sorted_times: list[int], target: int, tolerance_seconds: int
+    ) -> dict | None:
+        """Closest candle to `target` among `sorted_times`, or None if the
+        nearest one is further than tolerance_seconds away."""
+        i = bisect.bisect_left(sorted_times, target)
+        candidates = sorted_times[max(0, i - 1) : i + 1]
+        if not candidates:
+            return None
+        closest = min(candidates, key=lambda t: abs(t - target))
+        return by_time[closest] if abs(closest - target) <= tolerance_seconds else None
 
     async def refresh_pending(
         self, user_id: str, contract: str, period: str, predictions: list[dict]

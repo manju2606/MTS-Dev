@@ -361,7 +361,7 @@ async def get_prediction(
     bucket = None if is_calendar else PERIOD_BUCKET_SECONDS.get(period, 86400)
     min_candles = MIN_CANDLES_CALENDAR if is_calendar else MIN_CANDLES
 
-    await repo.resolve_pending(user_id, contract, period, candles)
+    await repo.resolve_pending(user_id, contract, period, candles, tolerance_seconds=bucket or 0)
 
     recal_state = None if is_calendar else await repo.get_recalibration_state(
         user_id, contract, period

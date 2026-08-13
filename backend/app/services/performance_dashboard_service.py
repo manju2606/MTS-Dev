@@ -172,6 +172,126 @@ async def _golden_egg_stats(days: int | None) -> dict:
     return _make("golden_egg", "Golden Egg", False, total)
 
 
+def _call_row(
+    symbol: str,
+    date: str | None,
+    entry_price: float | None,
+    exit_price: float | None,
+    return_pct: float | None,
+    outcome_label: str,
+) -> dict:
+    return {
+        "symbol": symbol,
+        "date": date,
+        "entry_price": entry_price,
+        "exit_price": exit_price,
+        "return_pct": round(return_pct, 2) if return_pct is not None else None,
+        "outcome_label": outcome_label,
+    }
+
+
+async def _mcx_calls(outcome: str, days: int | None) -> list[dict]:
+    from app.infra.db.repositories.mcx_signal_repo import McxSignalRepository
+
+    result = "WIN" if outcome == "win" else "LOSS"
+    signals = await McxSignalRepository().list_all_since(_since_dt(days))
+    rows = []
+    for s in signals:
+        if s.get("result") != result:
+            continue
+        pnl, entry = s.get("pnl"), s.get("entry_price")
+        pct = pnl / entry * 100 if pnl is not None and entry else None
+        closed_at = s.get("closed_at")
+        date = closed_at.isoformat() if hasattr(closed_at, "isoformat") else closed_at
+        symbol = s.get("contract", s.get("tradingsymbol", "?"))
+        rows.append(_call_row(symbol, date, entry, s.get("exit_price"), pct, result))
+    rows.sort(key=lambda r: r["date"] or "", reverse=True)
+    return rows
+
+
+def _pick_row(p: dict) -> dict:
+    """Shared row-mapper for Golden Stock/BTST/SOTD pick docs -- all
+    three's list_picks_by_outcome() return the same shape."""
+    return _call_row(
+        p["symbol"],
+        p.get("resolved_at") or p.get("scan_date"),
+        p.get("entry_price"),
+        p.get("exit_price"),
+        p.get("return_pct"),
+        p["outcome"],
+    )
+
+
+async def _golden_stock_calls(outcome: str, days: int | None) -> list[dict]:
+    from app.infra.db.repositories.golden_stock_repo import GoldenStockRepository
+
+    outcomes = ["target_hit"] if outcome == "win" else ["sl_hit"]
+    picks = await GoldenStockRepository().list_picks_by_outcome(outcomes, _since_date_str(days))
+    return [_pick_row(p) for p in picks]
+
+
+async def _btst_calls(outcome: str, days: int | None) -> list[dict]:
+    from app.infra.db.repositories.btst_repo import BTSTRepository
+
+    outcomes = ["target_hit"] if outcome == "win" else ["sl_hit"]
+    picks = await BTSTRepository().list_picks_by_outcome(outcomes, _since_date_str(days))
+    return [_pick_row(p) for p in picks]
+
+
+async def _sotd_calls(outcome: str, days: int | None) -> list[dict]:
+    from app.infra.db.repositories.stock_of_day_repo import StockOfDayRepository
+
+    outcomes = ["WIN"] if outcome == "win" else ["LOSS"]
+    picks = await StockOfDayRepository().list_picks_by_outcome(outcomes, _since_date_str(days))
+    return [_pick_row(p) for p in picks]
+
+
+async def _paper_trades_calls(outcome: str, user_id: UUID, days: int | None) -> list[dict]:
+    from app.domain.models.trade import TradeStatus
+    from app.infra.db.repositories.trade_repo import SQLTradeRepository
+    from app.infra.db.session import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as session:
+        trades = await SQLTradeRepository(session).list_by_user(user_id)
+
+    since = _since_dt(days)
+    if since is not None:
+        trades = [t for t in trades if t.created_at >= since]
+    closed = [t for t in trades if t.status == TradeStatus.CLOSED]
+
+    rows = []
+    for t in closed:
+        is_win = (t.pnl or 0) > 0
+        if (outcome == "win") != is_win:
+            continue
+        can_pct = t.pnl is not None and t.entry_price and t.quantity
+        pct = t.pnl / (t.entry_price * t.quantity) * 100 if can_pct else None
+        date = t.closed_at.isoformat() if t.closed_at else t.created_at.isoformat()
+        label = "WIN" if is_win else "LOSS"
+        rows.append(_call_row(t.symbol, date, t.entry_price, t.exit_price, pct, label))
+    rows.sort(key=lambda r: r["date"] or "", reverse=True)
+    return rows
+
+
+_CALL_FETCHERS = {
+    "mcx": lambda outcome, user_id, days: _mcx_calls(outcome, days),
+    "golden_stock": lambda outcome, user_id, days: _golden_stock_calls(outcome, days),
+    "btst": lambda outcome, user_id, days: _btst_calls(outcome, days),
+    "stock_of_day": lambda outcome, user_id, days: _sotd_calls(outcome, days),
+    "paper_trades": lambda outcome, user_id, days: _paper_trades_calls(outcome, user_id, days),
+}
+
+
+async def get_calls(source_key: str, outcome: str, user_id: UUID, days: int | None) -> list[dict]:
+    """The actual calls behind a source's win/loss count -- Chartink and
+    Golden Egg aren't in _CALL_FETCHERS since they have no outcome data
+    to list (see module docstring)."""
+    fetcher = _CALL_FETCHERS.get(source_key)
+    if fetcher is None:
+        return []
+    return await fetcher(outcome, user_id, days)
+
+
 async def get_performance_summary(user_id: UUID, days: int | None) -> dict:
     """One row per signal source plus a combined headline across the
     sources that actually have resolved win/loss data. `days=None` means

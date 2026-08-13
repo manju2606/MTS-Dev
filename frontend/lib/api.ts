@@ -5425,3 +5425,23 @@ export async function getPerformanceSummary(token: string, days: number | null =
   if (!res.ok) throw new Error('Failed to fetch performance summary')
   return res.json()
 }
+
+// Click-through detail behind one source's win/loss count on the summary.
+export type PerformanceCall = {
+  symbol: string
+  date: string | null
+  entry_price: number | null
+  exit_price: number | null
+  return_pct: number | null
+  outcome_label: string
+}
+
+export async function getPerformanceCalls(
+  token: string, source: string, outcome: 'win' | 'loss', days: number | null = 90,
+): Promise<PerformanceCall[]> {
+  const params = new URLSearchParams({ source, outcome })
+  if (days != null) params.set('days', String(days))
+  const res = await fetch(`${BASE}/api/v1/performance/calls?${params}`, { headers: authHeaders(token) })
+  if (!res.ok) throw new Error('Failed to fetch calls')
+  return res.json()
+}

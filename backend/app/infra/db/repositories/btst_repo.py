@@ -181,6 +181,39 @@ class BTSTRepository:
                 )
         return entries
 
+    async def list_picks_by_outcome(
+        self, outcomes: list[str], since_date: str | None = None, limit: int = 200
+    ) -> list[dict]:
+        """Flat list of resolved picks whose outcome is one of `outcomes`
+        (e.g. ["target_hit"] for wins, ["sl_hit"] for losses), most
+        recently resolved first. Mirrors GoldenStockRepository's method
+        of the same name -- for the Performance dashboard's click-through
+        from a win/loss count to the actual calls behind it."""
+        date_match: dict = {} if since_date is None else {"scan_date": {"$gte": since_date}}
+        cursor = self._col.aggregate(
+            [
+                {"$match": date_match},
+                {"$unwind": "$picks"},
+                {"$match": {"picks.outcome": {"$in": outcomes}}},
+                {"$sort": {"picks.resolved_at": -1}},
+                {"$limit": limit},
+                {
+                    "$project": {
+                        "_id": 0,
+                        "symbol": "$picks.symbol",
+                        "name": "$picks.name",
+                        "outcome": "$picks.outcome",
+                        "entry_price": "$picks.entry_price",
+                        "exit_price": "$picks.actual_close",
+                        "return_pct": "$picks.actual_pct",
+                        "scan_date": "$scan_date",
+                        "resolved_at": "$picks.resolved_at",
+                    }
+                },
+            ]
+        )
+        return [doc async for doc in cursor]
+
     async def get_performance_stats(self, since_date: str | None = None) -> dict:
         """Aggregate accuracy stats across all resolved picks (optionally
         only scan_date >= since_date), plus a separate total-picks-ever

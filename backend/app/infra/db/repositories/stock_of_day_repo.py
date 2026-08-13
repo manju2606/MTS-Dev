@@ -142,6 +142,39 @@ class StockOfDayRepository:
         """Count how many auto-trades were placed for a given date."""
         return await self._col.count_documents({"date": date_str, "auto_traded": True})
 
+    async def list_picks_by_outcome(
+        self, outcomes: list[str], since_date: str | None = None, limit: int = 200
+    ) -> list[dict]:
+        """Flat list of resolved picks whose outcome is one of `outcomes`
+        (e.g. ["WIN"], ["LOSS"]), most recent first -- one pick per day
+        here, unlike Golden Stock/BTST's per-scan pick arrays. For the
+        Performance dashboard's click-through from a win/loss count to
+        the actual calls behind it."""
+        query: dict = {"outcome": {"$in": outcomes}}
+        if since_date is not None:
+            query["date"] = {"$gte": since_date}
+        cursor = self._col.aggregate(
+            [
+                {"$match": query},
+                {"$sort": {"date": -1}},
+                {"$limit": limit},
+                {
+                    "$project": {
+                        "_id": 0,
+                        "symbol": 1,
+                        "name": 1,
+                        "outcome": 1,
+                        "entry_price": 1,
+                        "exit_price": 1,
+                        "return_pct": "$pnl_pct",
+                        "scan_date": "$date",
+                        "resolved_at": "$exit_time",
+                    }
+                },
+            ]
+        )
+        return [doc async for doc in cursor]
+
     async def get_performance_stats(self, since_date: str | None) -> dict:
         """Aggregate WIN/LOSS/NEUTRAL across every pick (optionally only
         since_date onward) -- one pick per day, unlike Golden Stock/BTST's

@@ -3,8 +3,8 @@
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { NavBar } from '@/components/nav-bar'
-import { getPerformanceSummary } from '@/lib/api'
-import type { PerformanceSummary } from '@/lib/api'
+import { getPerformanceCalls, getPerformanceSummary } from '@/lib/api'
+import type { PerformanceCall, PerformanceSummary } from '@/lib/api'
 
 const DAY_OPTIONS: { label: string; value: number | null }[] = [
   { label: '7D', value: 7 },
@@ -29,16 +29,109 @@ function fmtPct(pct: number | null): string {
   return `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`
 }
 
-function StatChip({ label, value, className }: { label: string; value: string | number; className?: string }) {
-  return (
-    <div className="rounded-lg bg-zinc-50 px-3 py-2 text-center dark:bg-zinc-800/60">
+function StatChip({
+  label, value, className, onClick, active,
+}: {
+  label: string
+  value: string | number
+  className?: string
+  onClick?: () => void
+  active?: boolean
+}) {
+  const content = (
+    <>
       <p className={`text-lg font-bold ${className ?? 'text-zinc-900 dark:text-zinc-50'}`}>{value}</p>
       <p className="text-[10px] uppercase tracking-wide text-zinc-400">{label}</p>
+    </>
+  )
+  if (!onClick) {
+    return <div className="rounded-lg bg-zinc-50 px-3 py-2 text-center dark:bg-zinc-800/60">{content}</div>
+  }
+  return (
+    <button
+      onClick={onClick}
+      className={`rounded-lg px-3 py-2 text-center transition-colors ${
+        active
+          ? 'bg-indigo-100 ring-1 ring-inset ring-indigo-400 dark:bg-indigo-950/50 dark:ring-indigo-500'
+          : 'bg-zinc-50 hover:bg-zinc-100 dark:bg-zinc-800/60 dark:hover:bg-zinc-800'
+      }`}
+    >
+      {content}
+    </button>
+  )
+}
+
+function fmtDate(iso: string | null): string {
+  if (!iso) return '—'
+  try {
+    return new Date(iso).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short' })
+  } catch {
+    return iso.slice(5, 10)
+  }
+}
+
+function CallsPanel({ calls, loading, error }: { calls: PerformanceCall[] | null; loading: boolean; error: string | null }) {
+  if (loading) return <p className="py-3 text-center text-xs text-zinc-400">Loading calls…</p>
+  if (error) return <p className="py-3 text-center text-xs text-red-500">{error}</p>
+  if (!calls || calls.length === 0) return <p className="py-3 text-center text-xs text-zinc-400">No calls in this window.</p>
+  return (
+    <div className="max-h-64 overflow-y-auto overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
+      <table className="w-full min-w-[360px] text-[11px]">
+        <thead>
+          <tr className="border-b border-zinc-100 bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800">
+            {['Symbol', 'Date', 'Entry', 'Exit', 'Return'].map(h => (
+              <th key={h} className="whitespace-nowrap px-2 py-1.5 text-left font-semibold text-zinc-500 dark:text-zinc-400">{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {calls.map((c, i) => (
+            <tr key={i} className="border-b border-zinc-100 last:border-0 dark:border-zinc-800">
+              <td className="whitespace-nowrap px-2 py-1.5 font-semibold text-zinc-800 dark:text-zinc-200">{c.symbol.replace(/\.(NS|BO)$/, '')}</td>
+              <td className="whitespace-nowrap px-2 py-1.5 text-zinc-500 dark:text-zinc-400">{fmtDate(c.date)}</td>
+              <td className="whitespace-nowrap px-2 py-1.5 font-mono">{c.entry_price != null ? c.entry_price.toFixed(2) : '—'}</td>
+              <td className="whitespace-nowrap px-2 py-1.5 font-mono">{c.exit_price != null ? c.exit_price.toFixed(2) : '—'}</td>
+              <td className={`whitespace-nowrap px-2 py-1.5 font-mono ${returnColor(c.return_pct)}`}>{fmtPct(c.return_pct)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }
 
-function SourceCard({ source }: { source: PerformanceSummary['sources'][number] }) {
+function SourceCard({
+  source, token, days,
+}: {
+  source: PerformanceSummary['sources'][number]
+  token: string
+  days: number | null
+}) {
+  const [expanded, setExpanded] = useState<'win' | 'loss' | null>(null)
+  const [calls, setCalls] = useState<PerformanceCall[] | null>(null)
+  const [callsLoading, setCallsLoading] = useState(false)
+  const [callsError, setCallsError] = useState<string | null>(null)
+
+  // Collapse any open calls panel when the day-range filter changes --
+  // this card instance survives the filter change (same key), so without
+  // this the panel would keep showing calls fetched under the old window.
+  useEffect(() => {
+    setExpanded(null)
+    setCalls(null)
+  }, [days])
+
+  function toggle(outcome: 'win' | 'loss') {
+    if (expanded === outcome) { setExpanded(null); return }
+    setExpanded(outcome)
+    setCalls(null)
+    setCallsError(null)
+    setCallsLoading(true)
+    getPerformanceCalls(token, source.key, outcome, days)
+      .then(setCalls)
+      .catch(e => setCallsError(e instanceof Error ? e.message : 'Failed to load calls'))
+      .finally(() => setCallsLoading(false))
+  }
+
   return (
     <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
       <div className="mb-3 flex items-center justify-between">
@@ -54,8 +147,16 @@ function SourceCard({ source }: { source: PerformanceSummary['sources'][number] 
         <>
           <div className="mb-3 grid grid-cols-4 gap-2">
             <StatChip label="Calls" value={source.total_calls} />
-            <StatChip label="Wins" value={source.wins ?? 0} className="text-emerald-600 dark:text-emerald-400" />
-            <StatChip label="Losses" value={source.losses ?? 0} className="text-red-500 dark:text-red-400" />
+            <StatChip
+              label="Wins" value={source.wins ?? 0} className="text-emerald-600 dark:text-emerald-400"
+              active={expanded === 'win'}
+              onClick={source.wins ? () => toggle('win') : undefined}
+            />
+            <StatChip
+              label="Losses" value={source.losses ?? 0} className="text-red-500 dark:text-red-400"
+              active={expanded === 'loss'}
+              onClick={source.losses ? () => toggle('loss') : undefined}
+            />
             <StatChip label="Open" value={source.open ?? 0} />
           </div>
           <div className="flex items-center justify-between border-t border-zinc-100 pt-3 dark:border-zinc-800">
@@ -72,6 +173,11 @@ function SourceCard({ source }: { source: PerformanceSummary['sources'][number] 
               </p>
             </div>
           </div>
+          {expanded && (
+            <div className="mt-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+              <CallsPanel calls={calls} loading={callsLoading} error={callsError} />
+            </div>
+          )}
         </>
       ) : (
         <div className="flex items-center justify-between">
@@ -201,7 +307,7 @@ export function PerformanceView() {
         {data && (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {data.sources.map(source => (
-              <SourceCard key={source.key} source={source} />
+              <SourceCard key={source.key} source={source} token={tokenRef.current} days={days} />
             ))}
           </div>
         )}

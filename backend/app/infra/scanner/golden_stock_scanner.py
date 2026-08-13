@@ -148,8 +148,14 @@ def _macd_bullish_crossover(close: pd.Series) -> bool:
 # ── Pass 1: batch download ────────────────────────────────────────────────────
 
 
-def _pass1_batch_download(symbols: list[str]) -> list[dict]:
-    """Download 6-month OHLCV for all symbols at once, return filtered candidates."""
+def fetch_technicals(symbols: list[str]) -> list[dict]:
+    """Download 6-month OHLCV for all symbols at once, compute basic
+    technicals, and return one candidate dict per symbol with enough history
+    -- no directional/momentum filtering applied (see _pass1_batch_download
+    below for that). Public + unprefixed so other scan pipelines (e.g.
+    chartink_signal_service.py) can reuse this exact data-fetch + indicator
+    computation without inheriting Golden Stock Intraday's own bullish-
+    momentum bias."""
     try:
         raw = yf.download(
             symbols,
@@ -226,14 +232,6 @@ def _pass1_batch_download(symbols: list[str]) -> list[dict]:
 
             day_high = float(high_s.iloc[idx])
 
-            # Pass 1 filter — loose pre-filter; strict filters applied in Pass 2
-            if current <= sma20:
-                continue
-            if not (45 <= rsi <= 85):
-                continue
-            if volume_ratio < 1.0:
-                continue
-
             candidates.append(
                 {
                     "symbol": sym,
@@ -256,6 +254,22 @@ def _pass1_batch_download(symbols: list[str]) -> list[dict]:
             continue
 
     return candidates
+
+
+def _pass1_batch_download(symbols: list[str]) -> list[dict]:
+    """Golden Stock Intraday's own pass 1: fetch_technicals() plus its loose
+    bullish-momentum pre-filter (strict filters applied in Pass 2 scoring)."""
+    candidates = fetch_technicals(symbols)
+    filtered = []
+    for c in candidates:
+        if c["current"] <= c["sma20"]:
+            continue
+        if not (45 <= c["rsi"] <= 85):
+            continue
+        if c["volume_ratio"] < 1.0:
+            continue
+        filtered.append(c)
+    return filtered
 
 
 # ── Pass 2: individual ticker info + scoring ──────────────────────────────────

@@ -421,14 +421,6 @@ async def _run_mcx_extreme_alert_check() -> None:
 _MCX_PREDICTION_PERIODS = ("1m", "5m", "15m", "30m", "1h", "4h", "6h", "8h")
 _MCX_CALENDAR_PREDICTION_PERIODS = ("1Wk", "1Mo")
 
-# Real per-call pacing for the metals prediction sweep below -- 17 tracked
-# contracts x 8 periods = 136 Kite historical_data calls per run, previously
-# fired back-to-back (`asyncio.sleep(0)` only yields the event loop, it adds
-# no actual delay) and blowing well past Kite's ~3 req/s limit, producing a
-# steady stream of "Too many requests" 429s. At this pacing the full sweep
-# takes ~48s, comfortably inside the 5-min cadence between runs.
-_MCX_METALS_PREDICTION_THROTTLE_SECONDS = 0.35
-
 
 async def _run_mcx_prediction_check() -> None:
     """Every 5 min, 09:00-23:30 IST weekdays: generate/resolve NG/NGMini
@@ -823,7 +815,12 @@ async def _run_mcx_metals_trend_check() -> None:
 
 async def _run_mcx_metals_prediction_check() -> None:
     """Metals twin of _run_mcx_prediction_check -- same 5-min cadence, same
-    intraday period set."""
+    intraday period set. Pacing against Kite's rate limit happens at the
+    broker layer now (see kite_rate_limiter.py) rather than here -- an
+    earlier version paced only this job's own calls with a per-iteration
+    sleep, which wasn't enough since other concurrent jobs sharing the
+    same Zerodha account could still push the combined rate over Kite's
+    limit; the shared limiter accounts for all of them at once."""
     try:
         from app.infra.brokers import session_store
         from app.infra.db.repositories.mcx_prediction_repo import McxPredictionRepository
@@ -847,7 +844,7 @@ async def _run_mcx_metals_prediction_check() -> None:
                             period=period,
                             error=str(exc),
                         )
-                    await asyncio.sleep(_MCX_METALS_PREDICTION_THROTTLE_SECONDS)
+                    await asyncio.sleep(0)
         log.info("scheduler.mcx_metals_prediction.done", users=len(user_ids), checked=checked)
     except Exception as exc:
         log.error("scheduler.mcx_metals_prediction.error", error=str(exc))

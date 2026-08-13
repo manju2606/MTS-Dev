@@ -172,6 +172,9 @@ class ZerodhaBroker(AbstractBroker):
         """Full quote (LTP, OHLC, volume, OI) for one exchange:tradingsymbol key,
         e.g. "MCX:NATURALGAS26JULFUT". Used for instruments the generic
         CompositeMarketDataClient doesn't cover, like MCX commodity futures."""
+        from app.infra.brokers import kite_rate_limiter
+
+        await kite_rate_limiter.throttle()
         loop = asyncio.get_event_loop()
         key = f"{exchange}:{tradingsymbol}"
         return await loop.run_in_executor(None, partial(self._quote_sync, key))
@@ -183,6 +186,9 @@ class ZerodhaBroker(AbstractBroker):
         """Full tradable-instrument dump for an exchange segment (e.g. "MCX") --
         needed to resolve which specific futures contract (with its expiry-coded
         tradingsymbol) is the current front month for a commodity like Natural Gas."""
+        from app.infra.brokers import kite_rate_limiter
+
+        await kite_rate_limiter.throttle()
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, partial(self._instruments_sync, exchange))
 
@@ -206,6 +212,9 @@ class ZerodhaBroker(AbstractBroker):
         vocabulary: "minute", "5minute", "15minute", "day", etc. Needed for
         intraday technical-indicator computation (MCX Natural Gas has no
         equivalent in the generic yfinance-based market data client)."""
+        from app.infra.brokers import kite_rate_limiter
+
+        await kite_rate_limiter.throttle()
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             None, partial(self._historical_sync, instrument_token, interval, from_dt, to_dt)

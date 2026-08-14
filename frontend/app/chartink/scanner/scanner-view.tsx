@@ -449,6 +449,12 @@ function ComparisonSection({ token, scanNames }: { token: string; scanNames: str
     if (selected) runCompare(selected)
   }, [selected, runCompare])
 
+  useEffect(() => {
+    if (!selected) return
+    const id = setInterval(() => runCompare(selected), 30_000)
+    return () => clearInterval(id)
+  }, [selected, runCompare])
+
   return (
     <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -592,6 +598,17 @@ const QUALITY_GATE_DEFAULTS = {
   minMarketCapCr: '5000', minVolume: '100000',
 }
 
+const QUALITY_GATE_STORAGE_KEY = 'mts_breakout_quality_gates'
+
+function loadSavedGates(): typeof QUALITY_GATE_DEFAULTS {
+  if (typeof window === 'undefined') return QUALITY_GATE_DEFAULTS
+  try {
+    const raw = localStorage.getItem(QUALITY_GATE_STORAGE_KEY)
+    if (raw) return { ...QUALITY_GATE_DEFAULTS, ...JSON.parse(raw) }
+  } catch { /* ignore corrupt storage */ }
+  return QUALITY_GATE_DEFAULTS
+}
+
 function applyQualityGates(rows: ChartinkBreakoutRow[], gates: typeof QUALITY_GATE_OFF) {
   const minConfidence = gates.minConfidence === '' ? null : Number(gates.minConfidence) / 100
   const minRR = gates.minRR === '' ? null : Number(gates.minRR)
@@ -619,7 +636,8 @@ function BreakoutWatchlist({ token }: { token: string }) {
   const [error, setError] = useState<string | null>(null)
   const [sortKey, setSortKey] = useState<BreakoutSortKey>('appeared_date')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
-  const [gates, setGates] = useState(QUALITY_GATE_DEFAULTS)
+  const [gates, setGates] = useState(loadSavedGates)
+  const [justSaved, setJustSaved] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -635,6 +653,11 @@ function BreakoutWatchlist({ token }: { token: string }) {
 
   useEffect(() => { load() }, [load])
 
+  useEffect(() => {
+    const id = setInterval(load, 30_000)
+    return () => clearInterval(id)
+  }, [load])
+
   function toggleSort(key: BreakoutSortKey) {
     if (key === sortKey) {
       setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -645,8 +668,17 @@ function BreakoutWatchlist({ token }: { token: string }) {
   }
 
   const gatesActive = Object.values(gates).some(v => v !== '')
+  const isCustom = JSON.stringify(gates) !== JSON.stringify(QUALITY_GATE_DEFAULTS)
   const filteredRows = applyQualityGates(rows, gates)
   const sortedRows = sortBreakoutRows(filteredRows, sortKey, sortDir)
+
+  function saveGates() {
+    try {
+      localStorage.setItem(QUALITY_GATE_STORAGE_KEY, JSON.stringify(gates))
+      setJustSaved(true)
+      setTimeout(() => setJustSaved(false), 1500)
+    } catch { /* storage full/unavailable */ }
+  }
 
   return (
     <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
@@ -741,6 +773,20 @@ function BreakoutWatchlist({ token }: { token: string }) {
             className="w-24 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs text-zinc-700 focus:border-indigo-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
           />
         </div>
+        <button
+          onClick={() => setGates(QUALITY_GATE_DEFAULTS)}
+          className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[10px] font-semibold text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+        >
+          ↺ Default
+        </button>
+        {isCustom && (
+          <button
+            onClick={saveGates}
+            className="rounded-lg bg-indigo-600 px-2.5 py-1.5 text-[10px] font-semibold text-white hover:bg-indigo-500"
+          >
+            {justSaved ? '✓ Saved' : '💾 Save'}
+          </button>
+        )}
         {gatesActive && (
           <button
             onClick={() => setGates(QUALITY_GATE_OFF)}
@@ -854,6 +900,14 @@ export function ChartinkScannerView() {
     listChartinkScanLinks(t).then(setLinks).catch(() => {}).finally(() => setLoading(false))
   }, [router])
 
+  useEffect(() => {
+    if (!authChecked) return
+    const id = setInterval(() => {
+      listChartinkScanLinks(tokenRef.current).then(setLinks).catch(() => {})
+    }, 30_000)
+    return () => clearInterval(id)
+  }, [authChecked])
+
   function handleChanged(updated: ChartinkScanLink) {
     if (updated.last_poll_status === '__deleted__') {
       setLinks(prev => prev.filter(l => l.id !== updated.id))
@@ -878,6 +932,7 @@ export function ChartinkScannerView() {
             Poll a saved Chartink scan link on a schedule — the pull-based alternative to the webhook.
             Results score and store exactly like a webhook alert (same <a href="/chartink" className="text-indigo-500 hover:underline">Chartink</a> table),
             plus a run-over-run comparison of what&apos;s new, repeating, or dropped.
+            This page auto-refreshes every 30s.
           </p>
         </div>
 

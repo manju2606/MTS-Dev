@@ -318,6 +318,48 @@ async def compare_symbol_strategies(symbol: str, current_user: CurrentUser, limi
     return await strategy_lab_service.get_symbol_comparison(str(current_user.id), symbol, limit)
 
 
+_LIVE_BACKTEST_SOURCES = {"golden_stock", "btst", "stock_of_day", "chartink", "golden_egg"}
+
+
+@router.get("/live-backtest")
+async def live_strategy_backtest(
+    current_user: CurrentUser,
+    source: str,
+    from_date: str | None = None,
+    to_date: str | None = None,
+    capital: float = 100_000.0,
+    min_confidence: float | None = None,
+    max_rsi: float | None = None,
+    min_volume_ratio: float | None = None,
+    min_adx: float | None = None,
+) -> dict:
+    """Backtests one of the five live scanning strategies (Golden Stock,
+    BTST, Stock of the Day, Chartink Breakout Watchlist, Golden Egg)
+    against its own real historical picks -- not a synthetic re-simulation,
+    see services/strategy_lab_live_backtest_service.py's module docstring
+    for why. Instant (no background run/poll needed, unlike every other
+    mode on this page) since it's just aggregating data these strategies
+    already recorded live.
+
+    The four quality-gate params (only meaningful for Golden Stock/BTST,
+    which score each pick with confidence/RSI/volume-ratio/ADX -- see
+    _passes_gates()) let you test whether only taking the highest-
+    conviction picks would have made an underperforming strategy
+    profitable, same idea as the Chartink Breakout Watchlist's gates."""
+    if source not in _LIVE_BACKTEST_SOURCES:
+        raise HTTPException(status_code=422, detail=f"Unknown source '{source}'")
+    if capital <= 0:
+        raise HTTPException(status_code=422, detail="capital must be positive")
+
+    from app.services.strategy_lab_live_backtest_service import run_live_strategy_backtest
+
+    return await run_live_strategy_backtest(
+        source, from_date, to_date, capital,
+        min_confidence=min_confidence, max_rsi=max_rsi,
+        min_volume_ratio=min_volume_ratio, min_adx=min_adx,
+    )
+
+
 @router.get("/runs/{run_id}")
 async def get_run(run_id: str, current_user: CurrentUser) -> dict:
     repo = StrategyLabRepository()

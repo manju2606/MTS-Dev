@@ -5114,6 +5114,51 @@ export type StrategyLabTrade = {
   exit_reason: string
 }
 
+// Backtests one of the five live scanning strategies (Golden Stock, BTST,
+// Stock of the Day, Chartink Breakout Watchlist, Golden Egg) against its
+// own real historical picks -- not a synthetic re-simulation, see backend
+// strategy_lab_live_backtest_service.py's module docstring.
+export type LiveBacktestSource = 'golden_stock' | 'btst' | 'stock_of_day' | 'chartink' | 'golden_egg'
+
+export type LiveStrategyBacktestResult = {
+  source: LiveBacktestSource
+  label: string
+  full_metrics: BacktestMetrics
+  equity_curve: { time: string; equity: number }[]
+  drawdown_curve: { time: string; drawdown_pct: number }[]
+  trades: StrategyLabTrade[]
+  total_trades: number
+  total_picks_before_gates: number
+}
+
+export async function getLiveStrategyBacktest(token: string, params: {
+  source: LiveBacktestSource
+  from_date?: string
+  to_date?: string
+  capital?: number
+  // Quality gates -- only meaningful for Golden Stock/BTST, which score
+  // each pick with confidence/RSI/volume-ratio (Golden Stock also has ADX;
+  // BTST doesn't track it, see backend's own _passes_gates()).
+  min_confidence?: number
+  max_rsi?: number
+  min_volume_ratio?: number
+  min_adx?: number
+}): Promise<LiveStrategyBacktestResult> {
+  const q = new URLSearchParams({ source: params.source, capital: String(params.capital ?? 100_000) })
+  if (params.from_date) q.set('from_date', params.from_date)
+  if (params.to_date) q.set('to_date', params.to_date)
+  if (params.min_confidence !== undefined) q.set('min_confidence', String(params.min_confidence))
+  if (params.max_rsi !== undefined) q.set('max_rsi', String(params.max_rsi))
+  if (params.min_volume_ratio !== undefined) q.set('min_volume_ratio', String(params.min_volume_ratio))
+  if (params.min_adx !== undefined) q.set('min_adx', String(params.min_adx))
+  const res = await fetch(`${BASE}/api/v1/strategy-lab/live-backtest?${q}`, { headers: authHeaders(token) })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to run backtest')
+  }
+  return res.json()
+}
+
 export type StrategyLabResultDetail = {
   id: string
   run_id: string

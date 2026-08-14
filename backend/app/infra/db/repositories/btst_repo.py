@@ -220,6 +220,14 @@ class BTSTRepository:
                         "return_pct": "$picks.actual_pct",
                         "scan_date": "$scan_date",
                         "resolved_at": "$picks.resolved_at",
+                        # Quality-gate fields for the Live Strategy Backtest's
+                        # min-confidence/volume-ratio filters (BTST has no adx
+                        # field, unlike Golden Stock -- see its own scanner's
+                        # scoring components) -- callers that don't need these
+                        # simply ignore the extra keys.
+                        "confidence_score": "$picks.confidence_score",
+                        "rsi": "$picks.rsi",
+                        "volume_ratio": "$picks.volume_ratio",
                     }
                 },
             ]

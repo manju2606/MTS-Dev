@@ -8,12 +8,12 @@ import {
   startStrategyLabRun, startTrendPullbackRun, startOrbRun, startRsiReversionRun, startIndexScanRun,
   listStrategyLabRuns, getStrategyLabRun, listStrategyLabResults, getStrategyLabResult, getResultMonteCarlo,
   listIndexScans, getIndexScan, getIndexScanRanking, listIndexUniverses, listMcxContracts, searchStocks,
-  getMe, ApiError, getSymbolComparison, startSymbolSweepRun, getSymbolSweep,
+  getMe, ApiError, getSymbolComparison, startSymbolSweepRun, getSymbolSweep, getLiveStrategyBacktest,
 } from '@/lib/api'
 import type {
   HistoricalDataInterval, StrategyLabRun, StrategyLabResultSummary, StrategyLabResultDetail, MonteCarloResult,
   IndexScanRun, IndexScanRankingRow, IndexUniverseOption, McxContractOption, StockSearchResult, RunSortBy,
-  SymbolComparison, SymbolSweepRun,
+  SymbolComparison, SymbolSweepRun, LiveBacktestSource, LiveStrategyBacktestResult,
 } from '@/lib/api'
 
 const EXCHANGES = ['NSE', 'BSE', 'NFO', 'MCX']
@@ -47,7 +47,7 @@ const INDEX_LABELS: Record<string, string> = {
 // same ranked view as 'compare' underneath its own progress panel.
 type Mode =
   | 'generated' | 'trend_pullback' | 'orb' | 'rsi_reversion' | 'index_scan' | 'rsi_live' | 'compare'
-  | 'symbol_sweep'
+  | 'symbol_sweep' | 'live_backtest'
 
 type SortKey = 'score' | 'cagr' | 'sharpe' | 'max_dd' | 'win_rate' | 'pf' | 'trades' | 'stability'
 type SortDir = 'asc' | 'desc'
@@ -455,6 +455,244 @@ function SymbolSweepPanel({ sweep }: { sweep: SymbolSweepRun | null }) {
         <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-400">
           Failed (no usable data or backtest error): {sweep.failed_strategies.map(sweepStepLabel).join(', ')}
         </p>
+      )}
+    </div>
+  )
+}
+
+// ── Live Strategy Backtest -- Golden Stock/BTST/SOTD/Chartink/Golden Egg ────
+// Backtests each strategy's own real historical picks (already recorded by
+// its live resolver) rather than a synthetic re-simulation -- self-contained
+// like RsiReversionLiveView, since it needs a strategy-source picker instead
+// of the shared symbol/exchange form every other mode on this page uses.
+
+const LIVE_BACKTEST_SOURCES: { value: LiveBacktestSource; label: string; emoji: string }[] = [
+  { value: 'golden_stock', label: 'Golden Stock (Intraday)', emoji: '🔥' },
+  { value: 'btst', label: 'BTST', emoji: '🌙' },
+  { value: 'stock_of_day', label: 'Stock of the Day', emoji: '⭐' },
+  { value: 'chartink', label: 'Chartink (Breakout Watchlist)', emoji: '🚨' },
+  { value: 'golden_egg', label: 'Golden Egg', emoji: '🥚' },
+]
+
+// Golden Stock/BTST score each pick with confidence/RSI/volume-ratio
+// (Golden Stock also has ADX; BTST doesn't track it -- see the backend's
+// own _passes_gates()) -- the other three sources don't carry these fields
+// on their picks at all, so the gate row only shows for these two.
+const LIVE_BACKTEST_GATE_SOURCES = new Set<LiveBacktestSource>(['golden_stock', 'btst'])
+const LIVE_BACKTEST_GATE_DEFAULTS = { minConfidence: '', maxRsi: '', minVolumeRatio: '', minAdx: '' }
+
+function LiveStrategyBacktestPanel({ token }: { token: string }) {
+  const [source, setSource] = useState<LiveBacktestSource>('golden_stock')
+  const [fromDate, setFromDate] = useState(daysAgoStr(365))
+  const [toDate, setToDate] = useState(todayStr())
+  const [capital, setCapital] = useState(100000)
+  const [gates, setGates] = useState(LIVE_BACKTEST_GATE_DEFAULTS)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [result, setResult] = useState<LiveStrategyBacktestResult | null>(null)
+
+  const showGates = LIVE_BACKTEST_GATE_SOURCES.has(source)
+  const showAdxGate = source === 'golden_stock'
+
+  async function run() {
+    setLoading(true); setError(null); setResult(null)
+    try {
+      const r = await getLiveStrategyBacktest(token, {
+        source, from_date: fromDate, to_date: toDate, capital,
+        ...(showGates && gates.minConfidence !== '' ? { min_confidence: Number(gates.minConfidence) } : {}),
+        ...(showGates && gates.maxRsi !== '' ? { max_rsi: Number(gates.maxRsi) } : {}),
+        ...(showGates && gates.minVolumeRatio !== '' ? { min_volume_ratio: Number(gates.minVolumeRatio) } : {}),
+        ...(showAdxGate && gates.minAdx !== '' ? { min_adx: Number(gates.minAdx) } : {}),
+      })
+      setResult(r)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to run backtest')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="mb-6 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+      <p className="mb-1 text-sm font-semibold text-zinc-900 dark:text-zinc-50">Live Strategy Backtest</p>
+      <p className="mb-4 text-[11px] text-zinc-400">
+        Backtests each strategy against its own real historical picks — the exact entry/SL/target prices and
+        WIN/LOSS/EXPIRED outcomes each live scanner already recorded — not a synthetic re-simulation. Instant,
+        since it&apos;s reading data these strategies already tracked rather than running a new scan.
+      </p>
+
+      <div className="mb-4 flex flex-wrap gap-2">
+        {LIVE_BACKTEST_SOURCES.map(s => (
+          <button
+            key={s.value}
+            type="button"
+            onClick={() => { setSource(s.value); setResult(null); setError(null); setGates(LIVE_BACKTEST_GATE_DEFAULTS) }}
+            className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+              source === s.value ? 'bg-indigo-600 text-white' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400'
+            }`}
+          >
+            {s.emoji} {s.label}
+          </button>
+        ))}
+      </div>
+
+      {showGates && (
+        <div className="mb-4 rounded-lg border border-zinc-100 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-800/40">
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
+            Quality gates — test if only the highest-conviction picks would&apos;ve been profitable
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <div>
+              <label className="mb-1 block text-[10px] font-medium text-zinc-400">Min AI Score %</label>
+              <input
+                type="number" min={0} max={100} placeholder="off" value={gates.minConfidence}
+                onChange={e => setGates(g => ({ ...g, minConfidence: e.target.value }))}
+                className="w-20 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs text-zinc-700 focus:border-indigo-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-[10px] font-medium text-zinc-400">Max RSI</label>
+              <input
+                type="number" min={0} max={100} placeholder="off" value={gates.maxRsi}
+                onChange={e => setGates(g => ({ ...g, maxRsi: e.target.value }))}
+                className="w-20 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs text-zinc-700 focus:border-indigo-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-[10px] font-medium text-zinc-400">Min Volume Ratio</label>
+              <input
+                type="number" min={0} step={0.1} placeholder="off" value={gates.minVolumeRatio}
+                onChange={e => setGates(g => ({ ...g, minVolumeRatio: e.target.value }))}
+                className="w-24 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs text-zinc-700 focus:border-indigo-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+              />
+            </div>
+            {showAdxGate && (
+              <div>
+                <label className="mb-1 block text-[10px] font-medium text-zinc-400">Min ADX</label>
+                <input
+                  type="number" min={0} max={100} placeholder="off" value={gates.minAdx}
+                  onChange={e => setGates(g => ({ ...g, minAdx: e.target.value }))}
+                  className="w-20 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs text-zinc-700 focus:border-indigo-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+                />
+              </div>
+            )}
+            {Object.values(gates).some(v => v !== '') && (
+              <button
+                onClick={() => setGates(LIVE_BACKTEST_GATE_DEFAULTS)}
+                className="self-end rounded-lg px-2 py-1.5 text-[10px] font-semibold text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+              >
+                ✕ Clear gates
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div>
+          <label className="mb-1 block text-[10px] font-medium text-zinc-400">From</label>
+          <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)}
+            className="w-full rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
+        </div>
+        <div>
+          <label className="mb-1 block text-[10px] font-medium text-zinc-400">To</label>
+          <input type="date" value={toDate} onChange={e => setToDate(e.target.value)}
+            className="w-full rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
+        </div>
+        <div>
+          <label className="mb-1 block text-[10px] font-medium text-zinc-400">Capital per trade (₹)</label>
+          <input type="number" min={1000} step={1000} value={capital} onChange={e => setCapital(Number(e.target.value))}
+            className="w-full rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
+        </div>
+        <div className="flex items-end">
+          <button
+            onClick={run}
+            disabled={loading}
+            className="w-full rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-60"
+          >
+            {loading ? 'Running…' : 'Run Backtest'}
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950 dark:text-red-300">{error}</p>
+      )}
+
+      {result && (
+        result.total_trades === 0 ? (
+          <div className="rounded-2xl border border-dashed border-zinc-300 py-8 text-center dark:border-zinc-700">
+            <p className="text-2xl">🔬</p>
+            <p className="mt-2 text-sm font-medium text-zinc-600 dark:text-zinc-300">
+              {result.total_picks_before_gates === 0
+                ? `No resolved picks yet for ${result.label}`
+                : `No picks pass these quality gates`}
+            </p>
+            <p className="mt-1 text-xs text-zinc-400">
+              {result.total_picks_before_gates === 0
+                ? 'Come back once this strategy has picks that hit target/stop-loss/expiry in the selected window.'
+                : `${result.total_picks_before_gates} resolved pick${result.total_picks_before_gates === 1 ? '' : 's'} loaded, none met the current thresholds.`}
+            </p>
+          </div>
+        ) : (
+          <div className="border-t border-zinc-100 pt-4 dark:border-zinc-800">
+            <p className="mb-3 text-[11px] text-zinc-400">
+              {result.total_trades} of {result.total_picks_before_gates} resolved pick{result.total_picks_before_gates === 1 ? '' : 's'} passed
+              {' '}— {result.label}, ₹{capital.toLocaleString('en-IN')} deployed per trade
+            </p>
+            <MetricsGrid m={result.full_metrics} />
+
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <div>
+                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Equity Curve</p>
+                <LineChart
+                  points={result.equity_curve.map((p, i) => ({ x: i, y: p.equity }))}
+                  color="#4f46e5"
+                  formatY={v => `₹${(v / 1000).toFixed(0)}k`}
+                />
+              </div>
+              <div>
+                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Drawdown</p>
+                <LineChart
+                  points={result.drawdown_curve.map((p, i) => ({ x: i, y: -p.drawdown_pct }))}
+                  color="#ef4444"
+                  formatY={v => `${v.toFixed(0)}%`}
+                />
+              </div>
+            </div>
+
+            <div className="mt-5">
+              <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
+                Trades (most recent {result.trades.length} of {result.total_trades})
+              </p>
+              <div className="max-h-72 overflow-y-auto rounded-lg border border-zinc-100 dark:border-zinc-800">
+                <table className="w-full text-xs">
+                  <thead className="sticky top-0 bg-white dark:bg-zinc-900">
+                    <tr className="border-b border-zinc-100 dark:border-zinc-800">
+                      {['Entry', 'Exit', 'Entry ₹', 'Exit ₹', 'Qty', 'P&L', 'P&L %', 'Reason'].map(h => (
+                        <th key={h} className="px-2 py-1.5 text-left font-medium text-zinc-400">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {result.trades.map((t, i) => (
+                      <tr key={i} className="border-b border-zinc-50 dark:border-zinc-800/50">
+                        <td className="px-2 py-1.5 font-mono text-zinc-600 dark:text-zinc-300">{t.entry_time.slice(0, 16).replace('T', ' ')}</td>
+                        <td className="px-2 py-1.5 font-mono text-zinc-600 dark:text-zinc-300">{t.exit_time.slice(0, 16).replace('T', ' ')}</td>
+                        <td className="px-2 py-1.5 font-mono">{t.entry_price.toFixed(2)}</td>
+                        <td className="px-2 py-1.5 font-mono">{t.exit_price.toFixed(2)}</td>
+                        <td className="px-2 py-1.5">{t.quantity}</td>
+                        <td className={`px-2 py-1.5 font-mono font-semibold ${t.pnl >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{t.pnl.toFixed(0)}</td>
+                        <td className={`px-2 py-1.5 font-mono ${t.pnl_pct >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{t.pnl_pct.toFixed(1)}%</td>
+                        <td className="px-2 py-1.5 text-zinc-500">{t.exit_reason}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )
       )}
     </div>
   )
@@ -955,6 +1193,15 @@ export default function StrategyLabView() {
             </button>
             <button
               type="button"
+              onClick={() => handleModeChange('live_backtest')}
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                mode === 'live_backtest' ? 'bg-indigo-600 text-white' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400'
+              }`}
+            >
+              Live Strategy Backtest
+            </button>
+            <button
+              type="button"
               onClick={() => handleModeChange('compare')}
               className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
                 mode === 'compare' ? 'bg-indigo-600 text-white' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400'
@@ -971,7 +1218,14 @@ export default function StrategyLabView() {
             </p>
           )}
 
-          {mode !== 'rsi_live' && (
+          {mode === 'live_backtest' && (
+            <p className="rounded-lg bg-indigo-50 px-3 py-2 text-[11px] text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
+              Backtests Golden Stock, BTST, Stock of the Day, Chartink, or Golden Egg against their own real
+              historical picks — pick a strategy and date range below.
+            </p>
+          )}
+
+          {mode !== 'rsi_live' && mode !== 'live_backtest' && (
           <>
           {mode === 'trend_pullback' && (
             <div className="mb-4">
@@ -1285,6 +1539,8 @@ export default function StrategyLabView() {
 
         {mode === 'rsi_live' && <RsiReversionLiveView />}
 
+        {mode === 'live_backtest' && <LiveStrategyBacktestPanel token={tokenRef.current} />}
+
         {mode === 'compare' && (
           <SymbolComparisonView
             result={compareResult} loading={compareLoading} error={compareError}
@@ -1348,7 +1604,7 @@ export default function StrategyLabView() {
           </>
         )}
 
-        {mode !== 'rsi_live' && mode !== 'index_scan' && mode !== 'symbol_sweep' && (
+        {mode !== 'rsi_live' && mode !== 'index_scan' && mode !== 'symbol_sweep' && mode !== 'live_backtest' && (
         <>
         {msg && (
           <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-800 dark:bg-red-950 dark:text-red-300">

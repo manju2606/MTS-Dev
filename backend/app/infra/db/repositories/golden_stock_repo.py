@@ -232,6 +232,15 @@ class GoldenStockRepository:
                         "return_pct": "$picks.actual_pct",
                         "scan_date": "$scan_date",
                         "resolved_at": "$picks.resolved_at",
+                        # Quality-gate fields for the Live Strategy Backtest's
+                        # min-confidence/ADX/volume-ratio filters -- not used
+                        # by the Performance dashboard's own click-through,
+                        # just carried along since callers that don't need
+                        # them simply ignore the extra keys.
+                        "confidence_score": "$picks.confidence_score",
+                        "rsi": "$picks.rsi",
+                        "adx": "$picks.adx",
+                        "volume_ratio": "$picks.volume_ratio",
                     }
                 },
             ]

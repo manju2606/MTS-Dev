@@ -336,7 +336,12 @@ def _score_candidate(cand: dict, info: dict) -> IntradayCandidate | None:
     high_20d = float(high_20d_val) if not pd.isna(high_20d_val) else day_high
     breakout_20d = (high_20d - current) / high_20d * 100 <= 2.0 if high_20d > 0 else False
 
-    # ── Fundamental score (0-30) ──────────────────────────────────────────────
+    # ── Fundamental score (0-40) ──────────────────────────────────────────────
+    # Raised from 0-30 -- a backfill analysis of every historical pick
+    # (2026-07-06 to 2026-08-14, see backfill_golden_stock_outcomes) found
+    # fundamental_score was the cleanest positive predictor here: the top
+    # bucket (20+) averaged -0.16%% actual return vs -0.89%% to -1.63%% for
+    # lower buckets. Weighted up accordingly.
     fund = 0
     roe = info.get("returnOnEquity")
     de = info.get("debtToEquity")
@@ -347,70 +352,74 @@ def _score_candidate(cand: dict, info: dict) -> IntradayCandidate | None:
 
     if roe is not None:
         if roe > 0.18:
-            fund += 6
+            fund += 8
         elif roe > 0.10:
-            fund += 3
+            fund += 4
 
     if de is not None:
         if de < 50:
-            fund += 5
+            fund += 7
         elif de < 100:
-            fund += 2
+            fund += 3
 
     if rev_growth is not None:
         if rev_growth > 0.20:
-            fund += 5
+            fund += 7
         elif rev_growth > 0.10:
-            fund += 3
+            fund += 4
 
     if earn_growth is not None:
         if earn_growth > 0.25:
-            fund += 6
+            fund += 8
         elif earn_growth > 0.10:
-            fund += 3
+            fund += 4
 
     if insiders is not None:
         if insiders > 0.50:
-            fund += 5
+            fund += 7
         elif insiders > 0.30:
-            fund += 3
+            fund += 4
 
     if pe is not None and pe > 0 and pe < 80:
-        fund += 3
+        fund += 4
 
-    fund = min(fund, 30)
+    fund = min(fund, 40)
 
-    # ── Technical score (0-50) ────────────────────────────────────────────────
+    # ── Technical score (0-35) ────────────────────────────────────────────────
+    # Trimmed from 0-50 and rebalanced: the same backfill analysis found the
+    # RSI 60-75 "sweet spot" bonus, the macd_bullish bonus, and the high
+    # volume_ratio bonus were all NEGATIVELY correlated with real outcomes
+    # over that window (e.g. macd_bullish=True picks averaged -0.79%% vs
+    # -0.14%% for macd_bullish=False; RSI 60-69 underperformed both <60 and
+    # 75+; volume_ratio 3x+ underperformed 1.5-3x) -- so the RSI-band and
+    # macd_bullish bonuses were removed outright rather than kept on weak
+    # inverted evidence, and the volume_ratio bonus was cut to a token
+    # amount. near_day_high, the one technical sub-signal that showed a real
+    # positive correlation (-0.28%% vs -1.02%% when false), was weighted up
+    # to take most of the freed weight. Only ~4-5 weeks of history informs
+    # this -- revisit if a longer sample tells a different story.
     tech = 0
     if above_sma20 and sma20 > sma50:
-        tech += 10
-        if above_sma200:
-            tech += 5
-    elif above_sma20:
-        tech += 5
-
-    if 60 <= rsi <= 75:
-        tech += 10
-    elif 55 <= rsi <= 80:
-        tech += 5
-
-    if macd_bullish:
         tech += 8
-
-    if adx > 25:
-        tech += 7
-    elif adx > 20:
+        if above_sma200:
+            tech += 4
+    elif above_sma20:
         tech += 4
 
-    if volume_ratio >= 2.0:
-        tech += 5
-    elif volume_ratio >= 1.5:
+    if adx > 25:
+        tech += 6
+    elif adx > 20:
         tech += 3
 
-    if near_day_high:
-        tech += 5
+    if volume_ratio >= 2.0:
+        tech += 3
+    elif volume_ratio >= 1.5:
+        tech += 1
 
-    tech = min(tech, 50)
+    if near_day_high:
+        tech += 14
+
+    tech = min(tech, 35)
 
     # ── Momentum score (0-20) ─────────────────────────────────────────────────
     mom = 0

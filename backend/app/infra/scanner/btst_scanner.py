@@ -17,6 +17,18 @@ FII/DII cash-market buying is NOT included: no free/live data source for
 per-stock institutional flow is integrated in this stack, and fabricating a
 number would be presenting false data as real. If that feed is ever wired up,
 it slots in alongside the other factors below.
+
+Criterion 5 (fo_score/pcr) is still fetched and shown on each pick (badge +
+score bar), but does NOT contribute to confidence_score/total_score used for
+ranking/filtering: a backfill analysis of every historical pick (2026-07-06
+to 2026-08-14) found fo_score was 0 on 100% of them, and a live check against
+RELIANCE/TCS/HDFCBANK/INFY/SBIN confirmed why -- yfinance doesn't return an
+NSE options chain for these symbols, so the 20 points once allocated to this
+signal were dead weight on every real candidate. Its weight was redistributed
+to breakout/relative-strength/volume, which the same historical analysis
+showed do correlate with real outcomes (see backfill_btst_outcomes' data).
+news_score's weight was halved for the same reason on weaker evidence: it
+only fired on ~11%% of historical picks and had zero target_hits among those.
 """
 
 import asyncio
@@ -348,59 +360,64 @@ def _score_candidate(
     news_mentions = news[1] if news else 0
     fo_bullish = pcr is not None and pcr < 1.0
 
-    # ── Breakout / technical score (0-25) ─────────────────────────────────────
-    # Trimmed from 40 -- still the required hard filter below (a BTST pick
-    # still needs a real breakout), just weighted less among the *ranking*
-    # signals in favour of news/F&O, which have more chance of leading price
-    # instead of confirming a move that already happened.
+    # ── Breakout / technical score (0-30) ─────────────────────────────────────
     breakout_score = 0
     if breakout:
-        breakout_score += 13
+        breakout_score += 16
     if above_sma20 and sma20 > sma50:
-        breakout_score += 5
+        breakout_score += 6
     if 55 <= rsi <= 75:
-        breakout_score += 4
+        breakout_score += 5
     if macd_bullish:
-        breakout_score += 3
-    breakout_score = min(breakout_score, 25)
+        breakout_score += 4
+    breakout_score = min(breakout_score, 30)
 
-    # ── Relative strength vs Nifty (0-15) ─────────────────────────────────────
+    # ── Relative strength vs Nifty (0-20) ─────────────────────────────────────
     rel_score = 0
     if rel_5d > 3:
-        rel_score += 8
+        rel_score += 11
     elif rel_5d > 1:
-        rel_score += 4
+        rel_score += 5
     if rel_20d > 5:
-        rel_score += 7
+        rel_score += 9
     elif rel_20d > 2:
-        rel_score += 3
-    rel_score = min(rel_score, 15)
+        rel_score += 4
+    rel_score = min(rel_score, 20)
 
-    # ── Volume / delivery proxy (0-10) ────────────────────────────────────────
+    # ── Volume / delivery proxy (0-35) ────────────────────────────────────────
+    # Heaviest weight of the ranking signals: a backfill analysis of every
+    # historical pick showed volume_ratio has the cleanest, most monotonic
+    # relationship with real outcomes here (higher ratio -> better avg
+    # return), unlike news/F&O below.
     vol_score = 0
     if volume_ratio >= 2.5:
-        vol_score = 10
+        vol_score = 35
     elif volume_ratio >= 2.0:
-        vol_score = 7
+        vol_score = 25
     elif volume_ratio >= 1.5:
-        vol_score = 4
+        vol_score = 15
 
-    # ── News sentiment (0-30) ─────────────────────────────────────────────────
-    # Doubled from 15 -- a real RSS feed + sentiment score, the one input
-    # here that can move ahead of price instead of confirming it after.
+    # ── News sentiment (0-15) ─────────────────────────────────────────────────
+    # Halved from 30 -- historical picks with a nonzero news_score had ZERO
+    # target_hits (0 of ~15), so this is kept as a minor tiebreaker rather
+    # than a signal this data currently supports weighting heavily.
     news_score = 0
     if news_sentiment is not None and news_mentions > 0:
         if news_sentiment > 0.3:
-            news_score = 30
+            news_score = 15
         elif news_sentiment > 0.1:
-            news_score = 16
-        elif news_sentiment > 0:
             news_score = 8
+        elif news_sentiment > 0:
+            news_score = 4
 
-    # ── F&O positioning (0-20) ────────────────────────────────────────────────
-    # Doubled from 10 -- options Put/Call OI can front-run price, unlike the
-    # breakout/technical signals above which require the move to already be
-    # underway.
+    # ── F&O positioning (display-only, NOT scored) ────────────────────────────
+    # Still fetched and shown on each pick (badge + score bar), but excluded
+    # from total_score: fo_score was 0 on 100%% of historical picks, and a
+    # live check against RELIANCE/TCS/HDFCBANK/INFY/SBIN confirmed why --
+    # yfinance doesn't return an NSE options chain for these symbols, so the
+    # 20 points once allocated here were dead weight on every real candidate.
+    # If a working PCR data source is ever wired up, re-add it to total_score
+    # with fresh evidence it's predictive.
     fo_score = 0
     if pcr is not None:
         if pcr < 0.7:
@@ -408,12 +425,12 @@ def _score_candidate(
         elif pcr < 1.0:
             fo_score = 12
 
-    total_score = breakout_score + rel_score + vol_score + news_score + fo_score
+    total_score = breakout_score + rel_score + vol_score + news_score
 
     # ── BTST hard filters — overnight hold needs real conviction ─────────────
     if not breakout:
         return None
-    if total_score < 45:
+    if total_score < 55:
         return None
     if not above_sma20:
         return None

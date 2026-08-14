@@ -201,6 +201,49 @@ class GoldenStockRepository:
                 )
         return entries
 
+    async def list_resolved_picks_with_scan_id(self, since_date: str | None = None) -> list[dict]:
+        """Every already-resolved pick together with its parent scan doc's
+        _id -- update_pick_outcome() needs scan_id to write a correction
+        back, and no other read method here returns both at once. Mirrors
+        BTSTRepository's method of the same name -- used by the
+        resolver-bug backfill (see backfill_golden_stock_outcomes in
+        golden_stock_service.py) to re-grade historical picks against
+        their real target_1/stop_loss instead of the flat +5%/-2.5% band
+        the old resolver used."""
+        date_match: dict = {} if since_date is None else {"scan_date": {"$gte": since_date}}
+        cursor = self._col.find(
+            {**date_match, "picks.outcome": {"$ne": None}},
+            {
+                "scan_date": 1,
+                "picks.symbol": 1,
+                "picks.outcome": 1,
+                "picks.entry_price": 1,
+                "picks.target_1": 1,
+                "picks.stop_loss": 1,
+                "picks.actual_close": 1,
+                "picks.actual_pct": 1,
+            },
+        )
+        entries: list[dict] = []
+        async for doc in cursor:
+            for pick in doc.get("picks", []):
+                if pick.get("outcome") is None:
+                    continue
+                entries.append(
+                    {
+                        "scan_id": str(doc["_id"]),
+                        "scan_date": doc["scan_date"],
+                        "symbol": pick.get("symbol"),
+                        "outcome": pick.get("outcome"),
+                        "entry_price": pick.get("entry_price"),
+                        "target_1": pick.get("target_1"),
+                        "stop_loss": pick.get("stop_loss"),
+                        "actual_close": pick.get("actual_close"),
+                        "actual_pct": pick.get("actual_pct"),
+                    }
+                )
+        return entries
+
     async def list_picks_by_outcome(
         self, outcomes: list[str] | None, since_date: str | None = None, limit: int = 200
     ) -> list[dict]:

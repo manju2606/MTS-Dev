@@ -538,10 +538,46 @@ function BreakoutStatusBadge({ status }: { status: ChartinkBreakoutRow['status']
   )
 }
 
+type BreakoutSortKey =
+  | 'symbol' | 'scan_name' | 'appeared_date' | 'confidence' | 'entry_price' | 'target'
+  | 'stop_loss' | 'ltp' | 'change' | 'day_pnl_pct' | 'week_pnl_pct' | 'month_pnl_pct' | 'status'
+
+const BREAKOUT_SORT_COLUMNS: { key: BreakoutSortKey; label: string }[] = [
+  { key: 'symbol', label: 'Stock' },
+  { key: 'scan_name', label: 'Scan' },
+  { key: 'appeared_date', label: 'Appeared' },
+  { key: 'confidence', label: 'AI Score' },
+  { key: 'entry_price', label: 'Entry' },
+  { key: 'target', label: 'Target' },
+  { key: 'stop_loss', label: 'SL' },
+  { key: 'ltp', label: 'LTP' },
+  { key: 'change', label: 'Change' },
+  { key: 'day_pnl_pct', label: 'Day %' },
+  { key: 'week_pnl_pct', label: 'Week %' },
+  { key: 'month_pnl_pct', label: 'Month %' },
+  { key: 'status', label: 'Status' },
+]
+
+function sortBreakoutRows(rows: ChartinkBreakoutRow[], key: BreakoutSortKey, dir: 'asc' | 'desc') {
+  const sorted = [...rows].sort((a, b) => {
+    const av = a[key]
+    const bv = b[key]
+    if (av === null && bv === null) return 0
+    if (av === null) return 1
+    if (bv === null) return -1
+    if (typeof av === 'number' && typeof bv === 'number') return av - bv
+    return String(av).localeCompare(String(bv))
+  })
+  if (dir === 'desc') sorted.reverse()
+  return sorted
+}
+
 function BreakoutWatchlist({ token }: { token: string }) {
   const [rows, setRows] = useState<ChartinkBreakoutRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [sortKey, setSortKey] = useState<BreakoutSortKey>('appeared_date')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -556,6 +592,17 @@ function BreakoutWatchlist({ token }: { token: string }) {
   }, [token])
 
   useEffect(() => { load() }, [load])
+
+  function toggleSort(key: BreakoutSortKey) {
+    if (key === sortKey) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortKey(key)
+      setSortDir('asc')
+    }
+  }
+
+  const sortedRows = sortBreakoutRows(rows, sortKey, sortDir)
 
   return (
     <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
@@ -590,13 +637,21 @@ function BreakoutWatchlist({ token }: { token: string }) {
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/50">
-                {['Stock', 'Scan', 'Appeared', 'AI Score', 'Entry', 'Target', 'SL', 'LTP', 'Change', 'Day %', 'Week %', 'Month %', 'Status'].map(h => (
-                  <th key={h} className="whitespace-nowrap px-3 py-2.5 text-left font-semibold text-zinc-500 dark:text-zinc-400">{h}</th>
+                {BREAKOUT_SORT_COLUMNS.map(({ key, label }) => (
+                  <th key={key} className="whitespace-nowrap px-3 py-2.5 text-left font-semibold text-zinc-500 dark:text-zinc-400">
+                    <button
+                      onClick={() => toggleSort(key)}
+                      className="flex items-center gap-1 hover:text-zinc-800 dark:hover:text-zinc-200"
+                    >
+                      {label}
+                      {sortKey === key && <span className="text-indigo-500">{sortDir === 'asc' ? '▲' : '▼'}</span>}
+                    </button>
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {rows.map(r => (
+              {sortedRows.map(r => (
                 <tr key={r.id} className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/30" title={r.explanation ?? undefined}>
                   <td className="whitespace-nowrap px-3 py-2 font-bold text-zinc-800 dark:text-zinc-200">{r.symbol.replace(/\.(NS|BO)$/, '')}</td>
                   <td className="whitespace-nowrap px-3 py-2 text-zinc-500 dark:text-zinc-400">{r.scan_name}</td>

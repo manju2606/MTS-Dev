@@ -7,11 +7,12 @@ import { NavBar } from '@/components/nav-bar'
 import {
   getMe, getTopPicks, getDiscoveryStatus, listTrades, listAlerts, getQuote, getMarketOverview,
   getSotDToday, listWatchlists, addItemToWatchlist, getGoldenStockLatest, getBTSTLatest, getBrokerStatus, ApiError,
+  getGoldenEggToday,
 } from '@/lib/api'
 import type {
   User, StockScore, DiscoveryStatus, Trade, AlertRule,
   IndexQuote, EconomicEvent, MarketOverviewData, StockOfDay, Watchlist,
-  GoldenStockScan, BTSTScanResult, BrokerStatus,
+  GoldenStockScan, BTSTScanResult, BrokerStatus, GoldenEggPick,
 } from '@/lib/api'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -584,6 +585,65 @@ function SotDDashCard({ sotd, ltp, token, watchlists }: {
   )
 }
 
+// ── Golden Egg compact card ────────────────────────────────────────────────────
+
+function GoldenEggDashCard({ pick, token, watchlists }: {
+  pick: GoldenEggPick | null
+  token?: string
+  watchlists?: Watchlist[]
+}) {
+  const top = pick?.pick
+  if (!top) {
+    return (
+      <div className="flex items-center justify-between rounded-xl border border-dashed border-zinc-300 bg-white px-4 py-3 dark:border-zinc-700 dark:bg-zinc-900">
+        <div className="flex items-center gap-2">
+          <span className="text-base">🥚</span>
+          <div>
+            <p className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">Golden Egg</p>
+            <p className="text-[10px] text-zinc-400">Single-stock pick, emailed 09:15 IST</p>
+          </div>
+        </div>
+        <Link href="/golden-egg" className="text-[10px] font-semibold text-yellow-600 hover:underline dark:text-yellow-400">
+          View →
+        </Link>
+      </div>
+    )
+  }
+
+  const sym = top.symbol.replace(/\.(NS|BO)$/, '')
+
+  return (
+    <div className="flex flex-wrap items-center gap-4 rounded-xl border border-yellow-100 bg-gradient-to-r from-yellow-50 to-amber-50 px-4 py-3 dark:border-yellow-900/50 dark:from-yellow-950/30 dark:to-amber-950/20">
+      <div className={DASH_CARD_LABEL_COL}>
+        <span className="text-base">🥚</span>
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wide text-yellow-600">Golden Egg</p>
+          <p className="text-sm font-extrabold text-zinc-900 dark:text-zinc-50">{sym}</p>
+        </div>
+      </div>
+      <div className={DASH_CARD_METRIC_GRID}>
+        <DashCardMetric label="Entry" value={`₹${top.entry_price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`} />
+        <DashCardLtp ltp={top.ltp ?? null} entryPrice={top.entry_price} />
+        <DashCardMetric label="SL" value={`₹${top.stop_loss.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`} valueClass="text-red-600 dark:text-red-400" />
+        <DashCardMetric label="Target" value={`₹${top.target_1.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`} valueClass="text-emerald-600 dark:text-emerald-400" />
+        <DashCardMetric label="Score" value={top.confidence_score} valueClass="text-yellow-600" />
+        <DashCardMetric label="Status" value={top.outcome ?? 'OPEN'} valueClass="text-[10px] font-bold text-zinc-700 dark:text-zinc-300" />
+      </div>
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        {token && watchlists && watchlists.length > 0 && (
+          <AddToWatchlistBtn symbol={top.symbol} token={token} watchlists={watchlists} />
+        )}
+        <Link href={`/trade?symbol=${encodeURIComponent(top.symbol)}`} className="rounded-lg bg-white px-3 py-1.5 text-[10px] font-bold text-yellow-700 ring-1 ring-yellow-300 hover:bg-yellow-50 dark:bg-zinc-900 dark:text-yellow-400 dark:ring-yellow-800 dark:hover:bg-yellow-950/40">
+          Trade Now →
+        </Link>
+        <Link href="/golden-egg" className="rounded-lg bg-yellow-500 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-yellow-600">
+          Details →
+        </Link>
+      </div>
+    </div>
+  )
+}
+
 // ── Golden Stock — Intraday compact card ──────────────────────────────────────
 
 function GoldenStockDashCard({ scan, ltp, token, watchlists }: {
@@ -717,6 +777,7 @@ export default function DashboardView() {
   const [alerts, setAlerts]     = useState<AlertRule[]>([])
   const [market, setMarket]     = useState<MarketOverviewData | null>(null)
   const [sotd, setSotd]         = useState<StockOfDay | null>(null)
+  const [goldenEgg, setGoldenEgg] = useState<GoldenEggPick | null>(null)
   const [goldenStock, setGoldenStock] = useState<GoldenStockScan | null>(null)
   const [btst, setBtst]         = useState<BTSTScanResult | null>(null)
   const [sortKey, setSortKey]   = useState<SortKey>('signal')
@@ -738,6 +799,7 @@ export default function DashboardView() {
       if (c.status) setStatus(c.status)
       if (c.market) setMarket(c.market)
       if (c.sotd !== undefined) setSotd(c.sotd)
+      if (c.goldenEgg !== undefined) setGoldenEgg(c.goldenEgg)
       if (c.goldenStock !== undefined) setGoldenStock(c.goldenStock)
       if (c.btst !== undefined) setBtst(c.btst)
       if (c.trades) setTrades(c.trades)
@@ -747,13 +809,14 @@ export default function DashboardView() {
 
   const load = useCallback(async (token: string) => {
     // Critical data first — renders SotD, picks, trades without waiting for market-overview
-    const [me, p, s, t, a, sotdRes, gsRes, btstRes] = await Promise.all([
+    const [me, p, s, t, a, sotdRes, geRes, gsRes, btstRes] = await Promise.all([
       getMe(token),
       getTopPicks(token, 50, undefined, 0).catch(() => [] as StockScore[]),
       getDiscoveryStatus(token).catch(() => null),
       listTrades(token, 'open').catch(() => [] as Trade[]),
       listAlerts(token).catch(() => [] as AlertRule[]),
       getSotDToday(token).catch(() => null),
+      getGoldenEggToday(token).catch(() => null),
       getGoldenStockLatest(token).catch(() => null),
       getBTSTLatest(token).catch(() => null),
     ])
@@ -765,13 +828,14 @@ export default function DashboardView() {
     setTrades(openTrades)
     setAlerts(activeAlerts)
     if (sotdRes !== null) setSotd(sotdRes?.data ?? null)
+    setGoldenEgg(geRes)
     setGoldenStock(gsRes)
     setBtst(btstRes)
 
     try {
       localStorage.setItem(CACHE_KEY, JSON.stringify({
         picks: p, status: s, sotd: sotdRes?.data ?? null,
-        goldenStock: gsRes, btst: btstRes,
+        goldenEgg: geRes, goldenStock: gsRes, btst: btstRes,
         trades: openTrades, alerts: activeAlerts,
       }))
     } catch { /* storage full */ }
@@ -925,6 +989,7 @@ export default function DashboardView() {
         {/* Stock of the Day / Golden Stock / BTST banners */}
         <div className="mb-5 space-y-3">
           <SotDDashCard sotd={sotd} ltp={sotdLtp} token={tokenRef.current} watchlists={watchlists} />
+          <GoldenEggDashCard pick={goldenEgg} token={tokenRef.current} watchlists={watchlists} />
           <GoldenStockDashCard scan={goldenStock} ltp={goldenStockLtp} token={tokenRef.current} watchlists={watchlists} />
           <BTSTDashCard scan={btst} ltp={btstLtp} token={tokenRef.current} watchlists={watchlists} />
         </div>

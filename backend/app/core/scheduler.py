@@ -91,6 +91,30 @@ async def _run_golden_egg() -> None:
         log.error("scheduler.golden_egg.error", error=str(exc))
 
 
+async def _check_golden_egg_outcomes() -> None:
+    """Every 5 minutes during market hours: check if today's Golden Egg
+    pick's target_1/stop_loss has been hit."""
+    try:
+        from app.services.golden_egg_service import check_golden_egg_outcomes
+
+        count = await check_golden_egg_outcomes()
+        log.info("scheduler.golden_egg_check.done", resolved=count)
+    except Exception as exc:
+        log.error("scheduler.golden_egg_check.error", error=str(exc))
+
+
+async def _expire_golden_egg_picks() -> None:
+    """15:35 IST weekdays: close out any still-open Golden Egg pick at
+    current market price."""
+    try:
+        from app.services.golden_egg_service import expire_golden_egg_picks
+
+        count = await expire_golden_egg_picks()
+        log.info("scheduler.golden_egg_expire.done", closed=count)
+    except Exception as exc:
+        log.error("scheduler.golden_egg_expire.error", error=str(exc))
+
+
 async def _run_golden_stock_scan() -> None:
     """Every 15 min, 09:30-15:00 IST weekdays: run Golden Stock Intraday scan."""
     try:
@@ -1394,6 +1418,32 @@ def start_scheduler() -> None:
         name="Golden Egg — Daily Pick Email (09:15)",
         max_instances=1,
         misfire_grace_time=600,
+    )
+
+    # Golden Egg: check target_1/stop_loss every 5 minutes during market hours
+    _scheduler.add_job(
+        _check_golden_egg_outcomes,
+        CronTrigger(
+            day_of_week="mon-fri",
+            hour="9-15",
+            minute="*/5",
+            second="50",
+            timezone="Asia/Kolkata",
+        ),
+        id="golden_egg_check",
+        name="Golden Egg — Target/Stop-Loss Check",
+        max_instances=1,
+        misfire_grace_time=60,
+    )
+
+    # Golden Egg: expire any still-open pick at market close 15:35 IST
+    _scheduler.add_job(
+        _expire_golden_egg_picks,
+        CronTrigger(day_of_week="mon-fri", hour=15, minute=35, second=15, timezone="Asia/Kolkata"),
+        id="golden_egg_expire",
+        name="Golden Egg — Expire Open Pick",
+        max_instances=1,
+        misfire_grace_time=None,
     )
 
     # Golden Stock Intraday scan every 15 min, 09:30-15:00 IST (Mon-Fri)

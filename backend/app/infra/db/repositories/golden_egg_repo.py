@@ -51,9 +51,17 @@ class GoldenEggRepository:
         """Insert a new record for this scan run -- never overwrites a
         prior run's pick, even one from earlier the same day (see this
         module's docstring)."""
+        pick_doc = dataclasses.asdict(pick) if pick else None
+        if pick_doc is not None:
+            # Outcome fields for later resolution -- see
+            # golden_egg_service.check_golden_egg_outcomes/expire_golden_egg_picks.
+            pick_doc.setdefault("outcome", None)
+            pick_doc.setdefault("actual_close", None)
+            pick_doc.setdefault("actual_pct", None)
+            pick_doc.setdefault("resolved_at", None)
         doc = {
             "scan_date": scan_date,
-            "pick": dataclasses.asdict(pick) if pick else None,
+            "pick": pick_doc,
             "sizing": sizing,
             "target_profit": target_profit,
             "market_context": market_context,
@@ -104,13 +112,87 @@ class GoldenEggRepository:
         """Number of runs that actually picked a stock (excludes the
         `pick: None` "nothing passed the filter today" runs) on or after
         `since` (all-time if None) -- for the cross-engine Performance
-        dashboard's "total calls" count. No outcome/win-loss tracking
-        exists for Golden Egg yet (see module docstring), so this is the
-        only metric it can currently contribute."""
+        dashboard's "total calls" count."""
         query: dict = {"pick": {"$ne": None}}
         if since is not None:
             query["created_at"] = {"$gte": since}
         return await self._col.count_documents(query)
+
+    async def list_unresolved(self, since_date: str) -> list[dict]:
+        """Every run from `since_date` onward with a pick that hasn't been
+        resolved yet -- for check_golden_egg_outcomes/expire_golden_egg_picks
+        (see golden_egg_service.py). Golden Egg is a same-session-hold pick
+        (unlike Golden Stock/BTST's multi-day window), so `since_date` is
+        normally just today."""
+        cursor = self._col.find(
+            {"scan_date": {"$gte": since_date}, "pick": {"$ne": None}, "pick.outcome": None}
+        )
+        return [_clean(doc) async for doc in cursor]
+
+    async def update_pick_outcome(
+        self, doc_id: str, actual_close: float, actual_pct: float, outcome: str
+    ) -> None:
+        """Set a run's pick to its final resolved outcome. One pick per
+        document (unlike Golden Stock's per-scan pick array), so this
+        updates by `_id` directly rather than a positional array match."""
+        await self._col.update_one(
+            {"_id": ObjectId(doc_id)},
+            {
+                "$set": {
+                    "pick.outcome": outcome,
+                    "pick.actual_close": actual_close,
+                    "pick.actual_pct": actual_pct,
+                    "pick.resolved_at": datetime.utcnow().isoformat(),
+                }
+            },
+        )
+
+    async def get_performance_stats(self, since_date: str | None) -> dict:
+        """Aggregate WIN/LOSS/NEUTRAL across every pick (optionally only
+        since_date onward) for the cross-engine Performance dashboard --
+        same shape as StockOfDayRepository.get_performance_stats()."""
+        base_query: dict = {"pick": {"$ne": None}}
+        if since_date is not None:
+            base_query["scan_date"] = {"$gte": since_date}
+        total_calls = await self._col.count_documents(base_query)
+
+        pipeline = [
+            {"$match": {**base_query, "pick.outcome": {"$ne": None}}},
+            {
+                "$group": {
+                    "_id": None,
+                    "total": {"$sum": 1},
+                    "wins": {"$sum": {"$cond": [{"$eq": ["$pick.outcome", "WIN"]}, 1, 0]}},
+                    "losses": {"$sum": {"$cond": [{"$eq": ["$pick.outcome", "LOSS"]}, 1, 0]}},
+                    "neutral": {"$sum": {"$cond": [{"$eq": ["$pick.outcome", "NEUTRAL"]}, 1, 0]}},
+                    "avg_return": {"$avg": "$pick.actual_pct"},
+                }
+            },
+        ]
+        results = [doc async for doc in self._col.aggregate(pipeline)]
+
+        if not results:
+            return {
+                "total_calls": total_calls,
+                "resolved": 0,
+                "wins": 0,
+                "losses": 0,
+                "neutral": 0,
+                "win_rate_pct": None,
+                "avg_return_pct": None,
+            }
+
+        r = results[0]
+        wins, losses = r.get("wins", 0), r.get("losses", 0)
+        return {
+            "total_calls": total_calls,
+            "resolved": r.get("total", 0),
+            "wins": wins,
+            "losses": losses,
+            "neutral": r.get("neutral", 0),
+            "win_rate_pct": round(wins / (wins + losses) * 100, 1) if (wins + losses) > 0 else None,
+            "avg_return_pct": round(r.get("avg_return") or 0.0, 2),
+        }
 
 
 def _clean(doc: dict) -> dict:

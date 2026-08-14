@@ -1,33 +1,31 @@
 """Cross-engine Performance dashboard -- aggregates win/loss stats across
 every AI-generated trading signal source in the app.
 
-MCX (NG + Metals), Golden Stock, BTST, Stock of the Day, paper trades,
-and Chartink's Breakout Watchlist all have real, automatically-resolved
-WIN/LOSS/EXPIRED-style outcomes (see each source's own resolver:
+MCX (NG + Metals), Golden Stock, BTST, Stock of the Day, Golden Egg, paper
+trades, and Chartink's Breakout Watchlist all have real, automatically-
+resolved WIN/LOSS/EXPIRED-style outcomes (see each source's own resolver:
 mcx_signal_service.resolve_open_signals,
 golden_stock_service.resolve_btst_outcomes, btst_service's function of
 the same name, stock_of_day_service.run_sotd_price_check/
-expire_open_picks, a paper trade's own exit_price, or
+expire_open_picks, golden_egg_service.check_golden_egg_outcomes/
+expire_golden_egg_picks, a paper trade's own exit_price, or
 chartink_signal_service.resolve_breakout_alerts()) and get a normalized
 win-rate here.
 
-Golden Egg only ever scores entry/SL/target once and never checks what
-actually happened to the price afterward -- no outcome tracking exists
-for it yet -- so it contributes a "total calls" count only, with
-win/loss explicitly left untracked (None) rather than fabricated from
-e.g. a live-LTP snapshot, which is just a point-in-time read, not a
-resolved outcome. The rest of raw Chartink (every candidate outside the
-Breakout Watchlist) is the same story -- scored once, never resolved --
-which is why Chartink's tracked numbers here are scoped to just the
-Breakout Watchlist subset, not every candidate that's ever come through.
+The rest of raw Chartink (every candidate outside the Breakout Watchlist)
+is still scored once and never resolved, which is why Chartink's tracked
+numbers here are scoped to just the Breakout Watchlist subset, not every
+candidate that's ever come through.
 
 Each source's own win/target thresholds differ (Golden Stock: target
->=5%/SL <=-2.5%; BTST: target >=5%/SL <=-3%; SOTD: real SL/target price
-levels, or a +-0.2% pnl_pct band for the end-of-day NEUTRAL bucket; MCX
-and Chartink Breakout Watchlist: real SL/target price levels) -- this
-module does not attempt to renormalize those thresholds against each
-other, only the resulting WIN/LOSS/other-shaped counts into one common
-shape.
+>=5%/SL <=-2.5%; BTST: target >=5%/SL <=-3%; SOTD and Golden Egg: real
+SL/target price levels, or a +-0.2% pnl_pct band for the end-of-day
+NEUTRAL/expire bucket; MCX and Chartink Breakout Watchlist: real
+SL/target price levels) -- this module does not attempt to renormalize
+those thresholds against each other, only the resulting WIN/LOSS/other-
+shaped counts into one common shape. Golden Egg picks made before its
+resolver existed stay permanently unresolved and count toward
+total_calls only, same as any pick still genuinely OPEN.
 """
 
 from __future__ import annotations
@@ -196,10 +194,19 @@ async def _chartink_stats(days: int | None) -> dict:
 
 
 async def _golden_egg_stats(days: int | None) -> dict:
+    """Golden Egg now resolves WIN/LOSS/NEUTRAL against its pick's real
+    target_1/stop_loss price levels the same session, or at 15:35 IST close
+    if neither was hit -- see golden_egg_service.check_golden_egg_outcomes/
+    expire_golden_egg_picks(). Picks made before that resolver existed stay
+    permanently unresolved (pick.outcome null) and simply count toward
+    total_calls without affecting win_rate_pct."""
     from app.infra.db.repositories.golden_egg_repo import GoldenEggRepository
 
-    total = await GoldenEggRepository().count_calls_since(_since_dt(days))
-    return _make("golden_egg", "Golden Egg", False, total)
+    s = await GoldenEggRepository().get_performance_stats(_since_date_str(days))
+    return _make(
+        "golden_egg", "Golden Egg", True, s["total_calls"],
+        s["wins"], s["losses"], s["neutral"], s["avg_return_pct"],
+    )
 
 
 def _call_row(

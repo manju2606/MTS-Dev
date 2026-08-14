@@ -83,6 +83,95 @@ async def send_golden_egg_email(target_profit: float = 1000.0) -> IntradayCandid
     return pick
 
 
+# ── Outcome resolution ───────────────────────────────────────────────────────
+# Golden Egg is a same-session-hold pick (see module docstring), so unlike
+# Golden Stock/BTST's multi-day RESOLUTION_WINDOW_DAYS, only *today's* pick(s)
+# are ever checked -- same convention as Stock of the Day's
+# run_sotd_price_check/expire_open_picks, which this pair mirrors.
+
+
+async def check_golden_egg_outcomes() -> int:
+    """Called every 5 min during market hours: checks today's still-open
+    pick(s) against real entry_price/stop_loss/target_1 price levels --
+    target_1 since that's what _size_for_target's quantity is actually sized
+    for, not the further target_2. Returns the number resolved this run."""
+    from app.infra.db.repositories.golden_egg_repo import GoldenEggRepository
+    from app.infra.market_data.yfinance_client import YFinanceClient
+
+    repo = GoldenEggRepository()
+    today = datetime.now(IST).strftime("%Y-%m-%d")
+    runs = await repo.list_unresolved(today)
+    if not runs:
+        return 0
+
+    client = YFinanceClient()
+    resolved = 0
+    for run in runs:
+        pick = run.get("pick") or {}
+        symbol = pick.get("symbol")
+        entry = pick.get("entry_price")
+        stop_loss = pick.get("stop_loss")
+        target_1 = pick.get("target_1")
+        if not symbol or entry is None or stop_loss is None or target_1 is None:
+            continue
+        try:
+            quote = await client.get_quote(symbol)
+        except Exception as exc:
+            log.debug("golden_egg.check.quote_error", symbol=symbol, error=str(exc))
+            continue
+
+        price = quote.price
+        target_hit = price >= target_1
+        stop_hit = price <= stop_loss
+        if not (target_hit or stop_hit):
+            continue
+
+        outcome = "WIN" if target_hit else "LOSS"
+        actual_pct = round((price - entry) / entry * 100, 2) if entry > 0 else 0.0
+        await repo.update_pick_outcome(run["id"], price, actual_pct, outcome)
+        resolved += 1
+        log.info("golden_egg.check.resolved", symbol=symbol, outcome=outcome, price=price)
+
+    return resolved
+
+
+async def expire_golden_egg_picks() -> int:
+    """Called at 15:35 IST: close any still-unresolved pick(s) from today at
+    current market price -- +-0.2% pnl_pct band for NEUTRAL, same convention
+    as Stock of the Day's own EOD expire. Returns the number closed."""
+    from app.infra.db.repositories.golden_egg_repo import GoldenEggRepository
+    from app.infra.market_data.yfinance_client import YFinanceClient
+
+    repo = GoldenEggRepository()
+    today = datetime.now(IST).strftime("%Y-%m-%d")
+    runs = await repo.list_unresolved(today)
+    if not runs:
+        return 0
+
+    client = YFinanceClient()
+    closed = 0
+    for run in runs:
+        pick = run.get("pick") or {}
+        symbol = pick.get("symbol")
+        entry = pick.get("entry_price")
+        if not symbol or entry is None:
+            continue
+        try:
+            quote = await client.get_quote(symbol)
+            price = quote.price
+        except Exception as exc:
+            log.debug("golden_egg.expire.quote_error", symbol=symbol, error=str(exc))
+            price = entry
+
+        actual_pct = round((price - entry) / entry * 100, 2) if entry > 0 else 0.0
+        outcome = "WIN" if actual_pct > 0.2 else "LOSS" if actual_pct < -0.2 else "NEUTRAL"
+        await repo.update_pick_outcome(run["id"], price, actual_pct, outcome)
+        closed += 1
+        log.info("golden_egg.expire.closed", symbol=symbol, outcome=outcome, price=price)
+
+    return closed
+
+
 # ── Position sizing ──────────────────────────────────────────────────────────
 
 

@@ -194,6 +194,44 @@ class GoldenEggRepository:
             "avg_return_pct": round(r.get("avg_return") or 0.0, 2),
         }
 
+    async def list_picks_by_outcome(
+        self, outcomes: list[str] | None, since_date: str | None = None, limit: int = 200
+    ) -> list[dict]:
+        """Flat list of picks whose outcome is one of `outcomes` (e.g.
+        ["WIN"]/["LOSS"]), most recent scan first -- or, when `outcomes`
+        is None, picks that haven't resolved yet (outcome still null) i.e.
+        the "open" bucket. Same field shape as
+        GoldenStockRepository.list_picks_by_outcome() so
+        performance_dashboard_service._pick_row() can reuse it as-is; one
+        pick per document here (not an array), so this matches directly
+        rather than needing $unwind. For the Performance dashboard's
+        click-through from a win/loss/open count to the actual calls."""
+        date_match: dict = {} if since_date is None else {"scan_date": {"$gte": since_date}}
+        outcome_match = (
+            {"pick.outcome": None} if outcomes is None else {"pick.outcome": {"$in": outcomes}}
+        )
+        cursor = self._col.aggregate(
+            [
+                {"$match": {**date_match, "pick": {"$ne": None}, **outcome_match}},
+                {"$sort": {"scan_date": -1}},
+                {"$limit": limit},
+                {
+                    "$project": {
+                        "_id": 0,
+                        "symbol": "$pick.symbol",
+                        "name": "$pick.name",
+                        "outcome": "$pick.outcome",
+                        "entry_price": "$pick.entry_price",
+                        "exit_price": "$pick.actual_close",
+                        "return_pct": "$pick.actual_pct",
+                        "scan_date": "$scan_date",
+                        "resolved_at": "$pick.resolved_at",
+                    }
+                },
+            ]
+        )
+        return [doc async for doc in cursor]
+
 
 def _clean(doc: dict) -> dict:
     doc["id"] = str(doc.pop("_id"))

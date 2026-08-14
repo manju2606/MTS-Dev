@@ -364,6 +364,17 @@ async def _chartink_calls(outcome: str, days: int | None) -> list[dict]:
     return rows
 
 
+async def _golden_egg_calls(outcome: str, days: int | None) -> list[dict]:
+    from app.infra.db.repositories.golden_egg_repo import GoldenEggRepository
+
+    if outcome == "open":
+        picks = await GoldenEggRepository().list_picks_by_outcome(None, _since_date_str(days))
+        return [_pick_row(p, "OPEN") for p in picks]
+    outcomes = ["WIN"] if outcome == "win" else ["LOSS"]
+    picks = await GoldenEggRepository().list_picks_by_outcome(outcomes, _since_date_str(days))
+    return [_pick_row(p) for p in picks]
+
+
 _CALL_FETCHERS = {
     "mcx": lambda outcome, user_id, days: _mcx_calls(outcome, days),
     "golden_stock": lambda outcome, user_id, days: _golden_stock_calls(outcome, days),
@@ -371,13 +382,13 @@ _CALL_FETCHERS = {
     "stock_of_day": lambda outcome, user_id, days: _sotd_calls(outcome, days),
     "paper_trades": lambda outcome, user_id, days: _paper_trades_calls(outcome, user_id, days),
     "chartink": lambda outcome, user_id, days: _chartink_calls(outcome, days),
+    "golden_egg": lambda outcome, user_id, days: _golden_egg_calls(outcome, days),
 }
 
 
 async def get_calls(source_key: str, outcome: str, user_id: UUID, days: int | None) -> list[dict]:
-    """The actual calls behind a source's win/loss count -- Golden Egg
-    isn't in _CALL_FETCHERS since it has no outcome data to list (see
-    module docstring)."""
+    """The actual calls behind a source's win/loss count -- click-through
+    detail for the Performance dashboard's Wins/Losses/Open counts."""
     fetcher = _CALL_FETCHERS.get(source_key)
     if fetcher is None:
         return []

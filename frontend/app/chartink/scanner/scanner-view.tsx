@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { NavBar } from '@/components/nav-bar'
@@ -15,6 +16,12 @@ import type {
 
 function fmt(n: number) {
   return n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function fmtTime(iso: string | null) {
+  if (!iso) return '—'
+  const d = new Date(iso.endsWith('Z') ? iso : `${iso}Z`)
+  return d.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })
 }
 
 function timeAgo(iso: string | null) {
@@ -572,12 +579,32 @@ function sortBreakoutRows(rows: ChartinkBreakoutRow[], key: BreakoutSortKey, dir
   return sorted
 }
 
+const QUALITY_GATE_DEFAULTS = { minConfidence: '', minRR: '', minAdx: '', minVolumeRatio: '', maxRsi: '' }
+
+function applyQualityGates(rows: ChartinkBreakoutRow[], gates: typeof QUALITY_GATE_DEFAULTS) {
+  const minConfidence = gates.minConfidence === '' ? null : Number(gates.minConfidence) / 100
+  const minRR = gates.minRR === '' ? null : Number(gates.minRR)
+  const minAdx = gates.minAdx === '' ? null : Number(gates.minAdx)
+  const minVolumeRatio = gates.minVolumeRatio === '' ? null : Number(gates.minVolumeRatio)
+  const maxRsi = gates.maxRsi === '' ? null : Number(gates.maxRsi)
+
+  return rows.filter(r => {
+    if (minConfidence !== null && (r.confidence === null || r.confidence < minConfidence)) return false
+    if (minRR !== null && (r.risk_reward_ratio === null || r.risk_reward_ratio < minRR)) return false
+    if (minAdx !== null && (r.adx === null || r.adx < minAdx)) return false
+    if (minVolumeRatio !== null && (r.volume_ratio === null || r.volume_ratio < minVolumeRatio)) return false
+    if (maxRsi !== null && (r.rsi === null || r.rsi > maxRsi)) return false
+    return true
+  })
+}
+
 function BreakoutWatchlist({ token }: { token: string }) {
   const [rows, setRows] = useState<ChartinkBreakoutRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [sortKey, setSortKey] = useState<BreakoutSortKey>('appeared_date')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [gates, setGates] = useState(QUALITY_GATE_DEFAULTS)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -602,7 +629,9 @@ function BreakoutWatchlist({ token }: { token: string }) {
     }
   }
 
-  const sortedRows = sortBreakoutRows(rows, sortKey, sortDir)
+  const gatesActive = Object.values(gates).some(v => v !== '')
+  const filteredRows = applyQualityGates(rows, gates)
+  const sortedRows = sortBreakoutRows(filteredRows, sortKey, sortDir)
 
   return (
     <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
@@ -640,6 +669,60 @@ function BreakoutWatchlist({ token }: { token: string }) {
         </div>
       </div>
 
+      <div className="mb-4 flex flex-wrap items-end gap-3 rounded-lg border border-zinc-100 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-800/40">
+        <div>
+          <label className="mb-1 block text-[10px] font-medium text-zinc-400">Min AI Score %</label>
+          <input
+            type="number" min={0} max={100} placeholder="off" value={gates.minConfidence}
+            onChange={e => setGates(g => ({ ...g, minConfidence: e.target.value }))}
+            className="w-20 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs text-zinc-700 focus:border-indigo-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-[10px] font-medium text-zinc-400">Min R:R</label>
+          <input
+            type="number" min={0} step={0.1} placeholder="off" value={gates.minRR}
+            onChange={e => setGates(g => ({ ...g, minRR: e.target.value }))}
+            className="w-20 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs text-zinc-700 focus:border-indigo-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-[10px] font-medium text-zinc-400">Min ADX</label>
+          <input
+            type="number" min={0} max={100} placeholder="off" value={gates.minAdx}
+            onChange={e => setGates(g => ({ ...g, minAdx: e.target.value }))}
+            className="w-20 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs text-zinc-700 focus:border-indigo-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-[10px] font-medium text-zinc-400">Min Volume Ratio</label>
+          <input
+            type="number" min={0} step={0.1} placeholder="off" value={gates.minVolumeRatio}
+            onChange={e => setGates(g => ({ ...g, minVolumeRatio: e.target.value }))}
+            className="w-24 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs text-zinc-700 focus:border-indigo-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-[10px] font-medium text-zinc-400">Max RSI</label>
+          <input
+            type="number" min={0} max={100} placeholder="off" value={gates.maxRsi}
+            onChange={e => setGates(g => ({ ...g, maxRsi: e.target.value }))}
+            className="w-20 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs text-zinc-700 focus:border-indigo-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+          />
+        </div>
+        {gatesActive && (
+          <button
+            onClick={() => setGates(QUALITY_GATE_DEFAULTS)}
+            className="rounded-lg px-2 py-1.5 text-[10px] font-semibold text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+          >
+            ✕ Clear gates
+          </button>
+        )}
+        {gatesActive && (
+          <span className="text-[10px] text-zinc-400">{filteredRows.length} of {rows.length} pass</span>
+        )}
+      </div>
+
       {error && (
         <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600 dark:bg-red-950 dark:text-red-300">{error}</p>
       )}
@@ -649,6 +732,12 @@ function BreakoutWatchlist({ token }: { token: string }) {
           <p className="text-2xl">🎯</p>
           <p className="mt-2 text-sm font-medium text-zinc-600 dark:text-zinc-300">No breakouts yet</p>
           <p className="mt-1 text-xs text-zinc-400">A stock lands here once it appears in the same scan 3 times in a row.</p>
+        </div>
+      ) : !loading && filteredRows.length === 0 && !error ? (
+        <div className="rounded-2xl border border-dashed border-zinc-300 py-8 text-center dark:border-zinc-700">
+          <p className="text-2xl">🔬</p>
+          <p className="mt-2 text-sm font-medium text-zinc-600 dark:text-zinc-300">No breakouts pass these quality gates</p>
+          <p className="mt-1 text-xs text-zinc-400">{rows.length} breakout{rows.length === 1 ? '' : 's'} loaded, none met the current thresholds.</p>
         </div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
@@ -666,6 +755,8 @@ function BreakoutWatchlist({ token }: { token: string }) {
                     </button>
                   </th>
                 ))}
+                <th className="whitespace-nowrap px-3 py-2.5 text-left font-semibold text-zinc-500 dark:text-zinc-400">Chart</th>
+                <th className="whitespace-nowrap px-3 py-2.5 text-left font-semibold text-zinc-500 dark:text-zinc-400">Analyse</th>
               </tr>
             </thead>
             <tbody>
@@ -673,7 +764,10 @@ function BreakoutWatchlist({ token }: { token: string }) {
                 <tr key={r.id} className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/30" title={r.explanation ?? undefined}>
                   <td className="whitespace-nowrap px-3 py-2 font-bold text-zinc-800 dark:text-zinc-200">{r.symbol.replace(/\.(NS|BO)$/, '')}</td>
                   <td className="whitespace-nowrap px-3 py-2 text-zinc-500 dark:text-zinc-400">{r.scan_name}</td>
-                  <td className="whitespace-nowrap px-3 py-2 text-zinc-500 dark:text-zinc-400">{r.appeared_date}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-zinc-500 dark:text-zinc-400">
+                    {r.appeared_date}
+                    <span className="ml-1 text-[10px] text-zinc-400">{fmtTime(r.created_at)}</span>
+                  </td>
                   <td className="whitespace-nowrap px-3 py-2 font-mono text-indigo-600 dark:text-indigo-400">{r.confidence !== null ? `${Math.round(r.confidence * 100)}%` : '—'}</td>
                   <td className="whitespace-nowrap px-3 py-2 font-mono text-zinc-700 dark:text-zinc-300">{r.entry_price !== null ? `₹${fmt(r.entry_price)}` : '—'}</td>
                   <td className="whitespace-nowrap px-3 py-2 font-mono text-emerald-600 dark:text-emerald-400">{r.target !== null ? `₹${fmt(r.target)}` : '—'}</td>
@@ -684,6 +778,22 @@ function BreakoutWatchlist({ token }: { token: string }) {
                   <td className={`whitespace-nowrap px-3 py-2 font-mono ${pctCls(r.week_pnl_pct)}`}>{fmtPct(r.week_pnl_pct)}</td>
                   <td className={`whitespace-nowrap px-3 py-2 font-mono ${pctCls(r.month_pnl_pct)}`}>{fmtPct(r.month_pnl_pct)}</td>
                   <td className="whitespace-nowrap px-3 py-2"><BreakoutStatusBadge status={r.status} /></td>
+                  <td className="whitespace-nowrap px-3 py-2">
+                    <Link
+                      href={`/trade?symbol=${encodeURIComponent(r.symbol)}`}
+                      className="rounded-lg bg-indigo-50 px-2 py-1 text-[10px] font-semibold text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:text-indigo-400 dark:hover:bg-indigo-950/70"
+                    >
+                      📈 Chart
+                    </Link>
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2">
+                    <Link
+                      href={`/stock-analysis?symbol=${encodeURIComponent(r.symbol)}`}
+                      className="rounded-lg bg-zinc-100 px-2 py-1 text-[10px] font-semibold text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                    >
+                      🔍 Analyse
+                    </Link>
+                  </td>
                 </tr>
               ))}
             </tbody>

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { NavBar } from '@/components/nav-bar'
 import { PriceChart } from '@/components/price-chart'
 import type { PredictionPoint, RefLine } from '@/components/price-chart'
@@ -174,6 +174,7 @@ function PredictionChart({ token, symbol, rec }: { token: string; symbol: string
 
 export default function StockAnalysisView() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const tokenRef = useRef('')
   const [authChecked, setAuthChecked] = useState(false)
   const [token, setToken] = useState('')
@@ -191,6 +192,19 @@ export default function StockAnalysisView() {
     const id = setTimeout(() => setAuthChecked(true), 0)
     return () => clearTimeout(id)
   }, [router])
+
+  // Deep-link support: /stock-analysis?symbol=RELIANCE.NS
+  useEffect(() => {
+    if (!token || selected) return
+    const symbolParam = searchParams.get('symbol')
+    if (!symbolParam) return
+    const bare = symbolParam.replace(/\.(NS|BO)$/, '')
+    searchStocks(token, bare).then(results => {
+      const match = results.find(r => r.symbol === symbolParam) ?? results[0]
+      if (match) handleSelect(match)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, searchParams])
 
   function handleSelect(r: StockSearchResult) {
     setSelected(r)

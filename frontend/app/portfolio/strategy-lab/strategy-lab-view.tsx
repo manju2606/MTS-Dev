@@ -479,20 +479,47 @@ const LIVE_BACKTEST_SOURCES: { value: LiveBacktestSource; label: string; emoji: 
 // own _passes_gates()) -- the other three sources don't carry these fields
 // on their picks at all, so the gate row only shows for these two.
 const LIVE_BACKTEST_GATE_SOURCES = new Set<LiveBacktestSource>(['golden_stock', 'btst'])
-const LIVE_BACKTEST_GATE_DEFAULTS = { minConfidence: '', maxRsi: '', minVolumeRatio: '', minAdx: '' }
+const LIVE_BACKTEST_GATE_OFF = { minConfidence: '', maxRsi: '', minVolumeRatio: '', minAdx: '' }
+// Sample starting point -- same numbers as the Chartink Breakout Watchlist's
+// own quality gates, for consistency across the app: min AI Score 50%, ADX >
+// 25 (real trend, not chop), volume ratio > 1.5x, RSI < 75 (not already
+// overbought). Tune freely; "Clear gates" always turns filtering off
+// entirely.
+const LIVE_BACKTEST_GATE_DEFAULTS = { minConfidence: '50', maxRsi: '75', minVolumeRatio: '1.5', minAdx: '25' }
+const LIVE_BACKTEST_GATE_STORAGE_KEY = 'mts_live_backtest_quality_gates'
+
+function loadSavedLiveBacktestGates(): typeof LIVE_BACKTEST_GATE_DEFAULTS {
+  if (typeof window === 'undefined') return LIVE_BACKTEST_GATE_DEFAULTS
+  try {
+    const raw = localStorage.getItem(LIVE_BACKTEST_GATE_STORAGE_KEY)
+    if (raw) return { ...LIVE_BACKTEST_GATE_DEFAULTS, ...JSON.parse(raw) }
+  } catch { /* ignore corrupt storage */ }
+  return LIVE_BACKTEST_GATE_DEFAULTS
+}
 
 function LiveStrategyBacktestPanel({ token }: { token: string }) {
   const [source, setSource] = useState<LiveBacktestSource>('golden_stock')
   const [fromDate, setFromDate] = useState(daysAgoStr(365))
   const [toDate, setToDate] = useState(todayStr())
   const [capital, setCapital] = useState(100000)
-  const [gates, setGates] = useState(LIVE_BACKTEST_GATE_DEFAULTS)
+  const [gates, setGates] = useState(loadSavedLiveBacktestGates)
+  const [justSaved, setJustSaved] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<LiveStrategyBacktestResult | null>(null)
 
   const showGates = LIVE_BACKTEST_GATE_SOURCES.has(source)
   const showAdxGate = source === 'golden_stock'
+  const gatesActive = Object.values(gates).some(v => v !== '')
+  const isCustom = JSON.stringify(gates) !== JSON.stringify(LIVE_BACKTEST_GATE_DEFAULTS)
+
+  function saveGates() {
+    try {
+      localStorage.setItem(LIVE_BACKTEST_GATE_STORAGE_KEY, JSON.stringify(gates))
+      setJustSaved(true)
+      setTimeout(() => setJustSaved(false), 1500)
+    } catch { /* storage full/unavailable */ }
+  }
 
   async function run() {
     setLoading(true); setError(null); setResult(null)
@@ -526,7 +553,7 @@ function LiveStrategyBacktestPanel({ token }: { token: string }) {
           <button
             key={s.value}
             type="button"
-            onClick={() => { setSource(s.value); setResult(null); setError(null); setGates(LIVE_BACKTEST_GATE_DEFAULTS) }}
+            onClick={() => { setSource(s.value); setResult(null); setError(null) }}
             className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
               source === s.value ? 'bg-indigo-600 text-white' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400'
             }`}
@@ -576,9 +603,23 @@ function LiveStrategyBacktestPanel({ token }: { token: string }) {
                 />
               </div>
             )}
-            {Object.values(gates).some(v => v !== '') && (
+            <button
+              onClick={() => setGates(LIVE_BACKTEST_GATE_DEFAULTS)}
+              className="self-end rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[10px] font-semibold text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+            >
+              ↺ Default
+            </button>
+            {isCustom && (
               <button
-                onClick={() => setGates(LIVE_BACKTEST_GATE_DEFAULTS)}
+                onClick={saveGates}
+                className="self-end rounded-lg bg-indigo-600 px-2.5 py-1.5 text-[10px] font-semibold text-white hover:bg-indigo-500"
+              >
+                {justSaved ? '✓ Saved' : '💾 Save'}
+              </button>
+            )}
+            {gatesActive && (
+              <button
+                onClick={() => setGates(LIVE_BACKTEST_GATE_OFF)}
                 className="self-end rounded-lg px-2 py-1.5 text-[10px] font-semibold text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
               >
                 ✕ Clear gates

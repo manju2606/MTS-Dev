@@ -46,6 +46,8 @@ class ChartinkBreakoutAlert:
     rsi: float | None = None
     adx: float | None = None
     volume_ratio: float | None = None
+    volume: float | None = None  # raw latest-session share volume
+    market_cap: float | None = None  # yfinance fast_info.market_cap at breakout time
     explanation: str | None = None
 
     # Resolution against entry_price/stop_loss/target.

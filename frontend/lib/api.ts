@@ -1286,6 +1286,8 @@ export type ChartinkBreakoutRow = {
   rsi: number | null
   adx: number | null
   volume_ratio: number | null
+  volume: number | null
+  market_cap: number | null
   explanation: string | null
   // Resolution against entry_price/stop_loss/target.
   status: 'OPEN' | 'WIN' | 'LOSS' | 'EXPIRED'

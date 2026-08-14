@@ -579,14 +579,27 @@ function sortBreakoutRows(rows: ChartinkBreakoutRow[], key: BreakoutSortKey, dir
   return sorted
 }
 
-const QUALITY_GATE_DEFAULTS = { minConfidence: '', minRR: '', minAdx: '', minVolumeRatio: '', maxRsi: '' }
+const QUALITY_GATE_OFF = {
+  minConfidence: '', minRR: '', minAdx: '', minVolumeRatio: '', maxRsi: '', minMarketCapCr: '', minVolume: '',
+}
+// Sample starting point -- min AI Score 50%, min R:R 1.5, ADX > 25 (real trend, not
+// chop), volume ratio > 1.5x (breakout has real participation), RSI < 75 (not already
+// overbought), market cap > ₹5,000 Cr (mid-cap+, less prone to manipulation/illiquidity),
+// volume > 1 lakh shares (baseline liquidity). Tune freely; "Clear gates" always turns
+// filtering off entirely.
+const QUALITY_GATE_DEFAULTS = {
+  minConfidence: '50', minRR: '1.5', minAdx: '25', minVolumeRatio: '1.5', maxRsi: '75',
+  minMarketCapCr: '5000', minVolume: '100000',
+}
 
-function applyQualityGates(rows: ChartinkBreakoutRow[], gates: typeof QUALITY_GATE_DEFAULTS) {
+function applyQualityGates(rows: ChartinkBreakoutRow[], gates: typeof QUALITY_GATE_OFF) {
   const minConfidence = gates.minConfidence === '' ? null : Number(gates.minConfidence) / 100
   const minRR = gates.minRR === '' ? null : Number(gates.minRR)
   const minAdx = gates.minAdx === '' ? null : Number(gates.minAdx)
   const minVolumeRatio = gates.minVolumeRatio === '' ? null : Number(gates.minVolumeRatio)
   const maxRsi = gates.maxRsi === '' ? null : Number(gates.maxRsi)
+  const minMarketCap = gates.minMarketCapCr === '' ? null : Number(gates.minMarketCapCr) * 1e7
+  const minVolume = gates.minVolume === '' ? null : Number(gates.minVolume)
 
   return rows.filter(r => {
     if (minConfidence !== null && (r.confidence === null || r.confidence < minConfidence)) return false
@@ -594,6 +607,8 @@ function applyQualityGates(rows: ChartinkBreakoutRow[], gates: typeof QUALITY_GA
     if (minAdx !== null && (r.adx === null || r.adx < minAdx)) return false
     if (minVolumeRatio !== null && (r.volume_ratio === null || r.volume_ratio < minVolumeRatio)) return false
     if (maxRsi !== null && (r.rsi === null || r.rsi > maxRsi)) return false
+    if (minMarketCap !== null && (r.market_cap === null || r.market_cap < minMarketCap)) return false
+    if (minVolume !== null && (r.volume === null || r.volume < minVolume)) return false
     return true
   })
 }
@@ -710,9 +725,25 @@ function BreakoutWatchlist({ token }: { token: string }) {
             className="w-20 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs text-zinc-700 focus:border-indigo-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
           />
         </div>
+        <div>
+          <label className="mb-1 block text-[10px] font-medium text-zinc-400">Min Market Cap (₹ Cr)</label>
+          <input
+            type="number" min={0} placeholder="off" value={gates.minMarketCapCr}
+            onChange={e => setGates(g => ({ ...g, minMarketCapCr: e.target.value }))}
+            className="w-28 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs text-zinc-700 focus:border-indigo-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-[10px] font-medium text-zinc-400">Min Volume</label>
+          <input
+            type="number" min={0} placeholder="off" value={gates.minVolume}
+            onChange={e => setGates(g => ({ ...g, minVolume: e.target.value }))}
+            className="w-24 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs text-zinc-700 focus:border-indigo-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+          />
+        </div>
         {gatesActive && (
           <button
-            onClick={() => setGates(QUALITY_GATE_DEFAULTS)}
+            onClick={() => setGates(QUALITY_GATE_OFF)}
             className="rounded-lg px-2 py-1.5 text-[10px] font-semibold text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
           >
             ✕ Clear gates

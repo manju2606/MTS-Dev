@@ -249,6 +249,7 @@ def fetch_technicals(symbols: list[str]) -> list[dict]:
                     "sma50": sma50,
                     "rsi": rsi,
                     "volume_ratio": volume_ratio,
+                    "volume": vol_last,
                     "ret_5d": ret_5d,
                     "ret_20d": ret_20d,
                     "change_pct": change_pct,

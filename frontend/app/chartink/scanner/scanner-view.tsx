@@ -613,13 +613,31 @@ function BreakoutWatchlist({ token }: { token: string }) {
             Stocks that appeared in a scan 3 times in a row — an email goes out the moment each streak crosses 3.
           </p>
         </div>
-        <button
-          onClick={load}
-          disabled={loading}
-          className="rounded-lg bg-zinc-700 px-3 py-2 text-xs font-semibold text-white hover:bg-zinc-600 disabled:opacity-60 dark:bg-zinc-600 dark:hover:bg-zinc-500"
-        >
-          {loading ? 'Refreshing…' : '↻ Refresh'}
-        </button>
+        <div className="flex items-center gap-2">
+          <select
+            value={sortKey}
+            onChange={e => setSortKey(e.target.value as BreakoutSortKey)}
+            className="rounded-lg border border-zinc-200 bg-white px-2.5 py-2 text-xs text-zinc-700 focus:border-indigo-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+          >
+            {BREAKOUT_SORT_COLUMNS.map(({ key, label }) => (
+              <option key={key} value={key}>Sort: {label}</option>
+            ))}
+          </select>
+          <button
+            onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
+            title={sortDir === 'asc' ? 'Ascending' : 'Descending'}
+            className="rounded-lg border border-zinc-200 bg-white px-2.5 py-2 text-xs font-semibold text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+          >
+            {sortDir === 'asc' ? '▲ Asc' : '▼ Desc'}
+          </button>
+          <button
+            onClick={load}
+            disabled={loading}
+            className="rounded-lg bg-zinc-700 px-3 py-2 text-xs font-semibold text-white hover:bg-zinc-600 disabled:opacity-60 dark:bg-zinc-600 dark:hover:bg-zinc-500"
+          >
+            {loading ? 'Refreshing…' : '↻ Refresh'}
+          </button>
+        </div>
       </div>
 
       {error && (

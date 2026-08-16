@@ -16,7 +16,6 @@ import type {
   SymbolComparison, SymbolSweepRun, LiveBacktestSource, LiveStrategyBacktestResult,
 } from '@/lib/api'
 
-const EXCHANGES = ['NSE', 'BSE', 'NFO', 'MCX']
 const INTERVALS: HistoricalDataInterval[] = [
   'minute', '3minute', '5minute', '10minute', '15minute', '30minute', '60minute', 'day',
 ]
@@ -48,6 +47,23 @@ const INDEX_LABELS: Record<string, string> = {
 type Mode =
   | 'generated' | 'trend_pullback' | 'orb' | 'rsi_reversion' | 'index_scan' | 'rsi_live' | 'compare'
   | 'symbol_sweep' | 'live_backtest'
+
+// Top-level split: NSE-equity strategies vs MCX-commodity ones. The
+// generated/trend_pullback/orb/rsi_reversion/index_scan/compare engines are
+// exchange-agnostic underneath (same backend, symbol+exchange is just a
+// form field) -- this only changes which modes are offered and which
+// exchange the symbol picker defaults/locks to, so switching sections never
+// requires a backend change. 'rsi_live' only ever made sense for MCX
+// (Natural Gas Mini) and is now exclusively reachable from the MCX section;
+// 'symbol_sweep'/'live_backtest' are NSE-equity specific (the underlying
+// sources -- Golden Stock/BTST/SOTD/Chartink/Golden Egg -- are all NSE/BSE)
+// and stay NSE-only.
+type LabSection = 'NSE' | 'MCX'
+const SECTION_MODES: Record<LabSection, Mode[]> = {
+  NSE: ['generated', 'index_scan', 'trend_pullback', 'orb', 'rsi_reversion', 'symbol_sweep', 'live_backtest', 'compare'],
+  MCX: ['generated', 'index_scan', 'trend_pullback', 'orb', 'rsi_reversion', 'rsi_live', 'compare'],
+}
+const SECTION_EXCHANGES: Record<LabSection, string[]> = { NSE: ['NSE', 'BSE', 'NFO'], MCX: ['MCX'] }
 
 type SortKey = 'score' | 'cagr' | 'sharpe' | 'max_dd' | 'win_rate' | 'pf' | 'trades' | 'stability'
 type SortDir = 'asc' | 'desc'
@@ -746,6 +762,7 @@ export default function StrategyLabView() {
   const tokenRef = useRef('')
   const [authChecked, setAuthChecked] = useState(false)
 
+  const [section, setSection] = useState<LabSection>('NSE')
   const [mode, setMode] = useState<Mode>('generated')
   const [trendPullbackVersion, setTrendPullbackVersion] = useState<'v1.0' | 'v2.0'>('v2.0')
   const [rsiReversionVersion, setRsiReversionVersion] = useState<'v1.0' | 'v2.0' | 'v2.1' | 'v2.2' | 'v3.0' | 'v4.0'>('v1.0')
@@ -969,6 +986,15 @@ export default function StrategyLabView() {
     }, 2000)
   }
 
+  function handleSectionChange(next: LabSection) {
+    setSection(next)
+    setExchange(SECTION_EXCHANGES[next][0])
+    setSymbol(''); setSymbolLabel(''); setSearchQuery(''); setSearchSuggestions([])
+    if (!SECTION_MODES[next].includes(mode)) handleModeChange('generated')
+    if (next === 'MCX' && indexScanIndex !== 'MCX_ALL') handleIndexScanIndexChange('MCX_ALL')
+    if (next === 'NSE' && indexScanIndex === 'MCX_ALL') handleIndexScanIndexChange('NIFTY50')
+  }
+
   function handleModeChange(next: Mode) {
     setMode(next)
     setMsg(null)
@@ -1168,7 +1194,32 @@ export default function StrategyLabView() {
         <div className="mb-6 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
           <p className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-50">New Run</p>
 
-          <div className="mb-4 flex gap-2">
+          <div className="mb-4 flex gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800 w-fit">
+            {(['NSE', 'MCX'] as const).map(s => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => handleSectionChange(s)}
+                className={`rounded-md px-4 py-1.5 text-xs font-semibold transition-colors ${
+                  section === s ? 'bg-white text-zinc-900 shadow dark:bg-zinc-900 dark:text-zinc-50' : 'text-zinc-500 dark:text-zinc-400'
+                }`}
+              >
+                {s === 'NSE' ? 'NSE (Equity)' : 'MCX (Commodities)'}
+              </button>
+            ))}
+          </div>
+
+          {section === 'MCX' && (
+            <p className="mb-4 rounded-lg bg-indigo-50 px-3 py-2 text-[11px] text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
+              Every mode below runs against real MCX futures candles via your connected Zerodha account —
+              pick any contract in the Symbol dropdown, including Gold and Silver (Standard/Mini/Micro/100/Ten/
+              Guinea/Petal variants) alongside Natural Gas and the base metals. RSI Reversion (Live) is Natural
+              Gas Mini-only, the only contract it&apos;s been validated for.
+            </p>
+          )}
+
+          <div className="mb-4 flex flex-wrap gap-2">
+            {SECTION_MODES[section].includes('generated') && (
             <button
               type="button"
               onClick={() => handleModeChange('generated')}
@@ -1178,6 +1229,8 @@ export default function StrategyLabView() {
             >
               Generate &amp; Backtest (auto)
             </button>
+            )}
+            {SECTION_MODES[section].includes('index_scan') && (
             <button
               type="button"
               onClick={() => handleModeChange('index_scan')}
@@ -1187,6 +1240,8 @@ export default function StrategyLabView() {
             >
               Index Scan
             </button>
+            )}
+            {SECTION_MODES[section].includes('trend_pullback') && (
             <button
               type="button"
               onClick={() => handleModeChange('trend_pullback')}
@@ -1196,6 +1251,8 @@ export default function StrategyLabView() {
             >
               Trend Pullback (hand-designed)
             </button>
+            )}
+            {SECTION_MODES[section].includes('orb') && (
             <button
               type="button"
               onClick={() => handleModeChange('orb')}
@@ -1205,6 +1262,8 @@ export default function StrategyLabView() {
             >
               Opening Range Breakout
             </button>
+            )}
+            {SECTION_MODES[section].includes('rsi_reversion') && (
             <button
               type="button"
               onClick={() => handleModeChange('rsi_reversion')}
@@ -1214,6 +1273,8 @@ export default function StrategyLabView() {
             >
               RSI Reversion (Backtest)
             </button>
+            )}
+            {SECTION_MODES[section].includes('symbol_sweep') && (
             <button
               type="button"
               onClick={() => handleModeChange('symbol_sweep')}
@@ -1223,6 +1284,8 @@ export default function StrategyLabView() {
             >
               Run All Strategies
             </button>
+            )}
+            {SECTION_MODES[section].includes('rsi_live') && (
             <button
               type="button"
               onClick={() => handleModeChange('rsi_live')}
@@ -1232,6 +1295,8 @@ export default function StrategyLabView() {
             >
               RSI Reversion (Live)
             </button>
+            )}
+            {SECTION_MODES[section].includes('live_backtest') && (
             <button
               type="button"
               onClick={() => handleModeChange('live_backtest')}
@@ -1241,6 +1306,8 @@ export default function StrategyLabView() {
             >
               Live Strategy Backtest
             </button>
+            )}
+            {SECTION_MODES[section].includes('compare') && (
             <button
               type="button"
               onClick={() => handleModeChange('compare')}
@@ -1250,6 +1317,7 @@ export default function StrategyLabView() {
             >
               Compare Strategies
             </button>
+            )}
           </div>
 
           {mode === 'rsi_live' && (
@@ -1435,7 +1503,7 @@ export default function StrategyLabView() {
               ) : (
                 <select value={exchange} onChange={e => handleExchangeChange(e.target.value)}
                   className="w-full rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100">
-                  {EXCHANGES.map(x => <option key={x} value={x}>{x}</option>)}
+                  {SECTION_EXCHANGES[section].map(x => <option key={x} value={x}>{x}</option>)}
                 </select>
               )}
             </div>
@@ -1476,7 +1544,7 @@ export default function StrategyLabView() {
               <label className="mb-1 block text-xs font-medium text-zinc-500">Index</label>
               <select value={indexScanIndex} onChange={e => handleIndexScanIndexChange(e.target.value)}
                 className="mb-3 w-full max-w-xs rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100">
-                {indexUniverses.map(u => (
+                {indexUniverses.filter(u => (u.exchange === 'MCX') === (section === 'MCX')).map(u => (
                   <option key={u.index} value={u.index}>
                     {INDEX_LABELS[u.index] ?? u.index} ({u.symbol_count} · {u.exchange})
                   </option>

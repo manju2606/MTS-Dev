@@ -1428,6 +1428,145 @@ function SilverRiskStatusCard({ status }: { status: SilverRiskStatus | null }) {
   )
 }
 
+function SilverPriceChart({ score, contract }: { score: SilverStrategyScore; contract: SilverStrategyContract }) {
+  const [period, setPeriod] = useState<ChartPeriod>('15m')
+  const [bars, setBars] = useState<HistoryBar[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const t = localStorage.getItem('mts_token') ?? ''
+    if (!t) return
+    setLoading(true)
+    let first = true
+    function load() {
+      getMetalHistory(t, period, contract)
+        .then(setBars)
+        .catch(() => { if (first) setBars([]) })
+        .finally(() => { setLoading(false); first = false })
+    }
+    load()
+    const id = setInterval(load, 30_000)
+    return () => clearInterval(id)
+  }, [period, contract])
+
+  const aiLevels: AILevels = {
+    signal: score.verdict === 'NO_TRADE' ? 'HOLD' : score.direction,
+    entry: score.entry.entry_price,
+    stopLoss: score.entry.stop_loss,
+    target: score.entry.target_1,
+  }
+
+  const refLines: RefLine[] = [
+    { price: score.entry.target_2, label: 'T2', color: '#059669' },
+    ...(score.prev_day
+      ? [
+          { price: score.prev_day.high, label: 'PDH', color: '#3b82f6' },
+          { price: score.prev_day.low, label: 'PDL', color: '#3b82f6' },
+          { price: score.prev_day.close, label: 'PDC', color: '#9333ea' },
+        ]
+      : []),
+  ]
+
+  return (
+    <div className="space-y-2">
+      <PriceChart
+        symbol={contract}
+        data={bars}
+        period={period}
+        onPeriodChange={setPeriod}
+        loading={loading}
+        aiLevels={aiLevels}
+        currentPrice={score.price}
+        exchangeLabel="MCX"
+        refLines={refLines}
+      />
+      <p className="text-[11px] text-zinc-400">
+        Entry/SL/T1 from the current {score.direction} score above; T2 and previous-day PDH/PDL/PDC shown as
+        reference lines. Chart defaults to 15M (the strategy's own setup timeframe) — switch freely.
+      </p>
+    </div>
+  )
+}
+
+function SilverReasoningCard({ reasoning }: { reasoning: SilverStrategyScore['reasoning'] }) {
+  const [speaking, setSpeaking] = useState(false)
+  const speechSupported = typeof window !== 'undefined' && 'speechSynthesis' in window
+
+  function toggleSpeak() {
+    if (speaking) {
+      window.speechSynthesis.cancel()
+      setSpeaking(false)
+      return
+    }
+    setSpeaking(true)
+    window.speechSynthesis.cancel()
+    const text = [
+      `1H trend: ${reasoning.trend_reason}`,
+      `15M setup: ${reasoning.setup_reason}`,
+      `5M confirmation: ${reasoning.confirmation_reason}`,
+      `Alternative scenario: ${reasoning.alternative_scenario}`,
+      `Invalidation level: ${reasoning.invalidation_level}`,
+    ].join('. ')
+    const utterance = new SpeechSynthesisUtterance(text)
+    utterance.onend = () => setSpeaking(false)
+    utterance.onerror = () => setSpeaking(false)
+    window.speechSynthesis.speak(utterance)
+  }
+
+  const rows: { label: string; text: string }[] = [
+    { label: '1H Trend', text: reasoning.trend_reason },
+    { label: '15M Setup', text: reasoning.setup_reason },
+    { label: '5M Confirmation', text: reasoning.confirmation_reason },
+  ]
+
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="mb-3 flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">AI Analysis</p>
+        {speechSupported && (
+          <button
+            onClick={toggleSpeak}
+            className="flex items-center gap-1.5 rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:bg-indigo-950/70"
+          >
+            {speaking ? (
+              <>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1" /></svg>
+                Stop
+              </>
+            ) : (
+              <>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M11 5 6 9H2v6h4l5 4V5z" />
+                  <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+                </svg>
+                Read aloud
+              </>
+            )}
+          </button>
+        )}
+      </div>
+      <div className="space-y-3">
+        {rows.map(r => (
+          <div key={r.label}>
+            <p className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">{r.label}</p>
+            <p className="mt-0.5 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{r.text}</p>
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 space-y-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+        <div>
+          <p className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">Alternative Scenario</p>
+          <p className="mt-0.5 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{reasoning.alternative_scenario}</p>
+        </div>
+        <div>
+          <p className="text-xs font-semibold text-red-600 dark:text-red-400">Invalidation Level</p>
+          <p className="mt-0.5 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">{reasoning.invalidation_level}</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function SilverStrategyPanel({ contract }: { contract: SilverStrategyContract }) {
   const [direction, setDirection] = useState<'BUY' | 'SELL'>('BUY')
   const [capital, setCapital] = useState('100000')
@@ -1531,10 +1670,14 @@ function SilverStrategyPanel({ contract }: { contract: SilverStrategyContract })
             </p>
           </div>
 
+          <SilverPriceChart score={score} contract={contract} />
+
           <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-400">Category Breakdown</p>
             {score.categories.map(cat => <CategoryRow key={cat.name} cat={cat} />)}
           </div>
+
+          <SilverReasoningCard reasoning={score.reasoning} />
 
           {score.prev_day && (
             <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">

@@ -2828,6 +2828,13 @@ export type SilverStrategyScore = {
     suggested_quantity: number
   }
   candles_used: { '1h': number; '15m': number; '5m': number }
+  reasoning: {
+    trend_reason: string
+    setup_reason: string
+    confirmation_reason: string
+    alternative_scenario: string
+    invalidation_level: string
+  }
 }
 
 export async function getSilverStrategyScore(

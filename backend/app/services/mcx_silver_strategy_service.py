@@ -47,7 +47,7 @@ from app.domain.services.mcx_silver_risk_gate import (
 )
 from app.infra.db.repositories.mcx_signal_repo import McxSignalRepository
 from app.infra.mcx import ng_indicators as ind
-from app.services.mcx_ai_score_service import _category, _check
+from app.services.mcx_ai_score_service import _category, _check, _reason_for
 from app.services.mcx_metals_service import get_metal_history, get_metal_quote
 
 _IST = ZoneInfo("Asia/Kolkata")
@@ -222,6 +222,62 @@ def _confirm_5m(candles: list[dict], direction: str, params: MtsSilverParams) ->
     return {"checks": [check], "price": price, "atr": ind.atr(h, low, c, 14)}
 
 
+def build_silver_reasoning(
+    categories: list[dict],
+    direction: str,
+    trend: str,
+    price: float,
+    stop_loss: float,
+    target_1: float,
+    target_2: float,
+    atr_multiplier: float,
+) -> dict:
+    """Plain-language readout of the three timeframe stages, reusing
+    _reason_for's generic category->paragraph renderer (mcx_ai_score_service.py)
+    -- no new data, no LLM call, same "honest readout of what was actually
+    checked" principle as the Metals-AI Pro reasoning it's modeled on. Its
+    Technical/Fundamental/Sentiment/Macro bucketing doesn't apply here (this
+    strategy has no correlation/news/order-flow inputs at all -- it's pure
+    multi-timeframe technical), so the buckets are instead the strategy's
+    own three stages: 1H trend, 15M setup, 5M confirmation."""
+    trend_reason = _reason_for(categories, ["1H Trend"], "1H Trend")
+    setup_reason = _reason_for(
+        categories,
+        [
+            "VWAP Alignment", "EMA Alignment", "RSI Momentum", "15M Pullback",
+            "Reversal Confirmation", "Volume Confirmation", "PDH/PDL Confirmation",
+        ],
+        "15M Setup",
+    )
+    confirmation_reason = _reason_for(categories, ["5M Confirmation"], "5M Confirmation")
+
+    opposite = "SELL" if direction == "BUY" else "BUY"
+    bull = direction == "BUY"
+    sl_distance = abs(round(price - stop_loss, 2))
+    mirrored_target = round(price - sl_distance, 2) if bull else round(price + sl_distance, 2)
+    mirrored_stop = round(price + sl_distance, 2) if bull else round(price - sl_distance, 2)
+    alternative_scenario = (
+        f"If this {direction} thesis is wrong and price instead moves like a {opposite} setup, "
+        f"the mirrored case (same {atr_multiplier}x ATR distance) would target ~{mirrored_target} "
+        f"with its own stop near {mirrored_stop} -- not a second signal, just what the opposite "
+        "read looks like."
+    )
+    invalidation_level = (
+        f"Invalidated on a close beyond {stop_loss} ({atr_multiplier}x ATR-14 on the 5M chart, "
+        f"the same stop used for position sizing) -- or if the 1H trend ({trend}) flips before "
+        "then, since that's a hard gate this score can't override. Target 1 is "
+        f"{target_1} (1R, 50% exit + stop to breakeven), target 2 is {target_2} (2R, remainder)."
+    )
+
+    return {
+        "trend_reason": trend_reason,
+        "setup_reason": setup_reason,
+        "confirmation_reason": confirmation_reason,
+        "alternative_scenario": alternative_scenario,
+        "invalidation_level": invalidation_level,
+    }
+
+
 def _classify_silver(score_pct: float, params: MtsSilverParams) -> str:
     if score_pct >= params.strong_threshold:
         return "STRONG"
@@ -352,6 +408,10 @@ async def compute_silver_strategy_score(
             "suggested_quantity": position_size,
         },
         "candles_used": {"1h": len(candles_1h), "15m": len(candles_15m), "5m": len(candles_5m)},
+        "reasoning": build_silver_reasoning(
+            categories, direction, trend, price, stop_loss, target_1, target_2,
+            params.atr_multiplier,
+        ),
     }
 
 

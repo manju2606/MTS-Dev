@@ -104,11 +104,18 @@ export default function BrokerView() {
 
   async function handleZerodhaLogin() {
     setLoading(true); setMsg(null)
+    // Open the tab synchronously, in the same click call stack, so browsers
+    // don't treat it as an unrequested popup -- awaiting the login-url fetch
+    // first (the old code) loses that "user gesture" context and gets
+    // silently blocked. Navigate the already-open tab once the URL arrives.
+    const tab = window.open('about:blank', '_blank')
     try {
       const { login_url } = await getZerodhaLoginUrl(tokenRef.current)
-      window.open(login_url, '_blank')
+      if (tab) tab.location.href = login_url
+      else window.open(login_url, '_blank')
       setMsg({ type: 'ok', text: 'Zerodha login opened. After logging in, paste the request_token below.' })
     } catch (e) {
+      tab?.close()
       setMsg({ type: 'err', text: e instanceof Error ? e.message : 'Failed' })
     } finally { setLoading(false) }
   }
@@ -127,11 +134,14 @@ export default function BrokerView() {
 
   async function handleUpstoxLogin() {
     setLoading(true); setMsg(null)
+    const tab = window.open('about:blank', '_blank')
     try {
       const { login_url, redirect_uri } = await getUpstoxLoginUrl(tokenRef.current)
-      window.open(login_url, '_blank')
+      if (tab) tab.location.href = login_url
+      else window.open(login_url, '_blank')
       setMsg({ type: 'ok', text: `Upstox login opened. After authorising, paste the code from the redirect URL (${redirect_uri}?code=...) below.` })
     } catch (e) {
+      tab?.close()
       setMsg({ type: 'err', text: e instanceof Error ? e.message : 'Failed' })
     } finally { setLoading(false) }
   }
@@ -150,11 +160,14 @@ export default function BrokerView() {
 
   async function handleAliceBlueLogin() {
     setLoading(true); setMsg(null)
+    const tab = window.open('about:blank', '_blank')
     try {
       const { login_url } = await getAliceBlueLoginUrl(tokenRef.current)
-      window.open(login_url, '_blank')
+      if (tab) tab.location.href = login_url
+      else window.open(login_url, '_blank')
       setMsg({ type: 'ok', text: 'Alice Blue login opened. After logging in, paste your User ID and the authCode from the redirect URL below.' })
     } catch (e) {
+      tab?.close()
       setMsg({ type: 'err', text: e instanceof Error ? e.message : 'Failed' })
     } finally { setLoading(false) }
   }

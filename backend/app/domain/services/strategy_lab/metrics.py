@@ -105,6 +105,7 @@ def compute_metrics(outcome: BacktestOutcome, capital: float) -> BacktestMetrics
             net_pnl=0.0,
             final_equity=outcome.final_equity,
             recovery_factor=0.0,
+            signals_skipped_for_sizing=outcome.signals_skipped_for_sizing,
         )
 
     wins = [t for t in trades if t.pnl > 0]
@@ -156,6 +157,7 @@ def compute_metrics(outcome: BacktestOutcome, capital: float) -> BacktestMetrics
         short_trades=len(short_trades),
         long_win_rate_pct=long_win_rate,
         short_win_rate_pct=short_win_rate,
+        signals_skipped_for_sizing=outcome.signals_skipped_for_sizing,
     )
 
 

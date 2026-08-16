@@ -5247,6 +5247,11 @@ export type BacktestMetrics = {
   short_trades?: number
   long_win_rate_pct?: number
   short_win_rate_pct?: number
+  // Entry signals that fired but couldn't be sized (capital too small for
+  // this instrument's price at the candidate's risk%/stop distance) -- a
+  // nonzero value alongside total_trades=0 means "capital too small", not
+  // "no setups found". See engine.py's capped_quantity.
+  signals_skipped_for_sizing?: number
 }
 
 export type WalkForwardSplit = {

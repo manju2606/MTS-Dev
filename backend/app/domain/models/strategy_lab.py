@@ -71,6 +71,13 @@ class BacktestMetrics:
     short_trades: int = 0
     long_win_rate_pct: float = 0.0
     short_win_rate_pct: float = 0.0
+    # Entry signals that fired but never became a trade because the risk
+    # budget couldn't afford even 1 unit at this candidate's stop distance
+    # (see engine.py's capped_quantity/BacktestOutcome.signals_skipped_for_sizing)
+    # -- a total_trades=0 result with a nonzero count here means "capital
+    # too small for this instrument's price", not "no setups found".
+    # Defaulted for the same backward-compat reason as recovery_factor.
+    signals_skipped_for_sizing: int = 0
 
 
 @dataclass

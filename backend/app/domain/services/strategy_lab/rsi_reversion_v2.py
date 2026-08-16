@@ -235,6 +235,7 @@ def run_rsi_reversion_backtest(
         stop_distance = fill * stop_pct / 100
         q = capped_quantity(risk_amount, stop_distance, fill, equity)
         if q == 0:
+            outcome.signals_skipped_for_sizing += 1
             return
         direction = 1
         entry_price = fill
@@ -256,6 +257,7 @@ def run_rsi_reversion_backtest(
         stop_distance = fill * stop_pct / 100
         q = capped_quantity(risk_amount, stop_distance, fill, equity)
         if q == 0:
+            outcome.signals_skipped_for_sizing += 1
             return
         direction = -1
         entry_price = fill

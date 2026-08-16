@@ -116,6 +116,7 @@ def run_orb_backtest(
         risk_amount = equity * RISK_PCT / 100
         q = capped_quantity(risk_amount, stop_distance, fill, equity)
         if q == 0:
+            outcome.signals_skipped_for_sizing += 1
             return
         in_position = True
         entry_price = fill

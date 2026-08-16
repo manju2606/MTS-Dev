@@ -64,6 +64,14 @@ class BacktestOutcome:
     trades: list[TradeRecord] = field(default_factory=list)
     equity_curve: list[dict] = field(default_factory=list)  # [{time, equity}]
     final_equity: float = 0.0
+    # Entry signals that fired but never became a trade because
+    # capped_quantity() rounded to 0 (the risk budget can't afford even 1
+    # unit at this candidate's stop distance/price) -- distinct from "no
+    # entry signal fired at all". Without this, a high-priced instrument
+    # (e.g. MCX Gold/Silver at their standard, non-mini denomination) that
+    # can't be sized at the requested capital silently reports 0 trades,
+    # indistinguishable from a strategy that genuinely found no setups.
+    signals_skipped_for_sizing: int = 0
 
 
 def _crosses_above(a: list[float | None], b: list[float | None], i: int) -> bool:
@@ -222,6 +230,7 @@ def run_backtest(
         stop_distance = fill * candidate.stop_loss_pct / 100
         q = capped_quantity(risk_amount, stop_distance, fill, equity)
         if q == 0:
+            outcome.signals_skipped_for_sizing += 1
             return
         in_position = True
         entry_price = fill

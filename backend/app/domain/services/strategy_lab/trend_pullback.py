@@ -186,6 +186,7 @@ def run_trend_pullback_backtest(
         stop_distance = p.atr_stop_mult * atr
         q = capped_quantity(risk_amount, stop_distance, fill, equity)
         if q == 0:
+            outcome.signals_skipped_for_sizing += 1
             return
         in_position = True
         entry_price = fill

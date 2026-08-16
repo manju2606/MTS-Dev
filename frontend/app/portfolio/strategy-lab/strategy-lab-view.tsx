@@ -169,6 +169,19 @@ function Metric({ label, value, accent }: { label: string; value: string; accent
   )
 }
 
+// A trades=0 result with signals_skipped_for_sizing > 0 means the risk
+// budget couldn't afford even 1 unit at this candidate's stop distance --
+// common for MCX Gold/Silver's standard (non-mini) denominations at
+// equity-sized default capital -- not "no setups found". Surfaced inline
+// so this doesn't read as a silent, indistinguishable zero (see engine.py's
+// capped_quantity / BacktestOutcome.signals_skipped_for_sizing).
+function tradesLabel(m: { total_trades: number; signals_skipped_for_sizing?: number }): string {
+  if (m.total_trades === 0 && m.signals_skipped_for_sizing) {
+    return `0 (${m.signals_skipped_for_sizing} skipped — capital too small)`
+  }
+  return String(m.total_trades)
+}
+
 function MetricsGrid({ m }: { m: StrategyLabResultDetail['full_metrics'] }) {
   return (
     <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
@@ -178,7 +191,7 @@ function MetricsGrid({ m }: { m: StrategyLabResultDetail['full_metrics'] }) {
       <Metric label="Max DD" value={`${m.max_drawdown_pct.toFixed(1)}%`} accent="text-red-500" />
       <Metric label="Win Rate" value={`${m.win_rate_pct.toFixed(1)}%`} />
       <Metric label="Profit Factor" value={m.profit_factor.toFixed(2)} />
-      <Metric label="Trades" value={String(m.total_trades)} />
+      <Metric label="Trades" value={tradesLabel(m)} />
       <Metric label="Expectancy" value={`₹${m.expectancy.toFixed(0)}`} />
       <Metric label="Net P&L" value={`₹${m.net_pnl.toFixed(0)}`} accent={m.net_pnl >= 0 ? 'text-emerald-600' : 'text-red-500'} />
       <Metric label="Avg Hold" value={`${m.avg_holding_hours.toFixed(0)}h`} />
@@ -293,7 +306,7 @@ function SymbolComparisonView({ result, loading, error, onOpenResult }: {
                   <Metric label="Profit Factor" value={m.profit_factor.toFixed(2)} />
                   <Metric label="Max DD" value={`${m.max_drawdown_pct.toFixed(1)}%`} accent="text-red-500" />
                   <Metric label="Win Rate" value={`${m.win_rate_pct.toFixed(1)}%`} />
-                  <Metric label="Trades" value={String(m.total_trades)} />
+                  <Metric label="Trades" value={tradesLabel(m)} />
                   <Metric label="Net P&L" value={`₹${m.net_pnl.toFixed(0)}`} accent={m.net_pnl >= 0 ? 'text-emerald-600' : 'text-red-500'} />
                 </div>
               ) : (
@@ -400,7 +413,7 @@ function IndexScanPanel({ scan, ranking, sortKey, sortDir, onSort, onOpenSymbol 
                       <td className="px-3 py-2 font-mono text-red-500">{row.full_metrics.max_drawdown_pct.toFixed(1)}%</td>
                       <td className="px-3 py-2 font-mono text-zinc-600 dark:text-zinc-300">{row.full_metrics.win_rate_pct.toFixed(0)}%</td>
                       <td className="px-3 py-2 font-mono text-zinc-600 dark:text-zinc-300">{row.full_metrics.profit_factor.toFixed(2)}</td>
-                      <td className="px-3 py-2 text-zinc-500">{row.full_metrics.total_trades}</td>
+                      <td className="px-3 py-2 text-zinc-500">{tradesLabel(row.full_metrics)}</td>
                       <td className="px-3 py-2 font-mono text-zinc-600 dark:text-zinc-300">{row.walk_forward.stability_score.toFixed(0)}</td>
                       <td className="px-3 py-2">
                         <button onClick={() => onOpenSymbol(row.run_id)} className="text-[11px] font-semibold text-indigo-600 hover:underline dark:text-indigo-400">
@@ -1793,7 +1806,7 @@ export default function StrategyLabView() {
                       <td className="px-3 py-2 font-mono text-red-500">{r.full_metrics.max_drawdown_pct.toFixed(1)}%</td>
                       <td className="px-3 py-2 font-mono text-zinc-600 dark:text-zinc-300">{r.full_metrics.win_rate_pct.toFixed(0)}%</td>
                       <td className="px-3 py-2 font-mono text-zinc-600 dark:text-zinc-300">{r.full_metrics.profit_factor.toFixed(2)}</td>
-                      <td className="px-3 py-2 text-zinc-500">{r.full_metrics.total_trades}</td>
+                      <td className="px-3 py-2 text-zinc-500">{tradesLabel(r.full_metrics)}</td>
                       <td className="px-3 py-2 font-mono text-zinc-600 dark:text-zinc-300">{r.walk_forward.stability_score.toFixed(0)}</td>
                       <td className="px-3 py-2">
                         <button onClick={() => openDetail(r.id)} className="text-[11px] font-semibold text-indigo-600 hover:underline dark:text-indigo-400">

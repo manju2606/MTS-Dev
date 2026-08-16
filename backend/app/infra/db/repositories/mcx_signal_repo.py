@@ -78,6 +78,48 @@ class McxSignalRepository:
             },
         )
 
+    async def mark_target1_hit(
+        self, signal_id, breakeven_stop: float, target_1_hit_at: datetime
+    ) -> None:
+        """Records a partial exit at target_1 without closing the signal --
+        used by two-target strategies (see mcx_silver_strategy_service.py)
+        where the position stays OPEN with a reduced quantity and the stop
+        moved to breakeven until target_2 or the breakeven stop is hit.
+        Single-target strategies (NG/Metals AI Pro) never call this; they go
+        straight from OPEN to CLOSED via close_signal()."""
+        await self._col.update_one(
+            {"_id": signal_id},
+            {
+                "$set": {
+                    "target_1_hit": True,
+                    "target_1_hit_at": target_1_hit_at,
+                    "stop_loss": breakeven_stop,
+                }
+            },
+        )
+
+    async def list_user_closed_signals_since(
+        self, user_id: str, contract: str, since: datetime
+    ) -> list[dict]:
+        """Every CLOSED signal for this (user, contract) since `since`,
+        oldest first -- used by the risk gate (see
+        app/domain/services/mcx_silver_risk_gate.py) to derive today's trade
+        count, realized P&L, and consecutive-loss streak fresh from actual
+        signal outcomes each time, rather than maintaining a separate
+        mutable counter that could drift out of sync with what actually
+        closed. Not the same as list_closed_signals_since() below (all
+        users, for backtest reporting) -- this one is scoped to a single
+        user+contract, hence the different name despite similar purpose."""
+        cursor = self._col.find(
+            {
+                "user_id": user_id,
+                "contract": contract.upper(),
+                "status": "CLOSED",
+                "closed_at": {"$gte": since},
+            }
+        ).sort("closed_at", 1)
+        return [d async for d in cursor]
+
     async def list_signals(self, user_id: str, contract: str, limit: int = 50) -> list[dict]:
         cursor = (
             self._col.find({"user_id": user_id, "contract": contract.upper()})

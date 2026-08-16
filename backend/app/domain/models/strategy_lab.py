@@ -62,6 +62,15 @@ class BacktestMetrics:
     # peak-to-trough loss. Defaulted (not required) so BacktestMetrics(**doc)
     # still reconstructs stored results saved before this field existed.
     recovery_factor: float = 0.0
+    # Long/short breakdown -- meaningless for the long-only engine.py-based
+    # results (always long_trades == total_trades there), but real for any
+    # caller whose TradeRecord.signal can be "SELL" (e.g. MTS Silver
+    # Strategy's live-signal backtest, which trades both directions).
+    # Defaulted for the same backward-compat reason as recovery_factor.
+    long_trades: int = 0
+    short_trades: int = 0
+    long_win_rate_pct: float = 0.0
+    short_win_rate_pct: float = 0.0
 
 
 @dataclass

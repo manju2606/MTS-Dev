@@ -1007,6 +1007,63 @@ async def _run_mcx_metals_signal_check() -> None:
         log.error("scheduler.mcx_metals_signal.error", error=str(exc))
 
 
+async def _run_mcx_silver_strategy_check() -> None:
+    """MTS Silver Strategy's own signal-check job -- same per-user,
+    per-contract loop as _run_mcx_metals_signal_check, scoped to just
+    SILVER100/SILVERMICRO (see mcx_silver_strategy_service.SILVER_STRATEGY_CONTRACTS)
+    and using the strategy's own two-stage (target_1 partial exit, then
+    target_2/breakeven) resolver instead of the single-target one."""
+    try:
+        from app.infra.brokers import session_store
+        from app.infra.db.repositories.mcx_signal_repo import McxSignalRepository
+        from app.services.mcx_silver_strategy_service import (
+            SILVER_STRATEGY_CONTRACTS,
+            can_generate_new_signal,
+            check_and_log_silver_signal,
+            compute_silver_strategy_score,
+            resolve_open_silver_signals,
+        )
+
+        repo = McxSignalRepository()
+        user_ids = await session_store.list_connected_user_ids()
+        logged, changed, blocked = 0, 0, 0
+        for user_id in user_ids:
+            for contract in SILVER_STRATEGY_CONTRACTS:
+                try:
+                    # Resolution (closing/partial-exiting already-open
+                    # signals) always runs -- the risk gate only blocks
+                    # opening NEW ones, never trapping an existing position.
+                    changed += await resolve_open_silver_signals(user_id, contract, repo)
+
+                    can_trade, _reasons = await can_generate_new_signal(user_id, contract, repo)
+                    if not can_trade:
+                        blocked += 1
+                        continue
+
+                    for direction in ("BUY", "SELL"):
+                        score = await compute_silver_strategy_score(
+                            user_id, direction, contract, 100_000.0
+                        )
+                        if await check_and_log_silver_signal(
+                            user_id, contract, direction, score, repo
+                        ):
+                            logged += 1
+                except Exception as exc:
+                    log.warning(
+                        "scheduler.mcx_silver_strategy.contract_error",
+                        user_id=user_id,
+                        contract=contract,
+                        error=str(exc),
+                    )
+                await asyncio.sleep(0)
+        log.info(
+            "scheduler.mcx_silver_strategy.done",
+            users=len(user_ids), logged=logged, changed=changed, blocked=blocked,
+        )
+    except Exception as exc:
+        log.error("scheduler.mcx_silver_strategy.error", error=str(exc))
+
+
 async def _run_mcx_ng_news_fetch() -> None:
     """Every 30 min, 07:00-23:30 IST (covers pre-market and the full MCX
     session): fetch international Natural Gas / energy news (OilPrice.com,
@@ -1769,6 +1826,17 @@ def start_scheduler() -> None:
         ),
         id="mcx_metals_signal_check",
         name="MCX Metals — AI Trade Signal Logging + Resolution",
+        max_instances=1,
+        misfire_grace_time=180,
+    )
+    _scheduler.add_job(
+        _run_mcx_silver_strategy_check,
+        CronTrigger(
+            day_of_week="mon-fri", hour="9-23", minute="*/5", second=35,
+            timezone="Asia/Kolkata",
+        ),
+        id="mcx_silver_strategy_check",
+        name="MCX Silver Strategy — MTF Signal Logging + Resolution",
         max_instances=1,
         misfire_grace_time=180,
     )

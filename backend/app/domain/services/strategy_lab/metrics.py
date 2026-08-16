@@ -126,6 +126,19 @@ def compute_metrics(outcome: BacktestOutcome, capital: float) -> BacktestMetrics
     net_pnl = round(outcome.final_equity - capital, 2)
     max_dd_currency = _max_drawdown_currency(outcome.equity_curve)
 
+    long_trades = [t for t in trades if t.signal == "BUY"]
+    short_trades = [t for t in trades if t.signal == "SELL"]
+    long_win_rate = (
+        round(sum(1 for t in long_trades if t.pnl > 0) / len(long_trades) * 100, 2)
+        if long_trades
+        else 0.0
+    )
+    short_win_rate = (
+        round(sum(1 for t in short_trades if t.pnl > 0) / len(short_trades) * 100, 2)
+        if short_trades
+        else 0.0
+    )
+
     return BacktestMetrics(
         total_trades=total,
         win_rate_pct=win_rate,
@@ -139,6 +152,10 @@ def compute_metrics(outcome: BacktestOutcome, capital: float) -> BacktestMetrics
         net_pnl=net_pnl,
         final_equity=round(outcome.final_equity, 2),
         recovery_factor=_recovery_factor(net_pnl, max_dd_currency),
+        long_trades=len(long_trades),
+        short_trades=len(short_trades),
+        long_win_rate_pct=long_win_rate,
+        short_win_rate_pct=short_win_rate,
     )
 
 

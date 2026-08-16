@@ -2785,6 +2785,183 @@ export async function getMetalNews(token: string, limit = 20): Promise<NgNewsRes
   return res.json()
 }
 
+// ── MTS Silver Strategy ──────────────────────────────────────────────────────
+//
+// Multi-timeframe (1H/15M/5M) scorer for MCX Silver100/SilverMicro only --
+// separate from the generic single-timeframe Metals-AI Pro score above (see
+// backend app/services/mcx_silver_strategy_service.py). Reuses NgScoreCategory/
+// NgScoreCheck since the backend's _check/_category helpers produce the exact
+// same shape.
+
+export type SilverStrategyContract = 'SILVER100' | 'SILVERMICRO'
+
+export type SilverStrategyScore = {
+  contract: SilverStrategyContract
+  direction: 'BUY' | 'SELL'
+  trend: 'bullish' | 'bearish' | 'neutral'
+  trend_matches_direction: boolean
+  price: number
+  score_pct: number
+  verdict: 'STRONG' | 'TRADE' | 'WATCH' | 'NO_TRADE'
+  signal_label: string
+  points_earned: number
+  points_available: number
+  categories: NgScoreCategory[]
+  prev_day: { high: number; low: number; close: number } | null
+  entry: {
+    as_of: string
+    entry_price: number
+    stop_loss: number
+    stop_loss_distance: number
+    atr_multiplier: number
+    target_1: number
+    target_1_exit_pct: number
+    target_2: number
+    target_2_exit_pct: number
+    risk_reward: number | null
+    breakeven_after_target_1: boolean
+  }
+  position_sizing: {
+    capital: number
+    risk_pct: number
+    risk_amount: number
+    suggested_quantity: number
+  }
+  candles_used: { '1h': number; '15m': number; '5m': number }
+}
+
+export async function getSilverStrategyScore(
+  token: string,
+  direction: 'BUY' | 'SELL' = 'BUY',
+  contract: SilverStrategyContract = 'SILVER100',
+  capital = 100000,
+  accountRiskPct = 0.5,
+): Promise<SilverStrategyScore> {
+  const res = await fetch(
+    `${BASE}/api/v1/mcx/silver-strategy/score?direction=${direction}&contract=${contract}` +
+      `&capital=${capital}&account_risk_pct=${accountRiskPct}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch MTS Silver Strategy score')
+  }
+  return res.json()
+}
+
+export type SilverStrategySignal = {
+  direction: 'BUY' | 'SELL'
+  tradingsymbol: string | null
+  score_pct: number | null
+  verdict: string | null
+  generated_at: string
+  entry_price: number
+  stop_loss: number
+  target_1: number
+  target_2: number | null
+  target_1_hit: boolean
+  target_1_hit_at: string | null
+  status: 'OPEN' | 'CLOSED'
+  result: 'WIN' | 'LOSS' | 'EXPIRED' | null
+  exit_price: number | null
+  pnl: number | null
+  closed_at: string | null
+  days_to_close: number | null
+}
+export type SilverStrategySignalsResponse = {
+  contract: string
+  signals: SilverStrategySignal[]
+  accuracy: NgSignalAccuracy
+}
+
+export async function getSilverStrategySignals(
+  token: string,
+  contract: SilverStrategyContract = 'SILVER100',
+  limit = 50,
+): Promise<SilverStrategySignalsResponse> {
+  const res = await fetch(
+    `${BASE}/api/v1/mcx/silver-strategy/signals?contract=${contract}&limit=${limit}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch MTS Silver Strategy signals')
+  }
+  return res.json()
+}
+
+export type SilverRiskStatus = {
+  contract: string
+  date: string
+  trade_count: number
+  max_trades_per_day: number
+  realized_pnl: number
+  max_daily_loss_amount: number
+  consecutive_losses: number
+  max_consecutive_losses: number
+  can_trade: boolean
+  blocked_reasons: string[]
+  within_session: boolean
+  session_note: string
+  expiry_protected: boolean
+  expiry_note: string
+  expiry_date: string
+}
+
+export async function getSilverStrategyRiskStatus(
+  token: string,
+  contract: SilverStrategyContract = 'SILVER100',
+): Promise<SilverRiskStatus> {
+  const res = await fetch(
+    `${BASE}/api/v1/mcx/silver-strategy/risk-status?contract=${contract}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch MTS Silver Strategy risk status')
+  }
+  return res.json()
+}
+
+// Backtests this user's own real logged signals -- see
+// run_silver_strategy_backtest's docstring (backend) for why this isn't a
+// historical-candle re-simulation. References BacktestMetrics, defined
+// further below alongside the AI Strategy Lab types it's shared with.
+export type SilverStrategyBacktest = {
+  contract: string
+  full_metrics: BacktestMetrics
+  equity_curve: { time: string; equity: number }[]
+  drawdown_curve: { time: string; drawdown_pct: number }[]
+  trades: {
+    entry_time: string
+    exit_time: string
+    signal: 'BUY' | 'SELL'
+    entry_price: number
+    exit_price: number
+    quantity: number
+    pnl: number
+    pnl_pct: number
+    exit_reason: string
+  }[]
+  total_trades: number
+}
+
+export async function getSilverStrategyBacktest(
+  token: string,
+  contract: SilverStrategyContract = 'SILVER100',
+  capital = 100000,
+): Promise<SilverStrategyBacktest> {
+  const res = await fetch(
+    `${BASE}/api/v1/mcx/silver-strategy/backtest?contract=${contract}&capital=${capital}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch MTS Silver Strategy backtest')
+  }
+  return res.json()
+}
+
 // ── Phase 3: Broker ────────────────────────────────────────────────────────
 
 export async function getBrokerStatus(token: string): Promise<BrokerStatus> {
@@ -5057,6 +5234,12 @@ export type BacktestMetrics = {
   net_pnl: number
   final_equity: number
   recovery_factor: number
+  // Optional -- absent on results computed before this field existed (see
+  // BacktestMetrics's own backward-compat defaulting in strategy_lab.py).
+  long_trades?: number
+  short_trades?: number
+  long_win_rate_pct?: number
+  short_win_rate_pct?: number
 }
 
 export type WalkForwardSplit = {

@@ -5286,6 +5286,74 @@ export async function getKotegawaPerformance(token: string): Promise<Record<stri
   return r.json()
 }
 
+// ── Kotegawa Early Reversal / Kotegawa Intraday ──────────────────────────────
+// Same underlying candidate shape as Kotegawa Reversal (KotegawaPick/
+// KotegawaScanResult/KotegawaHistoryItem) -- these two variants only differ
+// in scan cadence/universe/threshold and same-day (WIN/LOSS/NEUTRAL,
+// Golden-Egg-style) vs multi-day resolution on the backend, not in the pick
+// shape itself. Reusing the same types lets the frontend's
+// KotegawaStrategyPanel render all three from one component.
+
+export async function getKotegawaEarlyLatest(token: string): Promise<KotegawaScanResult> {
+  const r = await fetch(`${BASE}/api/v1/kotegawa-early/latest`, { headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+export async function getKotegawaEarlyHistory(token: string, limit = 30): Promise<KotegawaHistoryItem[]> {
+  const r = await fetch(`${BASE}/api/v1/kotegawa-early/history?limit=${limit}`, { headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+export async function getKotegawaEarlyByDate(token: string, date: string): Promise<KotegawaScanResult> {
+  const r = await fetch(`${BASE}/api/v1/kotegawa-early/history/${date}`, { headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+export async function triggerKotegawaEarlyScan(token: string): Promise<KotegawaScanResult> {
+  const r = await fetch(`${BASE}/api/v1/kotegawa-early/scan`, { method: 'POST', headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+export async function getKotegawaEarlyPerformance(token: string): Promise<Record<string, unknown>> {
+  const r = await fetch(`${BASE}/api/v1/kotegawa-early/performance`, { headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+export async function getKotegawaIntradayLatest(token: string): Promise<KotegawaScanResult> {
+  const r = await fetch(`${BASE}/api/v1/kotegawa-intraday/latest`, { headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+export async function getKotegawaIntradayHistory(token: string, limit = 30): Promise<KotegawaHistoryItem[]> {
+  const r = await fetch(`${BASE}/api/v1/kotegawa-intraday/history?limit=${limit}`, { headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+export async function getKotegawaIntradayByDate(token: string, date: string): Promise<KotegawaScanResult> {
+  const r = await fetch(`${BASE}/api/v1/kotegawa-intraday/history/${date}`, { headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+export async function triggerKotegawaIntradayScan(token: string): Promise<KotegawaScanResult> {
+  const r = await fetch(`${BASE}/api/v1/kotegawa-intraday/scan`, { method: 'POST', headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+export async function getKotegawaIntradayPerformance(token: string): Promise<Record<string, unknown>> {
+  const r = await fetch(`${BASE}/api/v1/kotegawa-intraday/performance`, { headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
 // ── Market Sentiment Forecast ────────────────────────────────────────────────
 
 export type SentimentForecastDay = {
@@ -5598,6 +5666,8 @@ export type LiveBacktestSource =
   | 'chartink'
   | 'golden_egg'
   | 'kotegawa'
+  | 'kotegawa_early'
+  | 'kotegawa_intraday'
 
 export type LiveStrategyBacktestResult = {
   source: LiveBacktestSource

@@ -24,6 +24,8 @@ from app.api.v1 import (
     international_market,
     journal,
     kotegawa,
+    kotegawa_early,
+    kotegawa_intraday,
     live,
     market_pulse,
     market_sources,
@@ -99,6 +101,8 @@ router.include_router(golden_egg.router)
 router.include_router(golden_stock.router)
 router.include_router(btst.router)
 router.include_router(kotegawa.router)
+router.include_router(kotegawa_early.router)
+router.include_router(kotegawa_intraday.router)
 router.include_router(watchlist_history.router)
 router.include_router(sentiment_forecast.router)
 router.include_router(trading_agent.router)

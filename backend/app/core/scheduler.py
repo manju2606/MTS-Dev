@@ -185,6 +185,79 @@ async def _resolve_kotegawa_pick_outcomes() -> None:
         log.error("scheduler.kotegawa_pick_resolve.error", error=str(exc))
 
 
+async def _run_kotegawa_early_scan() -> None:
+    """Every 15 min, 09:30-14:45 IST weekdays: same Kotegawa capitulation
+    rule set as the Reversal strategy, scanned repeatedly through the
+    session so a candidate can be caught and entered intraday -- see
+    kotegawa_early_service.py's own module docstring."""
+    try:
+        from app.services.kotegawa_early_service import run_and_save_kotegawa_early
+
+        await run_and_save_kotegawa_early()
+    except Exception as exc:
+        log.error("scheduler.kotegawa_early_scan.error", error=str(exc))
+
+
+async def _check_kotegawa_early_outcomes() -> None:
+    """Every 5 min during market hours: checks today's open Kotegawa Early
+    Reversal picks against live LTP vs target/stop-loss."""
+    try:
+        from app.services.kotegawa_early_service import check_kotegawa_early_outcomes
+
+        count = await check_kotegawa_early_outcomes()
+        log.info("scheduler.kotegawa_early_check.done", resolved=count)
+    except Exception as exc:
+        log.error("scheduler.kotegawa_early_check.error", error=str(exc))
+
+
+async def _expire_kotegawa_early_picks() -> None:
+    """15:35 IST weekdays: force-close any still-open Kotegawa Early
+    Reversal pick from today at the current price."""
+    try:
+        from app.services.kotegawa_early_service import expire_kotegawa_early_picks
+
+        count = await expire_kotegawa_early_picks()
+        log.info("scheduler.kotegawa_early_expire.done", closed=count)
+    except Exception as exc:
+        log.error("scheduler.kotegawa_early_expire.error", error=str(exc))
+
+
+async def _run_kotegawa_intraday_scan() -> None:
+    """Every 15 min, 09:30-14:45 IST weekdays: same rule set as Early
+    Reversal, scanned against the curated NIFTY_100 universe at a
+    stricter score gate -- see kotegawa_intraday_service.py."""
+    try:
+        from app.services.kotegawa_intraday_service import run_and_save_kotegawa_intraday
+
+        await run_and_save_kotegawa_intraday()
+    except Exception as exc:
+        log.error("scheduler.kotegawa_intraday_scan.error", error=str(exc))
+
+
+async def _check_kotegawa_intraday_outcomes() -> None:
+    """Every 5 min during market hours: checks today's open Kotegawa
+    Intraday picks against live LTP vs target/stop-loss."""
+    try:
+        from app.services.kotegawa_intraday_service import check_kotegawa_intraday_outcomes
+
+        count = await check_kotegawa_intraday_outcomes()
+        log.info("scheduler.kotegawa_intraday_check.done", resolved=count)
+    except Exception as exc:
+        log.error("scheduler.kotegawa_intraday_check.error", error=str(exc))
+
+
+async def _expire_kotegawa_intraday_picks() -> None:
+    """15:35 IST weekdays: force-close any still-open Kotegawa Intraday
+    pick from today at the current price."""
+    try:
+        from app.services.kotegawa_intraday_service import expire_kotegawa_intraday_picks
+
+        count = await expire_kotegawa_intraday_picks()
+        log.info("scheduler.kotegawa_intraday_expire.done", closed=count)
+    except Exception as exc:
+        log.error("scheduler.kotegawa_intraday_expire.error", error=str(exc))
+
+
 async def _run_sotd_generate() -> None:
     """09:30 IST weekdays: pick the day's best stock and optionally auto-trade it."""
     from app.services.stock_of_day_service import generate_and_save_daily_pick
@@ -1663,6 +1736,93 @@ def start_scheduler() -> None:
         CronTrigger(day_of_week="mon-fri", hour=15, minute=36, second=0, timezone="Asia/Kolkata"),
         id="kotegawa_pick_resolve",
         name="Resolve Kotegawa Pick Outcomes",
+        max_instances=1,
+        misfire_grace_time=None,
+    )
+
+    # Kotegawa Early Reversal: same rule set as Reversal, scanned every 15
+    # min 09:30-14:45 IST so a candidate can be caught and entered intraday
+    # -- see kotegawa_early_service.py. Same 3-block cadence as Golden
+    # Stock Intraday's own scan, offset by 5s to avoid an exact tie.
+    _scheduler.add_job(
+        _run_kotegawa_early_scan,
+        CronTrigger(
+            day_of_week="mon-fri", hour=9, minute="30,45", second=5, timezone="Asia/Kolkata"
+        ),
+        id="kotegawa_early_scan_open",
+        name="Kotegawa Early Reversal Scan (09:30-09:45)",
+        max_instances=1,
+        misfire_grace_time=None,
+    )
+    _scheduler.add_job(
+        _run_kotegawa_early_scan,
+        CronTrigger(
+            day_of_week="mon-fri", hour="10-14", minute="0,15,30,45", second=5,
+            timezone="Asia/Kolkata",
+        ),
+        id="kotegawa_early_scan_mid",
+        name="Kotegawa Early Reversal Scan (10:00-14:45)",
+        max_instances=1,
+        misfire_grace_time=None,
+    )
+    _scheduler.add_job(
+        _check_kotegawa_early_outcomes,
+        CronTrigger(
+            day_of_week="mon-fri", hour="9-15", minute="*/5", second=20, timezone="Asia/Kolkata",
+        ),
+        id="kotegawa_early_check",
+        name="Kotegawa Early Reversal — Target/Stop-Loss Check",
+        max_instances=1,
+        misfire_grace_time=60,
+    )
+    _scheduler.add_job(
+        _expire_kotegawa_early_picks,
+        CronTrigger(day_of_week="mon-fri", hour=15, minute=35, second=40, timezone="Asia/Kolkata"),
+        id="kotegawa_early_expire",
+        name="Kotegawa Early Reversal — Expire Open Picks",
+        max_instances=1,
+        misfire_grace_time=None,
+    )
+
+    # Kotegawa Intraday: same rule set, curated NIFTY_100 universe + stricter
+    # score gate -- see kotegawa_intraday_service.py. Same cadence as Early
+    # Reversal, offset by another 5s.
+    _scheduler.add_job(
+        _run_kotegawa_intraday_scan,
+        CronTrigger(
+            day_of_week="mon-fri", hour=9, minute="30,45", second=10, timezone="Asia/Kolkata"
+        ),
+        id="kotegawa_intraday_scan_open",
+        name="Kotegawa Intraday Scan (09:30-09:45)",
+        max_instances=1,
+        misfire_grace_time=None,
+    )
+    _scheduler.add_job(
+        _run_kotegawa_intraday_scan,
+        CronTrigger(
+            day_of_week="mon-fri", hour="10-14", minute="0,15,30,45", second=10,
+            timezone="Asia/Kolkata",
+        ),
+        id="kotegawa_intraday_scan_mid",
+        name="Kotegawa Intraday Scan (10:00-14:45)",
+        max_instances=1,
+        misfire_grace_time=None,
+    )
+    _scheduler.add_job(
+        _check_kotegawa_intraday_outcomes,
+        CronTrigger(
+            day_of_week="mon-fri", hour="9-15", minute="*/5", second=25, timezone="Asia/Kolkata",
+        ),
+        id="kotegawa_intraday_check",
+        name="Kotegawa Intraday — Target/Stop-Loss Check",
+        max_instances=1,
+        misfire_grace_time=60,
+    )
+    _scheduler.add_job(
+        _expire_kotegawa_intraday_picks,
+        CronTrigger(day_of_week="mon-fri", hour=15, minute=35, second=45, timezone="Asia/Kolkata"),
+        id="kotegawa_intraday_expire",
+        name="Kotegawa Intraday — Expire Open Picks",
         max_instances=1,
         misfire_grace_time=None,
     )

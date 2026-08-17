@@ -28,6 +28,15 @@ whether a given crash is a genuine overreaction vs justified repricing —
 this scanner only captures the quantifiable "buy panic, sell the bounce"
 core of his method using end-of-day OHLCV, same honesty scope as
 btst_scanner.py's own docstring about its own data gaps.
+
+`run_kotegawa_scan()` also backs the Early Reversal and Intraday sibling
+strategies (see kotegawa_early_service.py / kotegawa_intraday_service.py) --
+they call this same engine with a different `symbols` universe and/or a
+stricter `min_score`, on a repeated intraday cadence instead of once daily
+at close. yfinance's daily bar already reflects live intraday O/H/L/Close
+during market hours (same fact golden_stock_scanner.py's own 15-min repeat
+scan relies on), so no separate intraday data path is needed -- only the
+caller's cadence/universe/threshold differs.
 """
 
 import asyncio
@@ -264,7 +273,9 @@ def _fetch_name_sync(symbol: str) -> str:
 # ── Scoring ────────────────────────────────────────────────────────────────────
 
 
-def _score_candidate(cand: dict, name: str, nifty_change_pct: float) -> KotegawaCandidate | None:
+def _score_candidate(
+    cand: dict, name: str, nifty_change_pct: float, min_score: int = 55
+) -> KotegawaCandidate | None:
     sym = cand["symbol"]
     current = cand["current"]
     today_low = cand["today_low"]
@@ -339,7 +350,7 @@ def _score_candidate(cand: dict, name: str, nifty_change_pct: float) -> Kotegawa
 
     total_score = capitulation_score + volume_score + kairi_score + reversal_score
 
-    if total_score < 55:
+    if total_score < min_score:
         return None
 
     # Entry / SL / Targets — sized to the stock's own ATR and recent SMAs,
@@ -415,12 +426,17 @@ def _score_candidate(cand: dict, name: str, nifty_change_pct: float) -> Kotegawa
 # ── Main scan function ────────────────────────────────────────────────────────
 
 
-async def run_kotegawa_scan() -> KotegawaScan:
+async def run_kotegawa_scan(
+    symbols: list[str] | None = None, min_score: int = 55
+) -> KotegawaScan:
+    """symbols/min_score let Early Reversal and Intraday reuse this same
+    engine (see module docstring) -- symbols defaults to the full NIFTY 500
+    Reversal scans, min_score defaults to Reversal's own 55 gate."""
     now_ist = datetime.now(IST)
     scan_date = now_ist.strftime("%Y-%m-%d")
     scan_time = now_ist.isoformat()
 
-    symbols = list(NIFTY_500)
+    symbols = list(symbols) if symbols is not None else list(NIFTY_500)
     log.info("kotegawa.scan.start", universe=len(symbols))
 
     loop = asyncio.get_event_loop()
@@ -448,7 +464,7 @@ async def run_kotegawa_scan() -> KotegawaScan:
         async with sem:
             try:
                 name = await loop.run_in_executor(None, partial(_fetch_name_sync, cand["symbol"]))
-                return _score_candidate(cand, name, nifty_change_pct)
+                return _score_candidate(cand, name, nifty_change_pct, min_score)
             except Exception as exc:
                 log.debug("kotegawa.pass2.error", symbol=cand["symbol"], error=str(exc))
                 return None

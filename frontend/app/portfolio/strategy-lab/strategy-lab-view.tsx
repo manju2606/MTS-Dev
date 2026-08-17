@@ -502,6 +502,8 @@ const LIVE_BACKTEST_SOURCES: { value: LiveBacktestSource; label: string; emoji: 
   { value: 'chartink', label: 'Chartink (Breakout Watchlist)', emoji: '🚨' },
   { value: 'golden_egg', label: 'Golden Egg', emoji: '🥚' },
   { value: 'kotegawa', label: 'Kotegawa Reversal', emoji: '📉' },
+  { value: 'kotegawa_early', label: 'Kotegawa Early Reversal', emoji: '⏱️' },
+  { value: 'kotegawa_intraday', label: 'Kotegawa Intraday', emoji: '⚡' },
 ]
 
 // Golden Stock/BTST score each pick with confidence/RSI/volume-ratio

@@ -40,6 +40,8 @@ SOURCE_LABELS = {
     "chartink": "Chartink (Breakout Watchlist)",
     "golden_egg": "Golden Egg",
     "kotegawa": "Kotegawa Reversal (BNF Style)",
+    "kotegawa_early": "Kotegawa Early Reversal (Intraday Entry)",
+    "kotegawa_intraday": "Kotegawa Intraday (NIFTY 100)",
 }
 
 
@@ -118,6 +120,18 @@ async def _fetch_picks(source: str, since_date: str | None) -> list[dict]:
 
         return await KotegawaRepository().list_picks_by_outcome(
             ["target_hit", "sl_hit", "expired"], since_date, limit=2000
+        )
+    if source == "kotegawa_early":
+        from app.infra.db.repositories.kotegawa_early_repo import KotegawaEarlyRepository
+
+        return await KotegawaEarlyRepository().list_picks_by_outcome(
+            ["WIN", "LOSS", "NEUTRAL"], since_date, limit=2000
+        )
+    if source == "kotegawa_intraday":
+        from app.infra.db.repositories.kotegawa_intraday_repo import KotegawaIntradayRepository
+
+        return await KotegawaIntradayRepository().list_picks_by_outcome(
+            ["WIN", "LOSS", "NEUTRAL"], since_date, limit=2000
         )
     if source == "chartink":
         from app.infra.db.repositories.chartink_breakout_repo import (

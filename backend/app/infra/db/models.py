@@ -614,6 +614,7 @@ class ChartinkBreakoutAlertORM(Base):
     volume_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
     volume: Mapped[float | None] = mapped_column(Float, nullable=True)
     market_cap: Mapped[float | None] = mapped_column(Float, nullable=True)
+    beta: Mapped[float | None] = mapped_column(Float, nullable=True)
     explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     status: Mapped[str] = mapped_column(String(10), nullable=False, default="OPEN", index=True)
@@ -638,6 +639,7 @@ class ChartinkBreakoutAlertORM(Base):
             volume_ratio=self.volume_ratio,
             volume=self.volume,
             market_cap=self.market_cap,
+            beta=self.beta,
             explanation=self.explanation,
             status=self.status,
             exit_price=self.exit_price,
@@ -663,6 +665,7 @@ class ChartinkBreakoutAlertORM(Base):
             volume_ratio=a.volume_ratio,
             volume=a.volume,
             market_cap=a.market_cap,
+            beta=a.beta,
             explanation=a.explanation,
             status=a.status,
             exit_price=a.exit_price,

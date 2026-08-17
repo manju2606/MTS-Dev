@@ -147,6 +147,34 @@ async def _fetch_market_caps(symbols: list[str]) -> dict[str, float | None]:
     return dict(results)
 
 
+def _fetch_beta_sync(symbol: str) -> float | None:
+    try:
+        import yfinance as yf
+
+        info = yf.Ticker(symbol).info or {}
+        beta = info.get("beta")
+        return round(beta, 2) if beta else None
+    except Exception:
+        return None
+
+
+async def _fetch_betas(symbols: list[str]) -> dict[str, float | None]:
+    """beta isn't in fast_info (unlike market_cap) -- needs the slower
+    full .info dict, one call per symbol. Same bounded-concurrency
+    pattern as _fetch_market_caps, only called for symbols that just
+    crossed the breakout streak threshold."""
+    loop = asyncio.get_event_loop()
+    sem = asyncio.Semaphore(15)
+
+    async def _one(sym: str) -> tuple[str, float | None]:
+        async with sem:
+            beta = await loop.run_in_executor(None, _fetch_beta_sync, sym)
+            return sym, beta
+
+    results = await asyncio.gather(*[_one(s) for s in symbols])
+    return dict(results)
+
+
 async def preview_score(symbol: str, cfg: ChartinkScoringConfig) -> dict:
     """Score one live symbol against a caller-supplied config -- doesn't
     touch the DB or send email, unlike process_chartink_alert(). Lets the
@@ -286,6 +314,7 @@ async def _record_and_alert_breakouts(scan_name: str, symbols: list[str]) -> Non
     try:
         technicals = await _fetch_technicals_async(symbols)
         market_caps = await _fetch_market_caps([c["symbol"] for c in technicals])
+        betas = await _fetch_betas([c["symbol"] for c in technicals])
         for c in technicals:
             try:
                 adx = _compute_adx(c["high"], c["low"], c["close"])
@@ -303,6 +332,7 @@ async def _record_and_alert_breakouts(scan_name: str, symbols: list[str]) -> Non
                     "volume_ratio": round(c["volume_ratio"], 2),
                     "volume": c.get("volume"),
                     "market_cap": market_caps.get(c["symbol"]),
+                    "beta": betas.get(c["symbol"]),
                     "explanation": explanation,
                 }
             except Exception as exc:
@@ -333,6 +363,7 @@ async def _record_and_alert_breakouts(scan_name: str, symbols: list[str]) -> Non
                     volume_ratio=s.get("volume_ratio"),
                     volume=s.get("volume"),
                     market_cap=s.get("market_cap"),
+                    beta=s.get("beta"),
                     explanation=s.get("explanation"),
                 )
             )
@@ -568,6 +599,7 @@ async def get_breakout_watchlist(limit: int = 100) -> list[dict]:
                 "volume_ratio": alert.volume_ratio,
                 "volume": alert.volume,
                 "market_cap": alert.market_cap,
+                "beta": alert.beta,
                 "explanation": alert.explanation,
                 # Resolution against entry_price/stop_loss/target -- see
                 # resolve_breakout_alerts().

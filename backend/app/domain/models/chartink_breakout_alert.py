@@ -48,6 +48,12 @@ class ChartinkBreakoutAlert:
     volume_ratio: float | None = None
     volume: float | None = None  # raw latest-session share volume
     market_cap: float | None = None  # yfinance fast_info.market_cap at breakout time
+    # yfinance info["beta"] at breakout time. Yahoo's benchmark/methodology for
+    # NSE tickers isn't documented and isn't guaranteed to be Nifty specifically --
+    # values observed here trend low/compressed vs typical Nifty-beta expectations,
+    # though relative ranking across stocks still looks directionally sane. Same
+    # data source/caveat as portfolio.py's assistant fundamentals beta field.
+    beta: float | None = None
     explanation: str | None = None
 
     # Resolution against entry_price/stop_loss/target.

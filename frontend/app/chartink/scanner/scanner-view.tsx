@@ -587,15 +587,16 @@ function sortBreakoutRows(rows: ChartinkBreakoutRow[], key: BreakoutSortKey, dir
 
 const QUALITY_GATE_OFF = {
   minConfidence: '', minRR: '', minAdx: '', minVolumeRatio: '', maxRsi: '', minMarketCapCr: '', minVolume: '',
+  maxBeta: '',
 }
 // Sample starting point -- min AI Score 50%, min R:R 1.5, ADX > 25 (real trend, not
 // chop), volume ratio > 1.5x (breakout has real participation), RSI < 75 (not already
 // overbought), market cap > ₹5,000 Cr (mid-cap+, less prone to manipulation/illiquidity),
-// volume > 1 lakh shares (baseline liquidity). Tune freely; "Clear gates" always turns
-// filtering off entirely.
+// volume > 1 lakh shares (baseline liquidity), beta < 1.3 (excludes stocks meaningfully
+// more volatile than Nifty). Tune freely; "Clear gates" always turns filtering off entirely.
 const QUALITY_GATE_DEFAULTS = {
   minConfidence: '50', minRR: '1.5', minAdx: '25', minVolumeRatio: '1.5', maxRsi: '75',
-  minMarketCapCr: '5000', minVolume: '100000',
+  minMarketCapCr: '5000', minVolume: '100000', maxBeta: '1.3',
 }
 
 const QUALITY_GATE_STORAGE_KEY = 'mts_breakout_quality_gates'
@@ -617,6 +618,7 @@ function applyQualityGates(rows: ChartinkBreakoutRow[], gates: typeof QUALITY_GA
   const maxRsi = gates.maxRsi === '' ? null : Number(gates.maxRsi)
   const minMarketCap = gates.minMarketCapCr === '' ? null : Number(gates.minMarketCapCr) * 1e7
   const minVolume = gates.minVolume === '' ? null : Number(gates.minVolume)
+  const maxBeta = gates.maxBeta === '' ? null : Number(gates.maxBeta)
 
   return rows.filter(r => {
     if (minConfidence !== null && (r.confidence === null || r.confidence < minConfidence)) return false
@@ -626,6 +628,7 @@ function applyQualityGates(rows: ChartinkBreakoutRow[], gates: typeof QUALITY_GA
     if (maxRsi !== null && (r.rsi === null || r.rsi > maxRsi)) return false
     if (minMarketCap !== null && (r.market_cap === null || r.market_cap < minMarketCap)) return false
     if (minVolume !== null && (r.volume === null || r.volume < minVolume)) return false
+    if (maxBeta !== null && (r.beta === null || r.beta > maxBeta)) return false
     return true
   })
 }
@@ -771,6 +774,14 @@ function BreakoutWatchlist({ token }: { token: string }) {
             type="number" min={0} placeholder="off" value={gates.minVolume}
             onChange={e => setGates(g => ({ ...g, minVolume: e.target.value }))}
             className="w-24 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs text-zinc-700 focus:border-indigo-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-[10px] font-medium text-zinc-400">Max Beta</label>
+          <input
+            type="number" min={0} step={0.1} placeholder="off" value={gates.maxBeta}
+            onChange={e => setGates(g => ({ ...g, maxBeta: e.target.value }))}
+            className="w-20 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs text-zinc-700 focus:border-indigo-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
           />
         </div>
         <button

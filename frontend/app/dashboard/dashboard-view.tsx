@@ -7,12 +7,12 @@ import { NavBar } from '@/components/nav-bar'
 import {
   getMe, getTopPicks, getDiscoveryStatus, listTrades, listAlerts, getQuote, getMarketOverview,
   getSotDToday, listWatchlists, addItemToWatchlist, getGoldenStockLatest, getBTSTLatest, getBrokerStatus, ApiError,
-  getGoldenEggToday,
+  getGoldenEggToday, getKotegawaLatest,
 } from '@/lib/api'
 import type {
   User, StockScore, DiscoveryStatus, Trade, AlertRule,
   IndexQuote, EconomicEvent, MarketOverviewData, StockOfDay, Watchlist,
-  GoldenStockScan, BTSTScanResult, BrokerStatus, GoldenEggPick,
+  GoldenStockScan, BTSTScanResult, BrokerStatus, GoldenEggPick, KotegawaScanResult,
 } from '@/lib/api'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -764,6 +764,66 @@ function BTSTDashCard({ scan, ltp, token, watchlists }: {
   )
 }
 
+// ── Kotegawa Reversal compact card ──────────────────────────────────────────────
+
+function KotegawaDashCard({ scan, ltp, token, watchlists }: {
+  scan: KotegawaScanResult | null
+  ltp?: number | null
+  token?: string
+  watchlists?: Watchlist[]
+}) {
+  if (!scan || scan.picks.length === 0) {
+    return (
+      <div className="flex items-center justify-between rounded-xl border border-dashed border-zinc-300 bg-white px-4 py-3 dark:border-zinc-700 dark:bg-zinc-900">
+        <div className="flex items-center gap-2">
+          <span className="text-base">📉</span>
+          <div>
+            <p className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">Kotegawa Reversal — Capitulation Bounce</p>
+            <p className="text-[10px] text-zinc-400">Scans daily at 2:15 PM IST · rare by design</p>
+          </div>
+        </div>
+        <Link href="/kotegawa" className="text-[10px] font-semibold text-indigo-600 hover:underline dark:text-indigo-400">
+          View →
+        </Link>
+      </div>
+    )
+  }
+
+  const top = scan.picks[0]
+  const sym = top.symbol.replace(/\.(NS|BO)$/, '')
+
+  return (
+    <div className="flex flex-wrap items-center gap-4 rounded-xl border border-indigo-100 bg-gradient-to-r from-indigo-50 to-violet-50 px-4 py-3 dark:border-indigo-900/50 dark:from-indigo-950/30 dark:to-violet-950/20">
+      <div className={DASH_CARD_LABEL_COL}>
+        <span className="text-base">📉</span>
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wide text-indigo-400">Kotegawa</p>
+          <p className="text-sm font-extrabold text-zinc-900 dark:text-zinc-50">{sym}</p>
+        </div>
+      </div>
+      <div className={DASH_CARD_METRIC_GRID}>
+        <DashCardMetric label="Entry (Today)" value={`₹${top.entry_price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`} />
+        <DashCardLtp ltp={ltp} entryPrice={top.entry_price} />
+        <DashCardMetric label="SL" value={`₹${top.stop_loss.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`} valueClass="text-red-600 dark:text-red-400" />
+        <DashCardMetric label="Target 1" value={`₹${top.target_1.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`} valueClass="text-emerald-600 dark:text-emerald-400" />
+        <DashCardMetric label="Score" value={top.confidence_score} valueClass="text-indigo-600" />
+        <DashCardMetric label="Picks Today" value={scan.picks.length} valueClass="text-zinc-700 dark:text-zinc-300" />
+      </div>
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        {token && watchlists && watchlists.length > 0 && (
+          <AddToWatchlistBtn symbol={top.symbol} token={token} watchlists={watchlists} />
+        )}
+        <Link href={`/trade?symbol=${encodeURIComponent(top.symbol)}`} className="rounded-lg bg-white px-3 py-1.5 text-[10px] font-bold text-indigo-700 ring-1 ring-indigo-300 hover:bg-indigo-50 dark:bg-zinc-900 dark:text-indigo-400 dark:ring-indigo-800 dark:hover:bg-indigo-950/40">
+          Trade Now →
+        </Link>
+        <Link href="/kotegawa" className="rounded-lg bg-indigo-600 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-indigo-700">
+          Details →
+        </Link>
+      </div>
+    </div>
+  )
+}
+
 // ── Main view ─────────────────────────────────────────────────────────────────
 
 export default function DashboardView() {
@@ -780,6 +840,7 @@ export default function DashboardView() {
   const [goldenEgg, setGoldenEgg] = useState<GoldenEggPick | null>(null)
   const [goldenStock, setGoldenStock] = useState<GoldenStockScan | null>(null)
   const [btst, setBtst]         = useState<BTSTScanResult | null>(null)
+  const [kotegawa, setKotegawa] = useState<KotegawaScanResult | null>(null)
   const [sortKey, setSortKey]   = useState<SortKey>('signal')
   const [sortDir, setSortDir]   = useState<SortDir>('desc')
   const [sigFilter, setSigFilter] = useState<string>('All')
@@ -788,6 +849,7 @@ export default function DashboardView() {
   const [sotdLtp, setSotdLtp]   = useState<number | null>(null)
   const [goldenStockLtp, setGoldenStockLtp] = useState<number | null>(null)
   const [btstLtp, setBtstLtp]   = useState<number | null>(null)
+  const [kotegawaLtp, setKotegawaLtp] = useState<number | null>(null)
   const [broker, setBroker]     = useState<BrokerStatus | null>(null)
 
   const CACHE_KEY = 'mts_dashboard_cache'
@@ -802,6 +864,7 @@ export default function DashboardView() {
       if (c.goldenEgg !== undefined) setGoldenEgg(c.goldenEgg)
       if (c.goldenStock !== undefined) setGoldenStock(c.goldenStock)
       if (c.btst !== undefined) setBtst(c.btst)
+      if (c.kotegawa !== undefined) setKotegawa(c.kotegawa)
       if (c.trades) setTrades(c.trades)
       if (c.alerts) setAlerts(c.alerts)
     } catch { /* ignore corrupt cache */ }
@@ -809,7 +872,7 @@ export default function DashboardView() {
 
   const load = useCallback(async (token: string) => {
     // Critical data first — renders SotD, picks, trades without waiting for market-overview
-    const [me, p, s, t, a, sotdRes, geRes, gsRes, btstRes] = await Promise.all([
+    const [me, p, s, t, a, sotdRes, geRes, gsRes, btstRes, kotegawaRes] = await Promise.all([
       getMe(token),
       getTopPicks(token, 50, undefined, 0).catch(() => [] as StockScore[]),
       getDiscoveryStatus(token).catch(() => null),
@@ -819,6 +882,7 @@ export default function DashboardView() {
       getGoldenEggToday(token).catch(() => null),
       getGoldenStockLatest(token).catch(() => null),
       getBTSTLatest(token).catch(() => null),
+      getKotegawaLatest(token).catch(() => null),
     ])
     const openTrades = (t as Trade[]).filter((tr: Trade) => tr.status === 'open')
     const activeAlerts = (a as AlertRule[]).filter((al: AlertRule) => !al.triggered)
@@ -831,11 +895,12 @@ export default function DashboardView() {
     setGoldenEgg(geRes)
     setGoldenStock(gsRes)
     setBtst(btstRes)
+    setKotegawa(kotegawaRes)
 
     try {
       localStorage.setItem(CACHE_KEY, JSON.stringify({
         picks: p, status: s, sotd: sotdRes?.data ?? null,
-        goldenEgg: geRes, goldenStock: gsRes, btst: btstRes,
+        goldenEgg: geRes, goldenStock: gsRes, btst: btstRes, kotegawa: kotegawaRes,
         trades: openTrades, alerts: activeAlerts,
       }))
     } catch { /* storage full */ }
@@ -915,6 +980,14 @@ export default function DashboardView() {
     getQuote(t, top.symbol).then(q => setBtstLtp(q.price)).catch(() => {})
   }, [btst])
 
+  useEffect(() => {
+    const top = kotegawa?.picks[0]
+    if (!top) return
+    const t = tokenRef.current
+    if (!t) return
+    getQuote(t, top.symbol).then(q => setKotegawaLtp(q.price)).catch(() => {})
+  }, [kotegawa])
+
   function handleSort(key: SortKey) {
     if (sortKey === key) setSortDir(d => d === 'desc' ? 'asc' : 'desc')
     else { setSortKey(key); setSortDir('desc') }
@@ -992,6 +1065,7 @@ export default function DashboardView() {
           <GoldenEggDashCard pick={goldenEgg} token={tokenRef.current} watchlists={watchlists} />
           <GoldenStockDashCard scan={goldenStock} ltp={goldenStockLtp} token={tokenRef.current} watchlists={watchlists} />
           <BTSTDashCard scan={btst} ltp={btstLtp} token={tokenRef.current} watchlists={watchlists} />
+          <KotegawaDashCard scan={kotegawa} ltp={kotegawaLtp} token={tokenRef.current} watchlists={watchlists} />
         </div>
 
         {/* Market context row: Sentiment | Global | Economic Events */}
@@ -1176,6 +1250,7 @@ export default function DashboardView() {
                   { href: '/trade', label: 'Quick Trade' },
                   { href: '/golden-stock', label: 'Golden Stock' },
                   { href: '/btst', label: 'BTST' },
+                  { href: '/kotegawa', label: 'Kotegawa Reversal' },
                   { href: '/discovery', label: 'Discovery' },
                   { href: '/forecast', label: 'Forecast' },
                   { href: '/alerts', label: 'Alerts' },

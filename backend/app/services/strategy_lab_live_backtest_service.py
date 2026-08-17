@@ -1,5 +1,6 @@
 """Backtests each live scanning strategy's ACTUAL historical picks (Golden
-Stock, BTST, Stock of the Day, Chartink Breakout Watchlist, Golden Egg) --
+Stock, BTST, Stock of the Day, Chartink Breakout Watchlist, Golden Egg,
+Kotegawa Reversal) --
 not a synthetic re-simulation over historical market data (that would need
 a whole separate point-in-time scanning engine per strategy, replicating
 each one's live universe-scan logic against historical OHLCV day by day),
@@ -38,6 +39,7 @@ SOURCE_LABELS = {
     "stock_of_day": "Stock of the Day",
     "chartink": "Chartink (Breakout Watchlist)",
     "golden_egg": "Golden Egg",
+    "kotegawa": "Kotegawa Reversal (BNF Style)",
 }
 
 
@@ -110,6 +112,12 @@ async def _fetch_picks(source: str, since_date: str | None) -> list[dict]:
 
         return await GoldenEggRepository().list_picks_by_outcome(
             ["WIN", "LOSS", "NEUTRAL"], since_date, limit=2000
+        )
+    if source == "kotegawa":
+        from app.infra.db.repositories.kotegawa_repo import KotegawaRepository
+
+        return await KotegawaRepository().list_picks_by_outcome(
+            ["target_hit", "sl_hit", "expired"], since_date, limit=2000
         )
     if source == "chartink":
         from app.infra.db.repositories.chartink_breakout_repo import (

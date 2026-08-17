@@ -5189,6 +5189,102 @@ export async function getBTSTPerformance(token: string): Promise<Record<string, 
   return r.json()
 }
 
+// ── Kotegawa Reversal (BNF-style mean reversion) ─────────────────────────────
+
+export type KotegawaPick = {
+  rank: number
+  symbol: string
+  name: string
+  sector: string
+  entry_price: number
+  stop_loss: number
+  target_1: number
+  target_2: number
+  risk_reward: number
+  confidence_score: number
+  capitulation_score: number
+  volume_score: number
+  kairi_score: number
+  reversal_score: number
+  reasons: string[]
+  current_price: number
+  change_pct: number
+  decline_1d_pct: number
+  decline_3d_pct: number
+  rsi: number
+  volume_ratio: number
+  kairi_pct: number
+  sma25: number
+  avg_daily_value_cr: number
+  closed_upper_half: boolean
+  hammer_candle: boolean
+  relative_weakness_pct: number
+  outcome?: string | null
+  actual_close?: number | null
+  actual_pct?: number | null
+  resolved_at?: string | null
+  ltp?: number | null
+  pnl_amount?: number | null
+  pnl_pct?: number | null
+}
+
+export type KotegawaScanResult = {
+  id?: string
+  scan_date: string
+  scan_time: string
+  universe_scanned: number
+  passed_filter: number
+  nifty_change_pct: number
+  picks: KotegawaPick[]
+  created_at?: string
+}
+
+export type KotegawaHistoryItem = {
+  id: string
+  scan_date: string
+  scan_time: string
+  universe_scanned: number
+  passed_filter: number
+  pick_count: number
+  top_symbol: string
+  top_score: number
+  top_entry_price?: number | null
+  top_ltp?: number | null
+  top_pnl_amount?: number | null
+  top_pnl_pct?: number | null
+  created_at?: string
+}
+
+export async function getKotegawaLatest(token: string): Promise<KotegawaScanResult> {
+  const r = await fetch(`${BASE}/api/v1/kotegawa/latest`, { headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+export async function getKotegawaHistory(token: string, limit = 30): Promise<KotegawaHistoryItem[]> {
+  const r = await fetch(`${BASE}/api/v1/kotegawa/history?limit=${limit}`, { headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+export async function getKotegawaByDate(token: string, date: string): Promise<KotegawaScanResult> {
+  const r = await fetch(`${BASE}/api/v1/kotegawa/history/${date}`, { headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+export async function triggerKotegawaScan(token: string): Promise<KotegawaScanResult> {
+  const r = await fetch(`${BASE}/api/v1/kotegawa/scan`, { method: 'POST', headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+export async function getKotegawaPerformance(token: string): Promise<Record<string, unknown>> {
+  const r = await fetch(`${BASE}/api/v1/kotegawa/performance`, { headers: authHeaders(token) })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
 // ── Market Sentiment Forecast ────────────────────────────────────────────────
 
 export type SentimentForecastDay = {
@@ -5494,7 +5590,13 @@ export type StrategyLabTrade = {
 // Stock of the Day, Chartink Breakout Watchlist, Golden Egg) against its
 // own real historical picks -- not a synthetic re-simulation, see backend
 // strategy_lab_live_backtest_service.py's module docstring.
-export type LiveBacktestSource = 'golden_stock' | 'btst' | 'stock_of_day' | 'chartink' | 'golden_egg'
+export type LiveBacktestSource =
+  | 'golden_stock'
+  | 'btst'
+  | 'stock_of_day'
+  | 'chartink'
+  | 'golden_egg'
+  | 'kotegawa'
 
 export type LiveStrategyBacktestResult = {
   source: LiveBacktestSource

@@ -113,6 +113,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/golden-egg',   label: 'Golden Egg',     icon: 'star',       desc: 'Daily 09:15 IST single pick · 1h/day/week/month predictions · history' },
       { href: '/golden-stock', label: 'Golden Stock',   icon: 'trendingUp', desc: 'Intraday picks · AI-scored · Fundamental + Technical' },
       { href: '/btst',       label: 'BTST',             icon: 'trendingUp', desc: 'Buy Today, Sell Tomorrow · Breakout + relative strength + news' },
+      { href: '/kotegawa',   label: 'Kotegawa Reversal', icon: 'activity', desc: 'BNF-style mean reversion · Capitulation decline + oversold bounce' },
       { href: '/paper',      label: 'Paper Trading',    icon: 'clipboard',  desc: 'Simulated trades, zero risk' },
       { href: '/live',       label: 'Live Trading',     icon: 'zap',        desc: 'Execute real orders' },
       { href: '/broker',     label: 'Broker',           icon: 'link',       desc: 'Zerodha / simulated setup' },

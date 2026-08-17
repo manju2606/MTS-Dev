@@ -161,6 +161,30 @@ async def _resolve_btst_pick_outcomes() -> None:
         log.error("scheduler.btst_pick_resolve.error", error=str(exc))
 
 
+async def _run_kotegawa_scan() -> None:
+    """14:15 IST weekdays: run the Kotegawa Reversal (BNF-style mean-
+    reversion) scan, after BTST's 14:00 slot."""
+    try:
+        from app.services.kotegawa_service import run_and_save_kotegawa
+
+        await run_and_save_kotegawa()
+    except Exception as exc:
+        log.error("scheduler.kotegawa_scan.error", error=str(exc))
+
+
+async def _resolve_kotegawa_pick_outcomes() -> None:
+    """15:36 IST weekdays: checks every still-open Kotegawa pick from the
+    last few days against target/stop-loss -- see
+    kotegawa_service.resolve_kotegawa_outcomes()'s RESOLUTION_WINDOW_DAYS."""
+    try:
+        from app.services.kotegawa_service import resolve_kotegawa_outcomes
+
+        count = await resolve_kotegawa_outcomes()
+        log.info("scheduler.kotegawa_pick_resolve.done", updated=count)
+    except Exception as exc:
+        log.error("scheduler.kotegawa_pick_resolve.error", error=str(exc))
+
+
 async def _run_sotd_generate() -> None:
     """09:30 IST weekdays: pick the day's best stock and optionally auto-trade it."""
     from app.services.stock_of_day_service import generate_and_save_daily_pick
@@ -1618,6 +1642,27 @@ def start_scheduler() -> None:
         CronTrigger(day_of_week="mon-fri", hour=15, minute=35, second=0, timezone="Asia/Kolkata"),
         id="btst_pick_resolve",
         name="Resolve BTST Pick Outcomes",
+        max_instances=1,
+        misfire_grace_time=None,
+    )
+
+    # Kotegawa Reversal scan once daily at 14:15 IST (Mon-Fri), after BTST's
+    # 14:00 slot -- see kotegawa_scanner.py for the mean-reversion rule set.
+    _scheduler.add_job(
+        _run_kotegawa_scan,
+        CronTrigger(day_of_week="mon-fri", hour=14, minute=15, second=0, timezone="Asia/Kolkata"),
+        id="kotegawa_scan",
+        name="Kotegawa Reversal Scan (14:15)",
+        max_instances=1,
+        misfire_grace_time=None,
+    )
+
+    # Resolve Kotegawa pick outcomes at 15:36 IST, against today's close
+    _scheduler.add_job(
+        _resolve_kotegawa_pick_outcomes,
+        CronTrigger(day_of_week="mon-fri", hour=15, minute=36, second=0, timezone="Asia/Kolkata"),
+        id="kotegawa_pick_resolve",
+        name="Resolve Kotegawa Pick Outcomes",
         max_instances=1,
         misfire_grace_time=None,
     )

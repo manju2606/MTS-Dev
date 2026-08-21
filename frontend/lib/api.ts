@@ -3490,6 +3490,46 @@ export async function getStrategyDashboardPerformance(
   return res.json()
 }
 
+// LTP/OHLC/volume/OI plus day/week/month range and (NG only -- see
+// get_strategy_dashboard_levels backend docstring) classic floor-trader
+// pivot/support/resistance for Gold Guinea, Silver100, and NG Mini.
+export type StrategyDashboardLevelsRow = {
+  contract: string
+  name: string
+  icon: string
+  ltp: number | null
+  open: number | null
+  prev_close: number | null
+  change_pct: number | null
+  volume: number | null
+  oi: number | null
+  day_high: number | null
+  day_low: number | null
+  week_high: number | null
+  week_low: number | null
+  month_high: number | null
+  month_low: number | null
+  pivot: number | null
+  r1: number | null
+  s1: number | null
+  r2: number | null
+  s2: number | null
+  updated_at: string
+}
+export type StrategyDashboardLevels = {
+  generated_at: string
+  rows: StrategyDashboardLevelsRow[]
+}
+
+export async function getStrategyDashboardLevels(token: string): Promise<StrategyDashboardLevels> {
+  const res = await fetch(`${BASE}/api/v1/mcx/strategy-dashboard/levels`, { headers: authHeaders(token) })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch Strategy Dashboard levels')
+  }
+  return res.json()
+}
+
 // ── Phase 3: Broker ────────────────────────────────────────────────────────
 
 export async function getBrokerStatus(token: string): Promise<BrokerStatus> {

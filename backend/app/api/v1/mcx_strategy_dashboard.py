@@ -51,3 +51,13 @@ async def strategy_dashboard_performance(
     from app.services.mcx_strategy_dashboard_service import get_strategy_dashboard_performance
 
     return await get_strategy_dashboard_performance(str(current_user.id), capital)
+
+
+@router.get("/levels")
+async def strategy_dashboard_levels(current_user: CurrentUser) -> dict:
+    """LTP/OHLC/volume/OI plus day/week/month range and (NG only)
+    floor-trader pivot/support/resistance for Gold Guinea, Silver100, and
+    NG Mini -- see get_strategy_dashboard_levels's own docstring."""
+    from app.services.mcx_strategy_dashboard_service import get_strategy_dashboard_levels
+
+    return await get_strategy_dashboard_levels(str(current_user.id))

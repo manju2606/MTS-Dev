@@ -288,3 +288,87 @@ async def get_strategy_dashboard_performance(user_id: str, capital: float = 100_
         )
 
     return {"generated_at": ist_now().isoformat(), "capital": capital, "rows": rows}
+
+
+# ── Technical levels table ───────────────────────────────────────────────────
+# LTP/OHLC/volume/OI straight from the live quote already used above, plus
+# day/week/month range and (NG only -- see get_range_stats's own docstring,
+# get_metal_range_stats has no metals equivalent yet) classic floor-trader
+# pivot/support/resistance -- both already-existing, self-contained functions
+# reused as-is rather than recomputed here.
+
+_RangeStatsFn = Callable[[str, str], Awaitable[dict]]
+
+
+async def _gold_range_stats(user_id: str, contract: str) -> dict:
+    from app.services.mcx_metals_service import get_metal_range_stats
+
+    return await get_metal_range_stats(user_id, contract)
+
+
+async def _ng_range_stats(user_id: str, contract: str) -> dict:
+    from app.services.mcx_service import get_range_stats
+
+    return await get_range_stats(user_id, contract)
+
+
+def _levels_instruments() -> list[dict[str, Any]]:
+    return [
+        {
+            "contract": "GOLDGUINEA", "name": "Gold Guinea", "icon": "🥇",
+            "quote": _gold_quote, "range_stats": _gold_range_stats,
+        },
+        {
+            "contract": "SILVER100", "name": "Silver100", "icon": "🥈",
+            "quote": _gold_quote, "range_stats": _gold_range_stats,
+        },
+        {
+            "contract": "NGMINI", "name": "NG Mini", "icon": "⛽",
+            "quote": _ng_quote, "range_stats": _ng_range_stats,
+        },
+    ]
+
+
+async def _range_stats_or_none(fn: _RangeStatsFn, user_id: str, contract: str) -> dict | None:
+    try:
+        return await fn(user_id, contract)
+    except Exception:
+        return None
+
+
+async def _levels_row_for(user_id: str, inst: dict[str, Any]) -> dict[str, Any]:
+    quote, range_stats = await asyncio.gather(
+        _quote_or_none(inst["quote"], user_id, inst["contract"]),
+        _range_stats_or_none(inst["range_stats"], user_id, inst["contract"]),
+    )
+    return {
+        "contract": inst["contract"],
+        "name": inst["name"],
+        "icon": inst["icon"],
+        "ltp": quote.get("last_price") if quote else None,
+        "open": quote.get("open") if quote else None,
+        "prev_close": quote.get("prev_close") if quote else None,
+        "change_pct": quote.get("change_pct") if quote else None,
+        "volume": quote.get("volume") if quote else None,
+        "oi": quote.get("oi") if quote else None,
+        "day_high": quote.get("high") if quote else None,
+        "day_low": quote.get("low") if quote else None,
+        "week_high": range_stats.get("week_high") if range_stats else None,
+        "week_low": range_stats.get("week_low") if range_stats else None,
+        "month_high": range_stats.get("month_high") if range_stats else None,
+        "month_low": range_stats.get("month_low") if range_stats else None,
+        # None for Gold/Silver -- get_metal_range_stats doesn't compute
+        # pivots (see module comment above), only NG's get_range_stats does.
+        "pivot": range_stats.get("pivot") if range_stats else None,
+        "r1": range_stats.get("r1") if range_stats else None,
+        "s1": range_stats.get("s1") if range_stats else None,
+        "r2": range_stats.get("r2") if range_stats else None,
+        "s2": range_stats.get("s2") if range_stats else None,
+        "updated_at": ist_now().isoformat(),
+    }
+
+
+async def get_strategy_dashboard_levels(user_id: str) -> dict:
+    instruments = _levels_instruments()
+    rows = await asyncio.gather(*[_levels_row_for(user_id, inst) for inst in instruments])
+    return {"generated_at": ist_now().isoformat(), "rows": list(rows)}

@@ -2,17 +2,19 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { NavBar } from '@/components/nav-bar'
-import { getStrategyDashboard, getStrategyDashboardPerformance, getStrategyDashboardSignals } from '@/lib/api'
-import type { StrategyDashboard, StrategyDashboardPerformance, StrategyDashboardPerformanceRow, StrategyDashboardRow, StrategyDashboardSignal, StrategyDashboardSignalsResponse } from '@/lib/api'
+import { getStrategyDashboard, getStrategyDashboardLevels, getStrategyDashboardPerformance, getStrategyDashboardSignals } from '@/lib/api'
+import type { StrategyDashboard, StrategyDashboardLevels, StrategyDashboardLevelsRow, StrategyDashboardPerformance, StrategyDashboardPerformanceRow, StrategyDashboardRow, StrategyDashboardSignal, StrategyDashboardSignalsResponse } from '@/lib/api'
 import { readPageCache, writePageCache } from '@/lib/page-cache'
 
 const DASHBOARD_CACHE_KEY = 'mcx-strategy-dashboard:data'
 const SIGNALS_CACHE_KEY = 'mcx-strategy-dashboard:signals'
 const PERFORMANCE_CACHE_KEY = 'mcx-strategy-dashboard:performance'
+const LEVELS_CACHE_KEY = 'mcx-strategy-dashboard:levels'
 const ALERTS_ENABLED_KEY = 'mcx-strategy-dashboard:alerts-enabled'
 const POLL_MS = 30_000
 const SIGNALS_POLL_MS = 60_000
 const PERFORMANCE_POLL_MS = 120_000
+const LEVELS_POLL_MS = 30_000
 const RANK_MEDALS = ['🥇', '🥈', '🥉']
 
 // Web Audio beep (no external asset needed) -- two quick blips, pitched
@@ -460,9 +462,132 @@ function PerformanceTab() {
   )
 }
 
-type MainTab = 'heatmap' | 'signals' | 'performance'
+function fmtNum(v: number | null, maximumFractionDigits = 0): string {
+  if (v === null) return '—'
+  return v.toLocaleString('en-IN', { maximumFractionDigits })
+}
+
+const LEVELS_HEADERS = [
+  'Contract', 'LTP', 'Open', 'Prev Close', 'Chg%', 'Day High/Low', 'Week High/Low',
+  'Month High/Low', 'Volume', 'OI', 'Pivot', 'R1 / S1', 'R2 / S2',
+]
+
+function LevelsRow({ row }: { row: StrategyDashboardLevelsRow }) {
+  return (
+    <tr className="border-t" style={{ borderColor: '#1e293b' }}>
+      <td className="whitespace-nowrap px-3 py-2.5">{row.icon} {row.name}</td>
+      <td className="px-3 py-2.5 text-center font-mono font-semibold">{fmtPrice(row.ltp)}</td>
+      <td className="px-3 py-2.5 text-center font-mono">{fmtPrice(row.open)}</td>
+      <td className="px-3 py-2.5 text-center font-mono">{fmtPrice(row.prev_close)}</td>
+      <td className="px-3 py-2.5 text-center"><PctChange pct={row.change_pct} /></td>
+      <td className="whitespace-nowrap px-3 py-2.5 text-center font-mono text-[11px]">
+        <span style={{ color: '#86efac' }}>{fmtPrice(row.day_high)}</span>
+        {' / '}
+        <span style={{ color: '#fca5a5' }}>{fmtPrice(row.day_low)}</span>
+      </td>
+      <td className="whitespace-nowrap px-3 py-2.5 text-center font-mono text-[11px]">
+        <span style={{ color: '#86efac' }}>{fmtPrice(row.week_high)}</span>
+        {' / '}
+        <span style={{ color: '#fca5a5' }}>{fmtPrice(row.week_low)}</span>
+      </td>
+      <td className="whitespace-nowrap px-3 py-2.5 text-center font-mono text-[11px]">
+        <span style={{ color: '#86efac' }}>{fmtPrice(row.month_high)}</span>
+        {' / '}
+        <span style={{ color: '#fca5a5' }}>{fmtPrice(row.month_low)}</span>
+      </td>
+      <td className="px-3 py-2.5 text-center font-mono">{fmtNum(row.volume)}</td>
+      <td className="px-3 py-2.5 text-center font-mono">{fmtNum(row.oi)}</td>
+      <td className="px-3 py-2.5 text-center font-mono">{row.pivot !== null ? fmtPrice(row.pivot) : <span style={{ color: '#64748b' }}>—</span>}</td>
+      <td className="whitespace-nowrap px-3 py-2.5 text-center font-mono text-[11px]">
+        {row.r1 !== null ? (
+          <>
+            <span style={{ color: '#fca5a5' }}>{fmtPrice(row.r1)}</span>
+            {' / '}
+            <span style={{ color: '#86efac' }}>{fmtPrice(row.s1)}</span>
+          </>
+        ) : <span style={{ color: '#64748b' }}>—</span>}
+      </td>
+      <td className="whitespace-nowrap px-3 py-2.5 text-center font-mono text-[11px]">
+        {row.r2 !== null ? (
+          <>
+            <span style={{ color: '#fca5a5' }}>{fmtPrice(row.r2)}</span>
+            {' / '}
+            <span style={{ color: '#86efac' }}>{fmtPrice(row.s2)}</span>
+          </>
+        ) : <span style={{ color: '#64748b' }}>—</span>}
+      </td>
+    </tr>
+  )
+}
+
+function LevelsTab() {
+  const [data, setData] = useState<StrategyDashboardLevels | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    const t = localStorage.getItem('mts_token') ?? ''
+    if (!t) return
+    const cached = readPageCache<StrategyDashboardLevels>(LEVELS_CACHE_KEY)
+    if (cached) Promise.resolve().then(() => setData(cached))
+    function load() {
+      getStrategyDashboardLevels(t)
+        .then(r => { setData(r); writePageCache(LEVELS_CACHE_KEY, r); setErr(null) })
+        .catch(e => setErr(e instanceof Error ? e.message : 'Failed to load technical levels'))
+    }
+    load()
+    const id = setInterval(load, LEVELS_POLL_MS)
+    return () => clearInterval(id)
+  }, [])
+
+  return (
+    <>
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
+        <p className="text-sm" style={{ color: '#cbd5e1' }}>
+          Live LTP, OHLC, volume, open interest, and day/week/month range for Gold Guinea, Silver100, and NG Mini,
+          plus classic floor-trader pivot/support/resistance where available (NG Mini only, for now).
+        </p>
+        {data && (
+          <p className="text-right text-xs" style={{ color: '#64748b' }}>
+            Refreshes every {LEVELS_POLL_MS / 1000}s &middot; updated {timeAgo(data.generated_at)}
+          </p>
+        )}
+      </div>
+
+      {err && <div className="mb-4 rounded-xl px-4 py-3 text-xs" style={{ background: '#450a0a', color: '#fca5a5' }}>{err}</div>}
+
+      {data === null && !err ? (
+        <div className="flex justify-center py-16">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-xl" style={{ background: '#141d33' }}>
+          <table className="w-full text-xs">
+            <thead>
+              <tr style={{ background: '#1e3a8a' }}>
+                {LEVELS_HEADERS.map(h => (
+                  <th key={h} className="whitespace-nowrap px-3 py-2 text-center font-semibold">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {data?.rows.map(row => <LevelsRow key={row.contract} row={row} />)}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <p className="mt-4 text-xs" style={{ color: '#64748b' }}>
+        Pivot/R1-R2/S1-S2 are classic 5-point floor-trader levels off the last completed daily candle. Week starts
+        Monday, month starts the 1st — both roll in today&apos;s session as it happens, not just after close.
+      </p>
+    </>
+  )
+}
+
+type MainTab = 'heatmap' | 'levels' | 'signals' | 'performance'
 const MAIN_TABS: { id: MainTab; label: string }[] = [
   { id: 'heatmap', label: 'Strategy Heat Map' },
+  { id: 'levels', label: 'Technical Levels' },
   { id: 'signals', label: 'All Strategy Signals' },
   { id: 'performance', label: 'Performance' },
 ]
@@ -585,6 +710,7 @@ export default function McxStrategyDashboardView() {
 
         {tab === 'signals' && <AllSignalsTab />}
         {tab === 'performance' && <PerformanceTab />}
+        {tab === 'levels' && <LevelsTab />}
 
         {tab === 'heatmap' && (
           <>

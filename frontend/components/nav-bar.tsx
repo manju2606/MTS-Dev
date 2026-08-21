@@ -133,6 +133,10 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/my-trading-dashboard', label: 'My Trading Dashboard', icon: 'star', desc: 'Every tracked NG + Metals contract, ranked together by AI Strength' },
       { href: '/mcx',         label: 'Natural Gas',  icon: 'activity', desc: 'MCX Natural Gas · quotes, AI signal, predictions, paper trading' },
       { href: '/mcx/metals',  label: 'Base Metals',  icon: 'layers',   desc: 'Aluminium, Copper, Lead, Nickel, Zinc, Gold & Silver · quotes, AI signal, predictions, paper trading' },
+      { href: '/mcx/metals/goldguinea', label: 'Gold Guinea Strategy', icon: 'sparkles', desc: 'MTS Gold Strategy for Gold Guinea · live signal, history, monitoring' },
+      { href: '/mcx/metals/silver100',  label: 'Silver100 Strategy',   icon: 'sparkles', desc: 'MTS Silver Strategy for Silver100 · live signal, history, monitoring' },
+      { href: '/mcx/ngmini',            label: 'NG Mini Strategy',     icon: 'sparkles', desc: 'MTS Natural Gas Strategy for NG Mini · live signal, history, monitoring' },
+      { href: '/mcx/correlation',       label: 'MCX Correlation',      icon: 'link',     desc: 'How Gold Guinea, Silver100, and NG Mini move relative to each other' },
     ],
   },
   {

@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import { NavBar } from '@/components/nav-bar'
 import { PriceChart } from '@/components/price-chart'
 import type { AILevels, RefLine, PredictionPoint } from '@/components/price-chart'
@@ -20,8 +21,8 @@ import { readPageCache, writePageCache } from '@/lib/page-cache'
 
 const QUOTE_CACHE_KEY_PREFIX = 'mcx-metals:quote:'
 
-function cls(...args: (string | false | null | undefined)[]) { return args.filter(Boolean).join(' ') }
-function pnlColor(v: number) { return v > 0 ? 'text-emerald-600 dark:text-emerald-400' : v < 0 ? 'text-red-500 dark:text-red-400' : 'text-zinc-500' }
+export function cls(...args: (string | false | null | undefined)[]) { return args.filter(Boolean).join(' ') }
+export function pnlColor(v: number) { return v > 0 ? 'text-emerald-600 dark:text-emerald-400' : v < 0 ? 'text-red-500 dark:text-red-400' : 'text-zinc-500' }
 
 type Tab = 'dashboard' | 'chart' | 'trend' | 'ai' | 'silver-strategy' | 'gold-strategy' | 'trade' | 'portfolio'
 
@@ -295,7 +296,7 @@ function weekdaysInMonthToDate(todayStr: string): string[] {
   return dates
 }
 
-function CollapsibleCard({ title, subtitle, defaultOpen, children }: {
+export function CollapsibleCard({ title, subtitle, defaultOpen, children }: {
   title: string
   subtitle?: ReactNode
   defaultOpen: boolean
@@ -1086,7 +1087,7 @@ function ScoreGauge({ score, verdict }: { score: number; verdict: NgAiScore['ver
   )
 }
 
-function CategoryRow({ cat }: { cat: NgAiScore['categories'][number] }) {
+export function CategoryRow({ cat }: { cat: NgAiScore['categories'][number] }) {
   const [open, setOpen] = useState(false)
   const pct = cat.available > 0 ? (cat.earned / cat.available) * 100 : 0
   return (
@@ -1879,14 +1880,14 @@ function SilverStrategySignalsTable({ contract }: { contract: SilverStrategyCont
 // above, see backend app/services/mcx_gold_strategy_service.py for the
 // scoring logic this displays.
 
-const GOLD_VERDICT_STYLE: Record<GoldStrategyScore['verdict'], string> = {
+export const GOLD_VERDICT_STYLE: Record<GoldStrategyScore['verdict'], string> = {
   STRONG: 'bg-emerald-600 text-white',
   TRADE: 'bg-indigo-600 text-white',
   WATCH: 'bg-amber-500 text-white',
   NO_TRADE: 'bg-zinc-400 text-white',
 }
 
-function GoldRiskStatusCard({ status }: { status: GoldRiskStatus | null }) {
+export function GoldRiskStatusCard({ status }: { status: GoldRiskStatus | null }) {
   if (!status) return null
   return (
     <div className={cls(
@@ -1940,7 +1941,7 @@ function GoldRiskStatusCard({ status }: { status: GoldRiskStatus | null }) {
   )
 }
 
-function GoldPriceChart({ score, contract }: { score: GoldStrategyScore; contract: GoldStrategyContract }) {
+export function GoldPriceChart({ score, contract }: { score: GoldStrategyScore; contract: GoldStrategyContract }) {
   const [period, setPeriod] = useState<ChartPeriod>('15m')
   const [bars, setBars] = useState<HistoryBar[]>([])
   const [loading, setLoading] = useState(true)
@@ -2000,7 +2001,7 @@ function GoldPriceChart({ score, contract }: { score: GoldStrategyScore; contrac
   )
 }
 
-function GoldReasoningCard({ reasoning }: { reasoning: GoldStrategyScore['reasoning'] }) {
+export function GoldReasoningCard({ reasoning }: { reasoning: GoldStrategyScore['reasoning'] }) {
   const [speaking, setSpeaking] = useState(false)
   const speechSupported = typeof window !== 'undefined' && 'speechSynthesis' in window
 
@@ -2079,7 +2080,12 @@ function GoldReasoningCard({ reasoning }: { reasoning: GoldStrategyScore['reason
   )
 }
 
-function GoldStrategyPanel({ contract }: { contract: GoldStrategyContract }) {
+export function GoldStrategyPanel({ contract, showBacktest = true, showSignalsTable = true, showDedicatedLink = true }: {
+  contract: GoldStrategyContract
+  showBacktest?: boolean
+  showSignalsTable?: boolean
+  showDedicatedLink?: boolean
+}) {
   const [direction, setDirection] = useState<'BUY' | 'SELL'>('BUY')
   const [capital, setCapital] = useState('100000')
   const [riskPct, setRiskPct] = useState('0.5')
@@ -2122,6 +2128,15 @@ function GoldStrategyPanel({ contract }: { contract: GoldStrategyContract }) {
         NO TRADE regardless of how the lower timeframes score. Two targets (1R/2R) with a breakeven stop after
         target 1 — see the entry card below.
       </div>
+
+      {contract === 'GOLDGUINEA' && showDedicatedLink && (
+        <Link
+          href="/mcx/metals/goldguinea"
+          className="flex items-center justify-between rounded-xl border border-indigo-200 bg-white px-4 py-3 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 dark:border-indigo-900 dark:bg-zinc-900 dark:text-indigo-300 dark:hover:bg-indigo-950/30"
+        >
+          Open the dedicated GoldGuinea page (chart, history, monitoring) →
+        </Link>
+      )}
 
       <GoldRiskStatusCard status={riskStatus} />
 
@@ -2231,13 +2246,13 @@ function GoldStrategyPanel({ contract }: { contract: GoldStrategyContract }) {
         </div>
       )}
 
-      <GoldBacktestCard contract={contract} />
-      <GoldStrategySignalsTable contract={contract} />
+      {showBacktest && <GoldBacktestCard contract={contract} />}
+      {showSignalsTable && <GoldStrategySignalsTable contract={contract} />}
     </div>
   )
 }
 
-function GoldBacktestCard({ contract }: { contract: GoldStrategyContract }) {
+export function GoldBacktestCard({ contract }: { contract: GoldStrategyContract }) {
   const [bt, setBt] = useState<GoldStrategyBacktest | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -2294,7 +2309,7 @@ function GoldBacktestCard({ contract }: { contract: GoldStrategyContract }) {
   )
 }
 
-function GoldStrategySignalsTable({ contract }: { contract: GoldStrategyContract }) {
+export function GoldStrategySignalsTable({ contract }: { contract: GoldStrategyContract }) {
   const [data, setData] = useState<GoldStrategySignalsResponse | null>(null)
 
   useEffect(() => {
@@ -2384,13 +2399,13 @@ function GoldStrategySignalsTable({ contract }: { contract: GoldStrategyContract
 
 // ── Trade Signals ────────────────────────────────────────────────────────────
 
-const SIGNAL_RESULT_STYLE: Record<string, string> = {
+export const SIGNAL_RESULT_STYLE: Record<string, string> = {
   WIN: 'bg-emerald-600 text-white',
   LOSS: 'bg-red-500 text-white',
   EXPIRED: 'bg-zinc-400 text-white',
 }
 
-function fmtSignalDateTime(iso: string): string {
+export function fmtSignalDateTime(iso: string): string {
   return new Date(iso).toLocaleString('en-IN', {
     day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata',
   })

@@ -54,6 +54,28 @@ export default function BrokerView() {
       if (s.broker !== 'simulated') setSelected(s.broker as BrokerId)
     }).catch(() => null)
     getZerodhaAutoLoginStatus(t).then(setAutoLoginStatus).catch(() => null)
+
+    // Kite bounces the browser back to this exact page with ?request_token=...
+    // after login -- if the user was already signed into Kite in this browser,
+    // that happens with no visible login screen, so without this the page just
+    // silently reappears and looks like the button did nothing. Finish the
+    // connection automatically instead of making the user copy-paste the token.
+    const params = new URLSearchParams(window.location.search)
+    const kiteToken = params.get('request_token')
+    if (kiteToken) {
+      window.history.replaceState({}, '', window.location.pathname)
+      setSelected('zerodha')
+      setLoading(true)
+      connectZerodha(t, kiteToken)
+        .then(s => { setStatus(s); setMsg({ type: 'ok', text: 'Connected to Zerodha successfully.' }) })
+        .catch(e => setMsg({ type: 'err', text: e instanceof Error ? e.message : 'Connection failed' }))
+        .finally(() => setLoading(false))
+    } else if (params.get('type') === 'login' && params.get('status') === 'error') {
+      window.history.replaceState({}, '', window.location.pathname)
+      setSelected('zerodha')
+      setMsg({ type: 'err', text: 'Zerodha login failed or was cancelled.' })
+    }
+
     const id = setTimeout(() => setAuthChecked(true), 0)
     return () => clearTimeout(id)
   }, [router])

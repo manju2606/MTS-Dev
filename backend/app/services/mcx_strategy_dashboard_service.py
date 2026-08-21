@@ -109,6 +109,7 @@ async def _row_for(
             "score_pct": None,
             "verdict": None,
             "direction": None,
+            "signal_label": None,
             "entry_price": None,
             "stop_loss": None,
             "target_1": None,
@@ -124,6 +125,10 @@ async def _row_for(
         "score_pct": score["score_pct"],
         "verdict": score["verdict"],
         "direction": score["direction"],
+        # "BUY" | "STRONG BUY" | "SELL" | "STRONG SELL" | "WATCH" | "NO TRADE" --
+        # same label the individual strategy panels already show, computed
+        # once by compute_*_strategy_score rather than re-derived here.
+        "signal_label": score["signal_label"],
         "entry_price": entry["entry_price"],
         "stop_loss": entry["stop_loss"],
         "target_1": entry["target_1"],

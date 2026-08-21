@@ -3370,6 +3370,7 @@ export type StrategyDashboardRow = {
   score_pct: number | null
   verdict: 'STRONG' | 'TRADE' | 'WATCH' | 'NO_TRADE' | null
   direction: 'BUY' | 'SELL' | null
+  signal_label: 'STRONG BUY' | 'BUY' | 'STRONG SELL' | 'SELL' | 'WATCH' | 'NO TRADE' | null
   entry_price: number | null
   stop_loss: number | null
   target_1: number | null

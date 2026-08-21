@@ -14,10 +14,11 @@ const RANK_MEDALS = ['🥇', '🥈', '🥉']
 
 // Same rank-shading convention as My Trading Dashboard's heat map.
 const TILE_BG = ['#065f46', '#15803d', '#4d7c0f']
-const VERDICT_COLOR: Record<string, string> = {
-  STRONG: '#22c55e', TRADE: '#4ade80', WATCH: '#facc15', NO_TRADE: '#64748b',
+const SIGNAL_LABEL_COLOR: Record<string, string> = {
+  'STRONG BUY': '#22c55e', 'BUY': '#4ade80',
+  'STRONG SELL': '#ef4444', 'SELL': '#f87171',
+  'WATCH': '#facc15', 'NO TRADE': '#64748b',
 }
-const DIRECTION_COLOR: Record<string, string> = { BUY: '#22c55e', SELL: '#ef4444' }
 
 function tileColor(rank: number): string {
   return TILE_BG[Math.min(rank, TILE_BG.length - 1)]
@@ -64,9 +65,10 @@ function HeatTile({ row, rank }: { row: StrategyDashboardRow; rank: number }) {
       {row.available ? (
         <>
           <p className="mt-1 text-xl font-extrabold">{((row.score_pct ?? 0) / 10).toFixed(1)}/10</p>
-          <p className="mt-1 text-xs" style={{ color: DIRECTION_COLOR[row.direction ?? ''] }}>
-            {row.verdict} &middot; {row.direction}
+          <p className="mt-1 text-xs" style={{ color: SIGNAL_LABEL_COLOR[row.signal_label ?? ''] }}>
+            {row.signal_label}
           </p>
+          <p className="mt-1 text-[10px] font-normal" style={{ color: '#94a3b8' }}>{fmtSignalDateTime(row.updated_at)}</p>
         </>
       ) : (
         <p className="mt-1 text-xs" style={{ color: '#94a3b8' }}>Not enough history yet</p>
@@ -94,8 +96,8 @@ function RankRow({ row, rank }: { row: StrategyDashboardRow; rank: number }) {
       {row.available ? (
         <>
           <td className="px-2 py-2 text-center font-semibold">{row.score_pct?.toFixed(1)}%</td>
-          <td className="px-2 py-2 text-center font-bold" style={{ color: VERDICT_COLOR[row.verdict ?? ''] }}>{row.verdict}</td>
-          <td className="px-2 py-2 text-center font-bold" style={{ color: DIRECTION_COLOR[row.direction ?? ''] }}>{row.direction}</td>
+          <td className="px-2 py-2 text-center font-bold" style={{ color: SIGNAL_LABEL_COLOR[row.signal_label ?? ''] }}>{row.signal_label}</td>
+          <td className="whitespace-nowrap px-2 py-2 text-center font-mono text-[11px]" style={{ color: '#94a3b8' }}>{fmtSignalDateTime(row.updated_at)}</td>
           <td className="px-2 py-2 text-center font-mono">{fmtPrice(row.entry_price)}</td>
           <td className="px-2 py-2 text-center font-mono" style={{ color: '#fca5a5' }}>{fmtPrice(row.stop_loss)}</td>
           <td className="px-2 py-2 text-center font-mono" style={{ color: '#86efac' }}>{fmtPrice(row.target_1)}</td>
@@ -193,10 +195,10 @@ function SignalsTable({ signals }: { signals: StrategyDashboardSignal[] }) {
               </td>
               <td className="px-3 py-2.5">
                 <span
-                  className="rounded px-2 py-0.5 text-[10px] font-bold"
+                  className="whitespace-nowrap rounded px-2 py-0.5 text-[10px] font-bold"
                   style={{ background: s.direction === 'BUY' ? '#065f46' : '#450a0a', color: s.direction === 'BUY' ? '#4ade80' : '#fca5a5' }}
                 >
-                  {s.direction}
+                  {s.verdict === 'STRONG' ? `STRONG ${s.direction}` : s.direction}
                 </span>
               </td>
               <td className="px-3 py-2.5 font-mono">{fmtPrice(s.entry_price)}</td>
@@ -393,7 +395,7 @@ export default function McxStrategyDashboardView() {
                   <table className="w-full text-xs">
                     <thead>
                       <tr style={{ background: '#1e3a8a' }}>
-                        {['Rank', 'Contract', 'LTP', 'Chg%', 'Score', 'Verdict', 'Direction', 'Entry', 'Stop Loss', 'Target', 'R:R'].map(h => (
+                        {['Rank', 'Contract', 'LTP', 'Chg%', 'Score', 'Signal', 'Generated', 'Entry', 'Stop Loss', 'Target', 'R:R'].map(h => (
                           <th key={h} className="whitespace-nowrap px-2 py-2 text-center font-semibold">{h}</th>
                         ))}
                       </tr>

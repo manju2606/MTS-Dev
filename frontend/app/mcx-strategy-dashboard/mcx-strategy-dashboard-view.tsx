@@ -69,6 +69,10 @@ function tileColor(rank: number): string {
   return TILE_BG[Math.min(rank, TILE_BG.length - 1)]
 }
 
+function isTradeable(row: StrategyDashboardRow): boolean {
+  return row.verdict === 'TRADE' || row.verdict === 'STRONG'
+}
+
 function fmtPrice(v: number | null): string {
   if (v === null) return '—'
   return v.toLocaleString('en-IN', { maximumFractionDigits: 2 })
@@ -113,6 +117,11 @@ function HeatTile({ row, rank }: { row: StrategyDashboardRow; rank: number }) {
           <p className="mt-1 text-xs" style={{ color: SIGNAL_LABEL_COLOR[row.signal_label ?? ''] }}>
             {row.signal_label}
           </p>
+          {isTradeable(row) && row.can_trade === false && (
+            <p className="mt-1 text-[10px] font-semibold" style={{ color: '#fbbf24' }} title={row.blocked_reasons.join(' · ')}>
+              🚫 Alerts blocked
+            </p>
+          )}
           <p className="mt-1 text-[10px] font-normal" style={{ color: '#94a3b8' }}>{fmtSignalDateTime(row.updated_at)}</p>
         </>
       ) : (
@@ -141,7 +150,14 @@ function RankRow({ row, rank }: { row: StrategyDashboardRow; rank: number }) {
       {row.available ? (
         <>
           <td className="px-2 py-2 text-center font-semibold">{row.score_pct?.toFixed(1)}%</td>
-          <td className="px-2 py-2 text-center font-bold" style={{ color: SIGNAL_LABEL_COLOR[row.signal_label ?? ''] }}>{row.signal_label}</td>
+          <td className="px-2 py-2 text-center font-bold" style={{ color: SIGNAL_LABEL_COLOR[row.signal_label ?? ''] }}>
+            {row.signal_label}
+            {isTradeable(row) && row.can_trade === false && (
+              <div className="mt-0.5 text-[9px] font-normal" style={{ color: '#fbbf24' }} title={row.blocked_reasons.join(' · ')}>
+                🚫 blocked
+              </div>
+            )}
+          </td>
           <td className="whitespace-nowrap px-2 py-2 text-center font-mono text-[11px]" style={{ color: '#94a3b8' }}>{fmtSignalDateTime(row.updated_at)}</td>
           <td className="px-2 py-2 text-center font-mono">{fmtPrice(row.entry_price)}</td>
           <td className="px-2 py-2 text-center font-mono" style={{ color: '#fca5a5' }}>{fmtPrice(row.stop_loss)}</td>
@@ -476,7 +492,13 @@ export default function McxStrategyDashboardView() {
 
       if (alertsEnabledRef.current && !firstLoadRef.current) {
         for (const row of res.ranked) {
-          const tradeable = row.available && (row.verdict === 'TRADE' || row.verdict === 'STRONG')
+          // can_trade === false means the same risk gate the background
+          // scheduler job checks is already blocking a new signal for this
+          // contract (daily trade cap, consecutive-loss pause, expiry
+          // protection) -- no email/in-app alert will fire for it either,
+          // so skip the client-side sound/notification too rather than
+          // alerting on something that isn't actually actionable.
+          const tradeable = row.available && isTradeable(row) && row.can_trade !== false
           if (tradeable && row.signal_label !== prevSignalRef.current[row.contract]) {
             playAlertSound(row.direction === 'BUY')
             showBrowserNotification(
@@ -618,7 +640,10 @@ export default function McxStrategyDashboardView() {
                   (1H trend gate + VWAP/EMA/RSI/pullback/reversal/volume/PDH-PDL/5M confirmation), recomputed live
                   on every load — see the{' '}
                   <a href="/mcx/correlation" className="font-medium text-indigo-400 hover:underline">MCX Correlation</a>{' '}
-                  page for how these three move relative to each other.
+                  page for how these three move relative to each other. A &ldquo;🚫 Alerts blocked&rdquo; note under a
+                  BUY/SELL signal means the same daily risk gate the background job checks (max trades/day,
+                  consecutive-loss pause, or expiry protection) is already blocking that contract today — no
+                  email/sound/notification will fire for it even though the live score still shows a signal.
                 </p>
               </>
             )}

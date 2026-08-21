@@ -3371,6 +3371,13 @@ export type StrategyDashboardRow = {
   verdict: 'STRONG' | 'TRADE' | 'WATCH' | 'NO_TRADE' | null
   direction: 'BUY' | 'SELL' | null
   signal_label: 'STRONG BUY' | 'BUY' | 'STRONG SELL' | 'SELL' | 'WATCH' | 'NO TRADE' | null
+  // Whether the background scheduler job is actually allowed to log a
+  // signal (and alert on it) for this contract right now -- null means the
+  // check itself failed, not "confirmed clear". A tile can show a tradeable
+  // signal_label while can_trade is false (daily trade cap, consecutive-loss
+  // pause, or expiry-protection window) -- no alert will fire for it then.
+  can_trade: boolean | null
+  blocked_reasons: string[]
   entry_price: number | null
   stop_loss: number | null
   target_1: number | null

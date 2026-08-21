@@ -7,11 +7,19 @@ NG-AI Pro / Metals-AI Pro sweep.
 Unlike my-trading-dashboard (which reads a 5-min-refreshed score cache because
 recomputing 24 contracts x 2 directions live would take 30-90s+), this scores
 all three contracts live on every request: only 3 contracts x 2 directions x
-~4 history calls is small enough to stay well under the API latency target,
-and there is no background scheduler job for NG Mini's strategy yet (Gold and
-Silver do have one -- see scheduler.py's _run_mcx_gold_strategy_check /
-_run_mcx_silver_strategy_check -- but that only logs signals, it doesn't cache
-scores anywhere this could read from).
+~4 history calls is small enough to stay well under the API latency target.
+All three now also have a background scheduler job (scheduler.py's
+_run_mcx_gold_strategy_check / _run_mcx_silver_strategy_check /
+_run_mcx_ng_strategy_check), but those only log signals + fire alerts --
+they don't cache scores anywhere this dashboard could read from, hence the
+live recompute here too.
+
+can_trade/blocked_reasons on each row come from the same can_generate_new_signal
+gate the scheduler job checks before logging a signal -- the score/signal_label
+are a raw live read regardless of that gate, so a tile showing "STRONG BUY"
+with can_trade=False means an alert will NOT fire for it (daily trade cap,
+consecutive-loss pause, or expiry-protection window already blocking new
+signals for that contract today).
 
 Also unlike my-trading-dashboard's data_user_id resolution (shared connected
 account via session_store.get_market_data_user_id()), this stays scoped to
@@ -30,6 +38,7 @@ from app.services.mcx_service import ist_now
 
 _ScoreFn = Callable[..., Awaitable[dict]]
 _QuoteFn = Callable[[str, str], Awaitable[dict]]
+_RiskFn = Callable[..., Awaitable[tuple[bool, list[str]]]]
 
 
 async def _gold_quote(user_id: str, contract: str) -> dict:
@@ -45,22 +54,28 @@ async def _ng_quote(user_id: str, contract: str) -> dict:
 
 
 def _instruments() -> list[dict[str, Any]]:
+    from app.services.mcx_gold_strategy_service import can_generate_new_signal as gold_can_trade
     from app.services.mcx_gold_strategy_service import compute_gold_strategy_score
+    from app.services.mcx_ng_strategy_service import can_generate_new_signal as ng_can_trade
     from app.services.mcx_ng_strategy_service import compute_ng_strategy_score
+    from app.services.mcx_silver_strategy_service import can_generate_new_signal as silver_can_trade
     from app.services.mcx_silver_strategy_service import compute_silver_strategy_score
 
     return [
         {
             "contract": "GOLDGUINEA", "name": "Gold Guinea", "icon": "🥇", "market": "metals",
             "compute": compute_gold_strategy_score, "quote": _gold_quote,
+            "can_trade": gold_can_trade,
         },
         {
             "contract": "SILVER100", "name": "Silver100", "icon": "🥈", "market": "metals",
             "compute": compute_silver_strategy_score, "quote": _gold_quote,
+            "can_trade": silver_can_trade,
         },
         {
             "contract": "NGMINI", "name": "NG Mini", "icon": "⛽", "market": "ng",
             "compute": compute_ng_strategy_score, "quote": _ng_quote,
+            "can_trade": ng_can_trade,
         },
     ]
 
@@ -86,13 +101,27 @@ async def _best_score(
     return results[best_direction]
 
 
+async def _can_trade_or_none(
+    can_trade_fn: _RiskFn, user_id: str, contract: str, repo: Any
+) -> tuple[bool, list[str]] | None:
+    try:
+        return await can_trade_fn(user_id, contract, repo)
+    except Exception:
+        return None
+
+
 async def _row_for(
-    user_id: str, inst: dict[str, Any], capital: float, account_risk_pct: float
+    user_id: str, inst: dict[str, Any], capital: float, account_risk_pct: float, repo: Any
 ) -> dict[str, Any]:
-    score, quote = await asyncio.gather(
+    score, quote, risk = await asyncio.gather(
         _best_score(user_id, inst["contract"], inst["compute"], capital, account_risk_pct),
         _quote_or_none(inst["quote"], user_id, inst["contract"]),
+        _can_trade_or_none(inst["can_trade"], user_id, inst["contract"], repo),
     )
+    # can_trade=None (rather than True) when the check itself failed, so the
+    # frontend can tell "confirmed not blocked" apart from "couldn't check"
+    # instead of defaulting to a false "all clear".
+    can_trade, blocked_reasons = risk if risk else (None, [])
 
     base = {
         "contract": inst["contract"],
@@ -101,6 +130,15 @@ async def _row_for(
         "market": inst["market"],
         "ltp": quote.get("last_price") if quote else None,
         "change_pct": quote.get("change_pct") if quote else None,
+        # Whether the background scheduler job is actually allowed to log a
+        # signal (and therefore alert) for this contract right now -- the
+        # score/signal_label below are the raw live read regardless of risk
+        # state, so a tile can show "STRONG BUY" while can_trade is False
+        # (e.g. daily trade cap or expiry-protection window hit). Without
+        # this, the dashboard looks like a live actionable signal even when
+        # the alert system has correctly refused to fire on it.
+        "can_trade": can_trade,
+        "blocked_reasons": blocked_reasons,
     }
     if score is None:
         return {
@@ -148,9 +186,12 @@ async def _quote_or_none(quote_fn: _QuoteFn, user_id: str, contract: str) -> dic
 async def get_strategy_dashboard(
     user_id: str, capital: float = 100_000.0, account_risk_pct: float = 0.5
 ) -> dict:
+    from app.infra.db.repositories.mcx_signal_repo import McxSignalRepository
+
+    repo = McxSignalRepository()
     instruments = _instruments()
     rows = await asyncio.gather(
-        *[_row_for(user_id, inst, capital, account_risk_pct) for inst in instruments]
+        *[_row_for(user_id, inst, capital, account_risk_pct, repo) for inst in instruments]
     )
     # Highest-scoring first; unscored (not enough candle history yet) sink
     # to the bottom rather than sorting arbitrarily.

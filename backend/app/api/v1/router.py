@@ -35,6 +35,7 @@ from app.api.v1 import (
     mcx_metals,
     mcx_ng_strategy,
     mcx_silver_strategy,
+    mcx_strategy_dashboard,
     ml_api,
     notifications,
     options,
@@ -117,6 +118,7 @@ router.include_router(mcx_silver_strategy.router)
 router.include_router(mcx_gold_strategy.router)
 router.include_router(mcx_ng_strategy.router)
 router.include_router(mcx_correlation.router)
+router.include_router(mcx_strategy_dashboard.router)
 router.include_router(crypto.router)
 router.include_router(usa_stocks.router)
 router.include_router(international_market.router)

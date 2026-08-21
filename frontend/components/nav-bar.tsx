@@ -131,6 +131,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: '/mcx-heatmap', label: 'MCX Heatmap', icon: 'squares',  desc: 'Live commodity-wide heatmap from MCX India' },
       { href: '/my-trading-dashboard', label: 'My Trading Dashboard', icon: 'star', desc: 'Every tracked NG + Metals contract, ranked together by AI Strength' },
+      { href: '/mcx-strategy-dashboard', label: 'MTS Strategy Dashboard', icon: 'star', desc: 'Gold Guinea, Silver100 & NG Mini MTS Strategy engines, ranked together live' },
       { href: '/mcx',         label: 'Natural Gas',  icon: 'activity', desc: 'MCX Natural Gas · quotes, AI signal, predictions, paper trading' },
       { href: '/mcx/metals',  label: 'Base Metals',  icon: 'layers',   desc: 'Aluminium, Copper, Lead, Nickel, Zinc, Gold & Silver · quotes, AI signal, predictions, paper trading' },
       { href: '/mcx/metals/goldguinea', label: 'Gold Guinea Strategy', icon: 'sparkles', desc: 'MTS Gold Strategy for Gold Guinea · live signal, history, monitoring' },

@@ -3354,6 +3354,92 @@ export async function getMcxCorrelation(
   return res.json()
 }
 
+// MTS Strategy Dashboard: a My-Trading-Dashboard-style combined heat map +
+// signals view across just the three MTS Strategy engines (Gold Guinea,
+// Silver100, NG Mini) -- see mcx_strategy_dashboard_service.py (backend).
+// Scored live on every request (only 3 contracts, unlike My Trading
+// Dashboard's 24-contract cache-backed sweep).
+export type StrategyDashboardRow = {
+  contract: string
+  name: string
+  icon: string
+  market: 'ng' | 'metals'
+  ltp: number | null
+  change_pct: number | null
+  available: boolean
+  score_pct: number | null
+  verdict: 'STRONG' | 'TRADE' | 'WATCH' | 'NO_TRADE' | null
+  direction: 'BUY' | 'SELL' | null
+  entry_price: number | null
+  stop_loss: number | null
+  target_1: number | null
+  target_2: number | null
+  risk_reward: number | null
+  updated_at: string
+}
+export type StrategyDashboard = {
+  generated_at: string
+  ranked: StrategyDashboardRow[]
+  total_contracts: number
+}
+
+export async function getStrategyDashboard(
+  token: string, capital = 100_000, accountRiskPct = 0.5,
+): Promise<StrategyDashboard> {
+  const res = await fetch(
+    `${BASE}/api/v1/mcx/strategy-dashboard?capital=${capital}&account_risk_pct=${accountRiskPct}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch Strategy Dashboard')
+  }
+  return res.json()
+}
+
+export type StrategyDashboardSignal = {
+  contract: string
+  name: string
+  icon: string
+  direction: 'BUY' | 'SELL'
+  tradingsymbol: string | null
+  score_pct: number | null
+  verdict: 'STRONG' | 'TRADE' | 'WATCH' | 'NO_TRADE' | null
+  generated_at: string
+  entry_price: number
+  stop_loss: number
+  target_1: number
+  target_2: number | null
+  target_1_hit: boolean
+  target_1_hit_at: string | null
+  status: 'OPEN' | 'CLOSED'
+  result: 'WIN' | 'LOSS' | 'EXPIRED' | null
+  exit_price: number | null
+  pnl: number | null
+  closed_at: string | null
+  days_to_close: number | null
+}
+export type StrategyDashboardAccuracy = { resolved: number; wins: number; accuracy_pct: number | null }
+export type StrategyDashboardSignalsResponse = {
+  generated_at: string
+  signals: StrategyDashboardSignal[]
+  accuracy: { GOLDGUINEA: StrategyDashboardAccuracy; SILVER100: StrategyDashboardAccuracy; NGMINI: StrategyDashboardAccuracy }
+}
+
+export async function getStrategyDashboardSignals(
+  token: string, limit = 200,
+): Promise<StrategyDashboardSignalsResponse> {
+  const res = await fetch(
+    `${BASE}/api/v1/mcx/strategy-dashboard/signals?limit=${limit}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch Strategy Dashboard signals')
+  }
+  return res.json()
+}
+
 // ── Phase 3: Broker ────────────────────────────────────────────────────────
 
 export async function getBrokerStatus(token: string): Promise<BrokerStatus> {

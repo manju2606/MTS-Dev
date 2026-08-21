@@ -1370,14 +1370,14 @@ function AiSignalPanel({ onUseTrade, score, onScoreChange, contract }: {
 // SILVER100/SILVERMICRO only -- see backend app/services/
 // mcx_silver_strategy_service.py for the scoring logic this displays.
 
-const SILVER_VERDICT_STYLE: Record<SilverStrategyScore['verdict'], string> = {
+export const SILVER_VERDICT_STYLE: Record<SilverStrategyScore['verdict'], string> = {
   STRONG: 'bg-emerald-600 text-white',
   TRADE: 'bg-indigo-600 text-white',
   WATCH: 'bg-amber-500 text-white',
   NO_TRADE: 'bg-zinc-400 text-white',
 }
 
-function SilverRiskStatusCard({ status }: { status: SilverRiskStatus | null }) {
+export function SilverRiskStatusCard({ status }: { status: SilverRiskStatus | null }) {
   if (!status) return null
   return (
     <div className={cls(
@@ -1431,7 +1431,7 @@ function SilverRiskStatusCard({ status }: { status: SilverRiskStatus | null }) {
   )
 }
 
-function SilverPriceChart({ score, contract }: { score: SilverStrategyScore; contract: SilverStrategyContract }) {
+export function SilverPriceChart({ score, contract }: { score: SilverStrategyScore; contract: SilverStrategyContract }) {
   const [period, setPeriod] = useState<ChartPeriod>('15m')
   const [bars, setBars] = useState<HistoryBar[]>([])
   const [loading, setLoading] = useState(true)
@@ -1491,7 +1491,7 @@ function SilverPriceChart({ score, contract }: { score: SilverStrategyScore; con
   )
 }
 
-function SilverReasoningCard({ reasoning }: { reasoning: SilverStrategyScore['reasoning'] }) {
+export function SilverReasoningCard({ reasoning }: { reasoning: SilverStrategyScore['reasoning'] }) {
   const [speaking, setSpeaking] = useState(false)
   const speechSupported = typeof window !== 'undefined' && 'speechSynthesis' in window
 
@@ -1570,7 +1570,12 @@ function SilverReasoningCard({ reasoning }: { reasoning: SilverStrategyScore['re
   )
 }
 
-function SilverStrategyPanel({ contract }: { contract: SilverStrategyContract }) {
+export function SilverStrategyPanel({ contract, showBacktest = true, showSignalsTable = true, showDedicatedLink = true }: {
+  contract: SilverStrategyContract
+  showBacktest?: boolean
+  showSignalsTable?: boolean
+  showDedicatedLink?: boolean
+}) {
   const [direction, setDirection] = useState<'BUY' | 'SELL'>('BUY')
   const [capital, setCapital] = useState('100000')
   const [riskPct, setRiskPct] = useState('0.5')
@@ -1613,6 +1618,15 @@ function SilverStrategyPanel({ contract }: { contract: SilverStrategyContract })
         NO TRADE regardless of how the lower timeframes score. Two targets (1R/2R) with a breakeven stop after
         target 1 — see the entry card below.
       </div>
+
+      {contract === 'SILVER100' && showDedicatedLink && (
+        <Link
+          href="/mcx/metals/silver100"
+          className="flex items-center justify-between rounded-xl border border-indigo-200 bg-white px-4 py-3 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 dark:border-indigo-900 dark:bg-zinc-900 dark:text-indigo-300 dark:hover:bg-indigo-950/30"
+        >
+          Open the dedicated Silver100 page (chart, history, monitoring) →
+        </Link>
+      )}
 
       <SilverRiskStatusCard status={riskStatus} />
 
@@ -1722,13 +1736,13 @@ function SilverStrategyPanel({ contract }: { contract: SilverStrategyContract })
         </div>
       )}
 
-      <SilverBacktestCard contract={contract} />
-      <SilverStrategySignalsTable contract={contract} />
+      {showBacktest && <SilverBacktestCard contract={contract} />}
+      {showSignalsTable && <SilverStrategySignalsTable contract={contract} />}
     </div>
   )
 }
 
-function SilverBacktestCard({ contract }: { contract: SilverStrategyContract }) {
+export function SilverBacktestCard({ contract }: { contract: SilverStrategyContract }) {
   const [bt, setBt] = useState<SilverStrategyBacktest | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -1785,7 +1799,7 @@ function SilverBacktestCard({ contract }: { contract: SilverStrategyContract }) 
   )
 }
 
-function SilverStrategySignalsTable({ contract }: { contract: SilverStrategyContract }) {
+export function SilverStrategySignalsTable({ contract }: { contract: SilverStrategyContract }) {
   const [data, setData] = useState<SilverStrategySignalsResponse | null>(null)
 
   useEffect(() => {

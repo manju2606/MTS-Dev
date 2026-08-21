@@ -30,8 +30,10 @@ from app.api.v1 import (
     market_pulse,
     market_sources,
     mcx,
+    mcx_correlation,
     mcx_gold_strategy,
     mcx_metals,
+    mcx_ng_strategy,
     mcx_silver_strategy,
     ml_api,
     notifications,
@@ -113,6 +115,8 @@ router.include_router(mcx.router)
 router.include_router(mcx_metals.router)
 router.include_router(mcx_silver_strategy.router)
 router.include_router(mcx_gold_strategy.router)
+router.include_router(mcx_ng_strategy.router)
+router.include_router(mcx_correlation.router)
 router.include_router(crypto.router)
 router.include_router(usa_stocks.router)
 router.include_router(international_market.router)

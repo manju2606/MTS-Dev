@@ -536,6 +536,12 @@ async def check_and_log_gold_signal(
             "generated_at": datetime.now(_IST).replace(tzinfo=None),
         },
     )
+    from app.services.mcx_strategy_alert_service import send_strategy_signal_alert
+
+    await send_strategy_signal_alert(
+        user_id, "MTS Gold Strategy", contract.upper(), contract.upper(), score,
+        "/mcx/metals/goldguinea" if contract.upper() == "GOLDGUINEA" else "/mcx/metals",
+    )
     return True
 
 

@@ -3441,6 +3441,48 @@ export async function getStrategyDashboardSignals(
   return res.json()
 }
 
+// Real backtest metrics (win rate, net P&L, profit factor, Sharpe, max
+// drawdown, etc.) per contract, computed from each user's own actually
+// closed MTS Strategy signals -- see get_strategy_dashboard_performance
+// (backend).
+export type StrategyDashboardPerformanceRow = {
+  contract: string
+  name: string
+  icon: string
+  total_trades: number
+  win_rate_pct: number
+  net_pnl: number
+  profit_factor: number
+  expectancy: number
+  max_drawdown_pct: number
+  sharpe_ratio: number
+  recovery_factor: number
+  avg_holding_hours: number
+  long_trades: number
+  short_trades: number
+  long_win_rate_pct: number
+  short_win_rate_pct: number
+}
+export type StrategyDashboardPerformance = {
+  generated_at: string
+  capital: number
+  rows: StrategyDashboardPerformanceRow[]
+}
+
+export async function getStrategyDashboardPerformance(
+  token: string, capital = 100_000,
+): Promise<StrategyDashboardPerformance> {
+  const res = await fetch(
+    `${BASE}/api/v1/mcx/strategy-dashboard/performance?capital=${capital}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch Strategy Dashboard performance')
+  }
+  return res.json()
+}
+
 // ── Phase 3: Broker ────────────────────────────────────────────────────────
 
 export async function getBrokerStatus(token: string): Promise<BrokerStatus> {

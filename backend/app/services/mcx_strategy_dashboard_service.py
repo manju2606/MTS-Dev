@@ -196,3 +196,54 @@ async def get_strategy_dashboard_signals(user_id: str, limit: int = 200) -> dict
             "NGMINI": ng["accuracy"],
         },
     }
+
+
+# ── Performance table across all 3 strategies ───────────────────────────────
+# Real backtest metrics (BacktestMetrics via compute_metrics) over each
+# contract's own actually-logged, actually-closed signals -- same "backtest
+# the user's own real recorded outcomes" principle run_gold_strategy_backtest
+# itself documents, just surfaced as one combined table instead of three
+# separate per-panel backtest cards.
+
+async def get_strategy_dashboard_performance(user_id: str, capital: float = 100_000.0) -> dict:
+    from app.infra.db.repositories.mcx_signal_repo import McxSignalRepository
+    from app.services.mcx_gold_strategy_service import run_gold_strategy_backtest
+    from app.services.mcx_ng_strategy_service import run_ng_strategy_backtest
+    from app.services.mcx_silver_strategy_service import run_silver_strategy_backtest
+
+    repo = McxSignalRepository()
+    gold, silver, ng = await asyncio.gather(
+        run_gold_strategy_backtest(user_id, "GOLDGUINEA", repo, capital),
+        run_silver_strategy_backtest(user_id, "SILVER100", repo, capital),
+        run_ng_strategy_backtest(user_id, "NGMINI", repo, capital),
+    )
+
+    rows = []
+    for src, name, icon in (
+        (gold, "Gold Guinea", "🥇"),
+        (silver, "Silver100", "🥈"),
+        (ng, "NG Mini", "⛽"),
+    ):
+        m = src["full_metrics"]
+        rows.append(
+            {
+                "contract": src["contract"],
+                "name": name,
+                "icon": icon,
+                "total_trades": m["total_trades"],
+                "win_rate_pct": m["win_rate_pct"],
+                "net_pnl": m["net_pnl"],
+                "profit_factor": m["profit_factor"],
+                "expectancy": m["expectancy"],
+                "max_drawdown_pct": m["max_drawdown_pct"],
+                "sharpe_ratio": m["sharpe_ratio"],
+                "recovery_factor": m["recovery_factor"],
+                "avg_holding_hours": m["avg_holding_hours"],
+                "long_trades": m["long_trades"],
+                "short_trades": m["short_trades"],
+                "long_win_rate_pct": m["long_win_rate_pct"],
+                "short_win_rate_pct": m["short_win_rate_pct"],
+            }
+        )
+
+    return {"generated_at": ist_now().isoformat(), "capital": capital, "rows": rows}

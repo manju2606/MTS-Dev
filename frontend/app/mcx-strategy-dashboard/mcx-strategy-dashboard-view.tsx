@@ -2,15 +2,60 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { NavBar } from '@/components/nav-bar'
-import { getStrategyDashboard, getStrategyDashboardSignals } from '@/lib/api'
-import type { StrategyDashboard, StrategyDashboardRow, StrategyDashboardSignal, StrategyDashboardSignalsResponse } from '@/lib/api'
+import { getStrategyDashboard, getStrategyDashboardPerformance, getStrategyDashboardSignals } from '@/lib/api'
+import type { StrategyDashboard, StrategyDashboardPerformance, StrategyDashboardPerformanceRow, StrategyDashboardRow, StrategyDashboardSignal, StrategyDashboardSignalsResponse } from '@/lib/api'
 import { readPageCache, writePageCache } from '@/lib/page-cache'
 
 const DASHBOARD_CACHE_KEY = 'mcx-strategy-dashboard:data'
 const SIGNALS_CACHE_KEY = 'mcx-strategy-dashboard:signals'
+const PERFORMANCE_CACHE_KEY = 'mcx-strategy-dashboard:performance'
+const ALERTS_ENABLED_KEY = 'mcx-strategy-dashboard:alerts-enabled'
 const POLL_MS = 30_000
 const SIGNALS_POLL_MS = 60_000
+const PERFORMANCE_POLL_MS = 120_000
 const RANK_MEDALS = ['🥇', '🥈', '🥉']
+
+// Web Audio beep (no external asset needed) -- two quick blips, pitched
+// higher for BUY and lower for SELL so the alert is distinguishable by ear
+// without looking at the screen. Falls back silently if Web Audio is
+// unavailable/blocked -- the browser notification still shows either way.
+function playAlertSound(bull: boolean) {
+  try {
+    const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+    const ctx = new Ctor()
+    const freq = bull ? 880 : 440
+    const beep = (startOffset: number) => {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.type = 'sine'
+      osc.frequency.value = freq
+      const t0 = ctx.currentTime + startOffset
+      gain.gain.setValueAtTime(0.0001, t0)
+      gain.gain.exponentialRampToValueAtTime(0.25, t0 + 0.02)
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22)
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.start(t0)
+      osc.stop(t0 + 0.25)
+    }
+    beep(0)
+    beep(0.28)
+    setTimeout(() => { ctx.close().catch(() => {}) }, 700)
+  } catch {
+    // Web Audio unavailable/blocked -- the browser notification still shows.
+  }
+}
+
+function showBrowserNotification(title: string, body: string) {
+  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
+  try {
+    new Notification(title, { body })
+  } catch {
+    // Some browsers throw for Notification() outside a service worker on
+    // certain platforms (e.g. Android Chrome) -- sound + in-app state
+    // still convey the alert.
+  }
+}
 
 // Same rank-shading convention as My Trading Dashboard's heat map.
 const TILE_BG = ['#065f46', '#15803d', '#4d7c0f']
@@ -297,17 +342,128 @@ function AllSignalsTab() {
   )
 }
 
-type MainTab = 'heatmap' | 'signals'
+function fmtCurrency(v: number): string {
+  const sign = v > 0 ? '+' : ''
+  return `${sign}₹${v.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
+}
+
+const PERFORMANCE_HEADERS = [
+  'Contract', 'Trades', 'Win Rate', 'Net P&L', 'Profit Factor', 'Expectancy/Trade',
+  'Max Drawdown', 'Sharpe', 'Recovery Factor', 'Avg Hold', 'Long / Short Win Rate',
+]
+
+function PerformanceRow({ row }: { row: StrategyDashboardPerformanceRow }) {
+  return (
+    <tr className="border-t" style={{ borderColor: '#1e293b' }}>
+      <td className="whitespace-nowrap px-3 py-2.5">{row.icon} {row.name}</td>
+      <td className="px-3 py-2.5 text-center">{row.total_trades}</td>
+      <td className="px-3 py-2.5 text-center font-semibold" style={{ color: row.win_rate_pct >= 50 ? '#4ade80' : '#fca5a5' }}>
+        {row.total_trades > 0 ? `${row.win_rate_pct}%` : '—'}
+      </td>
+      <td className="px-3 py-2.5 text-center font-mono font-semibold" style={{ color: row.net_pnl >= 0 ? '#4ade80' : '#f87171' }}>
+        {row.total_trades > 0 ? fmtCurrency(row.net_pnl) : '—'}
+      </td>
+      <td className="px-3 py-2.5 text-center font-mono">{row.total_trades > 0 ? row.profit_factor : '—'}</td>
+      <td className="px-3 py-2.5 text-center font-mono">{row.total_trades > 0 ? fmtCurrency(row.expectancy) : '—'}</td>
+      <td className="px-3 py-2.5 text-center font-mono" style={{ color: '#fca5a5' }}>
+        {row.total_trades > 0 ? `${row.max_drawdown_pct}%` : '—'}
+      </td>
+      <td className="px-3 py-2.5 text-center font-mono">{row.total_trades > 0 ? row.sharpe_ratio : '—'}</td>
+      <td className="px-3 py-2.5 text-center font-mono">{row.total_trades > 0 ? row.recovery_factor : '—'}</td>
+      <td className="px-3 py-2.5 text-center">{row.total_trades > 0 ? `${row.avg_holding_hours}h` : '—'}</td>
+      <td className="px-3 py-2.5 text-center text-[11px]" style={{ color: '#94a3b8' }}>
+        {row.long_trades > 0 || row.short_trades > 0
+          ? `${row.long_trades} @ ${row.long_win_rate_pct}% / ${row.short_trades} @ ${row.short_win_rate_pct}%`
+          : '—'}
+      </td>
+    </tr>
+  )
+}
+
+function PerformanceTab() {
+  const [data, setData] = useState<StrategyDashboardPerformance | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    const t = localStorage.getItem('mts_token') ?? ''
+    if (!t) return
+    const cached = readPageCache<StrategyDashboardPerformance>(PERFORMANCE_CACHE_KEY)
+    if (cached) Promise.resolve().then(() => setData(cached))
+    function load() {
+      getStrategyDashboardPerformance(t)
+        .then(r => { setData(r); writePageCache(PERFORMANCE_CACHE_KEY, r); setErr(null) })
+        .catch(e => setErr(e instanceof Error ? e.message : 'Failed to load performance'))
+    }
+    load()
+    const id = setInterval(load, PERFORMANCE_POLL_MS)
+    return () => clearInterval(id)
+  }, [])
+
+  return (
+    <>
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
+        <p className="text-sm" style={{ color: '#cbd5e1' }}>
+          Real backtest performance per contract, computed from each strategy&apos;s own actually closed signals —
+          not a synthetic re-simulation.
+        </p>
+        {data && (
+          <p className="text-right text-xs" style={{ color: '#64748b' }}>
+            Capital assumption ₹{data.capital.toLocaleString('en-IN')} &middot; updated {timeAgo(data.generated_at)}
+          </p>
+        )}
+      </div>
+
+      {err && <div className="mb-4 rounded-xl px-4 py-3 text-xs" style={{ background: '#450a0a', color: '#fca5a5' }}>{err}</div>}
+
+      {data === null && !err ? (
+        <div className="flex justify-center py-16">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-xl" style={{ background: '#141d33' }}>
+          <table className="w-full text-xs">
+            <thead>
+              <tr style={{ background: '#1e3a8a' }}>
+                {PERFORMANCE_HEADERS.map(h => (
+                  <th key={h} className="whitespace-nowrap px-3 py-2 text-center font-semibold">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {data?.rows.map(row => <PerformanceRow key={row.contract} row={row} />)}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <p className="mt-4 text-xs" style={{ color: '#64748b' }}>
+        A contract with 0 trades has no closed signals yet — win rate/P&amp;L/etc. need at least one closed
+        (WIN/LOSS/EXPIRED) signal to compute. Long/Short splits show trade count @ win rate for each direction.
+      </p>
+    </>
+  )
+}
+
+type MainTab = 'heatmap' | 'signals' | 'performance'
 const MAIN_TABS: { id: MainTab; label: string }[] = [
   { id: 'heatmap', label: 'Strategy Heat Map' },
   { id: 'signals', label: 'All Strategy Signals' },
+  { id: 'performance', label: 'Performance' },
 ]
 
 export default function McxStrategyDashboardView() {
   const [tab, setTab] = useState<MainTab>('heatmap')
   const [data, setData] = useState<StrategyDashboard | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [alertsEnabled, setAlertsEnabled] = useState(false)
   const tokenRef = useRef('')
+  const alertsEnabledRef = useRef(false)
+  // Last-seen signal_label per contract -- an alert fires only when this
+  // changes into a tradeable state (TRADE/STRONG), not on every poll while
+  // the same signal is still open, and not on the very first load (that
+  // would alert on every signal already showing when the tab was opened).
+  const prevSignalRef = useRef<Record<string, string | null>>({})
+  const firstLoadRef = useRef(true)
 
   const load = useCallback(async () => {
     const token = tokenRef.current
@@ -317,6 +473,23 @@ export default function McxStrategyDashboardView() {
       setData(res)
       writePageCache(DASHBOARD_CACHE_KEY, res)
       setErr(null)
+
+      if (alertsEnabledRef.current && !firstLoadRef.current) {
+        for (const row of res.ranked) {
+          const tradeable = row.available && (row.verdict === 'TRADE' || row.verdict === 'STRONG')
+          if (tradeable && row.signal_label !== prevSignalRef.current[row.contract]) {
+            playAlertSound(row.direction === 'BUY')
+            showBrowserNotification(
+              `${row.icon} ${row.name}: ${row.signal_label}`,
+              `Entry ${fmtPrice(row.entry_price)} · SL ${fmtPrice(row.stop_loss)} · Target ${fmtPrice(row.target_1)}`,
+            )
+          }
+        }
+      }
+      firstLoadRef.current = false
+      const next: Record<string, string | null> = {}
+      for (const row of res.ranked) next[row.contract] = row.available ? row.signal_label : null
+      prevSignalRef.current = next
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to load Strategy Dashboard')
     }
@@ -324,12 +497,32 @@ export default function McxStrategyDashboardView() {
 
   useEffect(() => {
     tokenRef.current = localStorage.getItem('mts_token') ?? ''
+    const enabled = localStorage.getItem(ALERTS_ENABLED_KEY) === '1'
+      && typeof Notification !== 'undefined' && Notification.permission === 'granted'
+    setAlertsEnabled(enabled)
+    alertsEnabledRef.current = enabled
     const cached = readPageCache<StrategyDashboard>(DASHBOARD_CACHE_KEY)
     if (cached) Promise.resolve().then(() => setData(cached))
     load().catch(() => {})
     const id = setInterval(() => { load().catch(() => {}) }, POLL_MS)
     return () => clearInterval(id)
   }, [load])
+
+  function toggleAlerts() {
+    if (alertsEnabled) {
+      setAlertsEnabled(false)
+      alertsEnabledRef.current = false
+      localStorage.setItem(ALERTS_ENABLED_KEY, '0')
+      return
+    }
+    if (typeof Notification === 'undefined') return
+    Notification.requestPermission().then(perm => {
+      const on = perm === 'granted'
+      setAlertsEnabled(on)
+      alertsEnabledRef.current = on
+      localStorage.setItem(ALERTS_ENABLED_KEY, on ? '1' : '0')
+    })
+  }
 
   const ranked = useMemo(() => data?.ranked ?? [], [data])
 
@@ -345,26 +538,40 @@ export default function McxStrategyDashboardView() {
       </div>
 
       <div className="mx-auto max-w-6xl px-4 py-6">
-        <div className="mb-6 flex items-center gap-1">
-          {MAIN_TABS.map(t => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className="rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-colors"
-              style={tab === t.id ? { background: '#4f46e5', color: '#fff' } : { background: '#1e293b', color: '#94a3b8' }}
-            >
-              {t.label}
-            </button>
-          ))}
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-1">
+            {MAIN_TABS.map(t => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className="rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-colors"
+                style={tab === t.id ? { background: '#4f46e5', color: '#fff' } : { background: '#1e293b', color: '#94a3b8' }}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={toggleAlerts}
+            title={alertsEnabled ? 'Disable sound + browser alerts on new BUY/SELL signals' : 'Enable sound + browser alerts on new BUY/SELL signals'}
+            className="rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-colors"
+            style={alertsEnabled ? { background: '#065f46', color: '#4ade80' } : { background: '#1e293b', color: '#94a3b8' }}
+          >
+            {alertsEnabled ? '🔔 Alerts On' : '🔕 Enable Alerts'}
+          </button>
         </div>
 
         {tab === 'signals' && <AllSignalsTab />}
+        {tab === 'performance' && <PerformanceTab />}
 
         {tab === 'heatmap' && (
           <>
             <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
               <p className="text-sm" style={{ color: '#cbd5e1' }}>
                 The three MTS Strategy engines (multi-timeframe 1H/15M/5M scorer), ranked together, scored live.
+                A high-priority email goes out automatically to your account whenever any of the three logs a new
+                BUY/SELL signal in the background &mdash; &ldquo;Enable Alerts&rdquo; above adds a sound + browser
+                notification too, while this tab is open.
               </p>
               {data && (
                 <p className="text-right text-xs" style={{ color: '#64748b' }}>

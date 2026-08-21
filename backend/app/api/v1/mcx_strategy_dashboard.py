@@ -37,3 +37,17 @@ async def strategy_dashboard_signals(current_user: CurrentUser, limit: int = 200
     from app.services.mcx_strategy_dashboard_service import get_strategy_dashboard_signals
 
     return await get_strategy_dashboard_signals(str(current_user.id), limit)
+
+
+@router.get("/performance")
+async def strategy_dashboard_performance(
+    current_user: CurrentUser, capital: float = 100_000.0
+) -> dict:
+    """Real backtest performance (win rate, net P&L, profit factor, Sharpe,
+    max drawdown, etc.) per contract, computed from each user's own actually
+    logged and closed MTS Strategy signals -- see run_gold_strategy_backtest's
+    docstring for why this replays real recorded outcomes rather than
+    re-simulating historical candles."""
+    from app.services.mcx_strategy_dashboard_service import get_strategy_dashboard_performance
+
+    return await get_strategy_dashboard_performance(str(current_user.id), capital)

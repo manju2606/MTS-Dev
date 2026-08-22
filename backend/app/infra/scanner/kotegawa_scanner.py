@@ -149,6 +149,92 @@ def _fetch_nifty_change() -> float:
         return 0.0
 
 
+def _compute_features(
+    sym: str, close: pd.Series, high_s: pd.Series, low_s: pd.Series, volume: pd.Series
+) -> dict | None:
+    """Computes one symbol's capitulation/kairi/volume/reversal feature set
+    treating the LAST row of each series as "today" -- callers control what
+    "today" means by how much of the series they pass in. The live scan
+    (_pass1_batch_download) passes each symbol's full downloaded history
+    unchanged (today = the most recent row); the historical backtest
+    (kotegawa_historical_backtest_service.py) passes `close.iloc[:i+1]`-style
+    truncated slices for day i, with no lookahead, so both paths compute
+    identically off a single source of truth. Returns None if there isn't
+    enough history yet (SMA25/RSI warmup) -- same as the old inline
+    `continue` guards this was extracted from."""
+    if len(close) < 30:
+        return None
+
+    current = float(close.iloc[-1])
+    if current <= 0:
+        return None
+
+    today_high = float(high_s.iloc[-1])
+    today_low = float(low_s.iloc[-1])
+
+    sma25_val = close.rolling(25).mean().iloc[-1]
+    if pd.isna(sma25_val) or sma25_val <= 0:
+        return None
+    sma25 = float(sma25_val)
+
+    sma5_val = close.rolling(5).mean().iloc[-1]
+    sma5 = float(sma5_val) if not pd.isna(sma5_val) else current
+    sma10_val = close.rolling(10).mean().iloc[-1]
+    sma10 = float(sma10_val) if not pd.isna(sma10_val) else current
+
+    rsi = _compute_rsi(close)
+
+    vol_avg = float(volume.iloc[:-1].rolling(20).mean().iloc[-1]) if len(volume) > 20 else 1.0
+    if pd.isna(vol_avg) or vol_avg == 0:
+        vol_avg = 1.0
+    volume_ratio = float(volume.iloc[-1]) / vol_avg
+
+    avg_daily_value_cr = (
+        float((close.iloc[-20:] * volume.iloc[-20:]).mean()) / 1e7 if len(close) >= 20 else 0.0
+    )
+
+    prev_close = float(close.iloc[-2]) if len(close) >= 2 else current
+    change_pct = (current - prev_close) / prev_close * 100 if prev_close > 0 else 0.0
+    decline_1d_pct = change_pct
+
+    close_3d_ago = float(close.iloc[-4]) if len(close) >= 4 else prev_close
+    decline_3d_pct = (current - close_3d_ago) / close_3d_ago * 100 if close_3d_ago > 0 else 0.0
+
+    kairi_pct = (current - sma25) / sma25 * 100
+
+    day_range = today_high - today_low
+    closed_upper_half = day_range > 0 and (current - today_low) / day_range >= 0.5
+    body = abs(current - prev_close)
+    lower_wick = min(current, prev_close) - today_low
+    hammer_candle = day_range > 0 and lower_wick >= 2 * body and body > 0
+
+    prior_lows = low_s.iloc[-11:-1] if len(low_s) >= 11 else low_s.iloc[:-1]
+    recent_low_10d = float(prior_lows.min()) if len(prior_lows) > 0 else today_low
+    no_fresh_break = today_low >= recent_low_10d * 0.97
+
+    atr = _compute_atr(high_s, low_s, close)
+
+    return {
+        "symbol": sym,
+        "current": current,
+        "today_low": today_low,
+        "sma25": sma25,
+        "sma5": sma5,
+        "sma10": sma10,
+        "rsi": rsi,
+        "volume_ratio": volume_ratio,
+        "avg_daily_value_cr": avg_daily_value_cr,
+        "change_pct": change_pct,
+        "decline_1d_pct": decline_1d_pct,
+        "decline_3d_pct": decline_3d_pct,
+        "kairi_pct": kairi_pct,
+        "closed_upper_half": closed_upper_half,
+        "hammer_candle": hammer_candle,
+        "no_fresh_break": no_fresh_break,
+        "atr": atr,
+    }
+
+
 def _pass1_batch_download(symbols: list[str]) -> list[dict]:
     try:
         raw = yf.download(
@@ -176,85 +262,10 @@ def _pass1_batch_download(symbols: list[str]) -> list[dict]:
             high_s = df["High"].dropna()
             low_s = df["Low"].dropna()
             volume = df["Volume"].dropna()
-            if len(close) < 30:
-                continue
 
-            current = float(close.iloc[-1])
-            if current <= 0:
-                continue
-
-            today_high = float(high_s.iloc[-1])
-            today_low = float(low_s.iloc[-1])
-
-            sma25_val = close.rolling(25).mean().iloc[-1]
-            if pd.isna(sma25_val) or sma25_val <= 0:
-                continue
-            sma25 = float(sma25_val)
-
-            sma5_val = close.rolling(5).mean().iloc[-1]
-            sma5 = float(sma5_val) if not pd.isna(sma5_val) else current
-            sma10_val = close.rolling(10).mean().iloc[-1]
-            sma10 = float(sma10_val) if not pd.isna(sma10_val) else current
-
-            rsi = _compute_rsi(close)
-
-            vol_avg = (
-                float(volume.iloc[:-1].rolling(20).mean().iloc[-1]) if len(volume) > 20 else 1.0
-            )
-            if pd.isna(vol_avg) or vol_avg == 0:
-                vol_avg = 1.0
-            volume_ratio = float(volume.iloc[-1]) / vol_avg
-
-            avg_daily_value_cr = (
-                float((close.iloc[-20:] * volume.iloc[-20:]).mean()) / 1e7
-                if len(close) >= 20
-                else 0.0
-            )
-
-            prev_close = float(close.iloc[-2]) if len(close) >= 2 else current
-            change_pct = (current - prev_close) / prev_close * 100 if prev_close > 0 else 0.0
-            decline_1d_pct = change_pct
-
-            close_3d_ago = float(close.iloc[-4]) if len(close) >= 4 else prev_close
-            decline_3d_pct = (
-                (current - close_3d_ago) / close_3d_ago * 100 if close_3d_ago > 0 else 0.0
-            )
-
-            kairi_pct = (current - sma25) / sma25 * 100
-
-            day_range = today_high - today_low
-            closed_upper_half = day_range > 0 and (current - today_low) / day_range >= 0.5
-            body = abs(current - prev_close)
-            lower_wick = min(current, prev_close) - today_low
-            hammer_candle = day_range > 0 and lower_wick >= 2 * body and body > 0
-
-            prior_lows = low_s.iloc[-11:-1] if len(low_s) >= 11 else low_s.iloc[:-1]
-            recent_low_10d = float(prior_lows.min()) if len(prior_lows) > 0 else today_low
-            no_fresh_break = today_low >= recent_low_10d * 0.97
-
-            atr = _compute_atr(high_s, low_s, close)
-
-            candidates.append(
-                {
-                    "symbol": sym,
-                    "current": current,
-                    "today_low": today_low,
-                    "sma25": sma25,
-                    "sma5": sma5,
-                    "sma10": sma10,
-                    "rsi": rsi,
-                    "volume_ratio": volume_ratio,
-                    "avg_daily_value_cr": avg_daily_value_cr,
-                    "change_pct": change_pct,
-                    "decline_1d_pct": decline_1d_pct,
-                    "decline_3d_pct": decline_3d_pct,
-                    "kairi_pct": kairi_pct,
-                    "closed_upper_half": closed_upper_half,
-                    "hammer_candle": hammer_candle,
-                    "no_fresh_break": no_fresh_break,
-                    "atr": atr,
-                }
-            )
+            features = _compute_features(sym, close, high_s, low_s, volume)
+            if features is not None:
+                candidates.append(features)
         except Exception as exc:
             log.debug("kotegawa.pass1.sym_error", symbol=sym, error=str(exc))
             continue

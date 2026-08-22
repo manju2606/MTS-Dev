@@ -1,6 +1,7 @@
 """Kotegawa Reversal API routes. Mirrors btst.py's shape exactly."""
 
 import asyncio
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -116,3 +117,31 @@ async def get_performance(_: CurrentUser) -> dict:
 
     repo = KotegawaRepository()
     return await repo.get_performance_stats()
+
+
+@router.get("/backtest-historical")
+async def backtest_historical(
+    _: CurrentUser,
+    variant: Literal["reversal", "early", "intraday"] = "reversal",
+    from_date: str = Query(..., description="YYYY-MM-DD"),
+    to_date: str = Query(..., description="YYYY-MM-DD"),
+    capital: float = 100_000.0,
+) -> dict:
+    """Walk-forward historical re-simulation of one Kotegawa variant's rule
+    set against real past OHLCV -- see
+    kotegawa_historical_backtest_service.py's own docstring for the full
+    reasoning, including the honesty caveat on Early/Intraday's same-day
+    resolution being a daily-OHLCV approximation, not a true replay of the
+    live 5-min LTP-polling resolver. Not instant like /performance or the
+    live-picks backtest -- expect this to take a few minutes for the
+    NIFTY_500-scoped variants (reversal/early)."""
+    from app.services.kotegawa_historical_backtest_service import (
+        run_kotegawa_historical_backtest,
+    )
+
+    try:
+        return await run_kotegawa_historical_backtest(variant, from_date, to_date, capital)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503, detail=f"Historical backtest failed: {exc}"
+        ) from exc

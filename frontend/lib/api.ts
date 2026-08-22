@@ -6114,6 +6114,35 @@ export async function getLiveStrategyBacktest(token: string, params: {
   return res.json()
 }
 
+export type KotegawaBacktestVariant = 'reversal' | 'early' | 'intraday'
+
+// Walk-forward historical re-simulation of one Kotegawa variant's rule set
+// against real past OHLCV -- a genuine trade sample right now, unlike
+// getLiveStrategyBacktest's kotegawa/kotegawa_early/kotegawa_intraday
+// sources which only have real picks once the live scans accumulate them
+// over time. Same response shape, so it reuses all the same rendering.
+// Not instant -- expect several minutes for the NIFTY_500-scoped variants
+// (reversal/early).
+export async function getKotegawaHistoricalBacktest(token: string, params: {
+  variant: KotegawaBacktestVariant
+  from_date: string
+  to_date: string
+  capital?: number
+}): Promise<LiveStrategyBacktestResult> {
+  const q = new URLSearchParams({
+    variant: params.variant,
+    from_date: params.from_date,
+    to_date: params.to_date,
+    capital: String(params.capital ?? 100_000),
+  })
+  const res = await fetch(`${BASE}/api/v1/kotegawa/backtest-historical?${q}`, { headers: authHeaders(token) })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to run historical backtest')
+  }
+  return res.json()
+}
+
 export type StrategyLabResultDetail = {
   id: string
   run_id: string

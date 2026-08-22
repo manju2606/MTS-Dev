@@ -9,11 +9,12 @@ import {
   listStrategyLabRuns, getStrategyLabRun, listStrategyLabResults, getStrategyLabResult, getResultMonteCarlo,
   listIndexScans, getIndexScan, getIndexScanRanking, listIndexUniverses, listMcxContracts, searchStocks,
   getMe, ApiError, getSymbolComparison, startSymbolSweepRun, getSymbolSweep, getLiveStrategyBacktest,
+  getKotegawaHistoricalBacktest,
 } from '@/lib/api'
 import type {
   HistoricalDataInterval, StrategyLabRun, StrategyLabResultSummary, StrategyLabResultDetail, MonteCarloResult,
   IndexScanRun, IndexScanRankingRow, IndexUniverseOption, McxContractOption, StockSearchResult, RunSortBy,
-  SymbolComparison, SymbolSweepRun, LiveBacktestSource, LiveStrategyBacktestResult,
+  SymbolComparison, SymbolSweepRun, LiveBacktestSource, LiveStrategyBacktestResult, KotegawaBacktestVariant,
 } from '@/lib/api'
 
 const INTERVALS: HistoricalDataInterval[] = [
@@ -529,8 +530,20 @@ function loadSavedLiveBacktestGates(): typeof LIVE_BACKTEST_GATE_DEFAULTS {
   return LIVE_BACKTEST_GATE_DEFAULTS
 }
 
+// Kotegawa sources also support a walk-forward historical re-simulation
+// (real trade sample now, vs waiting for live picks to accumulate) -- see
+// backend kotegawa_historical_backtest_service.py. Not available for the
+// other live-picks sources (Golden Stock/BTST/etc.), which don't have an
+// equivalent day-by-day scanner re-simulation engine.
+const KOTEGAWA_VARIANT: Partial<Record<LiveBacktestSource, KotegawaBacktestVariant>> = {
+  kotegawa: 'reversal',
+  kotegawa_early: 'early',
+  kotegawa_intraday: 'intraday',
+}
+
 function LiveStrategyBacktestPanel({ token }: { token: string }) {
   const [source, setSource] = useState<LiveBacktestSource>('golden_stock')
+  const [mode, setMode] = useState<'live' | 'historical'>('live')
   const [fromDate, setFromDate] = useState(daysAgoStr(365))
   const [toDate, setToDate] = useState(todayStr())
   const [capital, setCapital] = useState(100000)
@@ -540,7 +553,8 @@ function LiveStrategyBacktestPanel({ token }: { token: string }) {
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<LiveStrategyBacktestResult | null>(null)
 
-  const showGates = LIVE_BACKTEST_GATE_SOURCES.has(source)
+  const kotegawaVariant = KOTEGAWA_VARIANT[source]
+  const showGates = LIVE_BACKTEST_GATE_SOURCES.has(source) && mode === 'live'
   const showAdxGate = source === 'golden_stock'
   const gatesActive = Object.values(gates).some(v => v !== '')
   const isCustom = JSON.stringify(gates) !== JSON.stringify(LIVE_BACKTEST_GATE_DEFAULTS)
@@ -556,13 +570,17 @@ function LiveStrategyBacktestPanel({ token }: { token: string }) {
   async function run() {
     setLoading(true); setError(null); setResult(null)
     try {
-      const r = await getLiveStrategyBacktest(token, {
-        source, from_date: fromDate, to_date: toDate, capital,
-        ...(showGates && gates.minConfidence !== '' ? { min_confidence: Number(gates.minConfidence) } : {}),
-        ...(showGates && gates.maxRsi !== '' ? { max_rsi: Number(gates.maxRsi) } : {}),
-        ...(showGates && gates.minVolumeRatio !== '' ? { min_volume_ratio: Number(gates.minVolumeRatio) } : {}),
-        ...(showAdxGate && gates.minAdx !== '' ? { min_adx: Number(gates.minAdx) } : {}),
-      })
+      const r = mode === 'historical' && kotegawaVariant
+        ? await getKotegawaHistoricalBacktest(token, {
+            variant: kotegawaVariant, from_date: fromDate, to_date: toDate, capital,
+          })
+        : await getLiveStrategyBacktest(token, {
+            source, from_date: fromDate, to_date: toDate, capital,
+            ...(showGates && gates.minConfidence !== '' ? { min_confidence: Number(gates.minConfidence) } : {}),
+            ...(showGates && gates.maxRsi !== '' ? { max_rsi: Number(gates.maxRsi) } : {}),
+            ...(showGates && gates.minVolumeRatio !== '' ? { min_volume_ratio: Number(gates.minVolumeRatio) } : {}),
+            ...(showAdxGate && gates.minAdx !== '' ? { min_adx: Number(gates.minAdx) } : {}),
+          })
       setResult(r)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to run backtest')
@@ -585,7 +603,11 @@ function LiveStrategyBacktestPanel({ token }: { token: string }) {
           <button
             key={s.value}
             type="button"
-            onClick={() => { setSource(s.value); setResult(null); setError(null) }}
+            onClick={() => {
+              setSource(s.value)
+              if (!KOTEGAWA_VARIANT[s.value]) setMode('live')
+              setResult(null); setError(null)
+            }}
             className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
               source === s.value ? 'bg-indigo-600 text-white' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400'
             }`}
@@ -594,6 +616,36 @@ function LiveStrategyBacktestPanel({ token }: { token: string }) {
           </button>
         ))}
       </div>
+
+      {kotegawaVariant && (
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <div className="flex gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800">
+            {(['live', 'historical'] as const).map(m => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => { setMode(m); setResult(null); setError(null) }}
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+                  mode === m ? 'bg-white text-indigo-600 shadow-sm dark:bg-zinc-700 dark:text-indigo-300' : 'text-zinc-500 dark:text-zinc-400'
+                }`}
+              >
+                {m === 'live' ? 'Real Picks' : 'Historical Simulation'}
+              </button>
+            ))}
+          </div>
+          {mode === 'historical' && (
+            <p className="text-[11px] text-zinc-400">
+              Walk-forward re-simulation against real past OHLCV — a genuine trade sample now,
+              not the strategy&apos;s own live picks (which are still accumulating).
+              {kotegawaVariant !== 'reversal' && (
+                <> Same-day resolution is approximated from daily highs/lows (this strategy&apos;s
+                  live 5-min LTP-polling resolver isn&apos;t replicated here).</>
+              )}
+              {' '}Takes a few minutes to run.
+            </p>
+          )}
+        </div>
+      )}
 
       {showGates && (
         <div className="mb-4 rounded-lg border border-zinc-100 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-800/40">

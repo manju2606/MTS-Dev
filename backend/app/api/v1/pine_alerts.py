@@ -97,11 +97,17 @@ async def pine_alerts_webhook(
 
 
 @router.get("")
-async def list_pine_alerts(current_user: CurrentUser, contract: str, limit: int = 50) -> list[dict]:
+async def list_pine_alerts(
+    current_user: CurrentUser, contract: str | None = None, limit: int = 50
+) -> list[dict]:
     from app.infra.db.repositories.pine_alert_repo import PineAlertRepository
 
     repo = PineAlertRepository()
-    docs = await repo.list_recent(contract, limit)
+    docs = (
+        await repo.list_recent(contract, limit)
+        if contract
+        else await repo.list_recent_all(limit)
+    )
     for d in docs:
         d["received_at"] = d["received_at"].isoformat()
     return docs

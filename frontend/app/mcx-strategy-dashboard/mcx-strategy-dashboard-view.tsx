@@ -2,19 +2,21 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { NavBar } from '@/components/nav-bar'
-import { getStrategyDashboard, getStrategyDashboardLevels, getStrategyDashboardPerformance, getStrategyDashboardSignals } from '@/lib/api'
-import type { StrategyDashboard, StrategyDashboardLevels, StrategyDashboardLevelsRow, StrategyDashboardPerformance, StrategyDashboardPerformanceRow, StrategyDashboardRow, StrategyDashboardSignal, StrategyDashboardSignalsResponse } from '@/lib/api'
+import { getAllPineAlerts, getStrategyDashboard, getStrategyDashboardLevels, getStrategyDashboardPerformance, getStrategyDashboardSignals } from '@/lib/api'
+import type { PineAlert, StrategyDashboard, StrategyDashboardLevels, StrategyDashboardLevelsRow, StrategyDashboardPerformance, StrategyDashboardPerformanceRow, StrategyDashboardRow, StrategyDashboardSignal, StrategyDashboardSignalsResponse } from '@/lib/api'
 import { readPageCache, writePageCache } from '@/lib/page-cache'
 
 const DASHBOARD_CACHE_KEY = 'mcx-strategy-dashboard:data'
 const SIGNALS_CACHE_KEY = 'mcx-strategy-dashboard:signals'
 const PERFORMANCE_CACHE_KEY = 'mcx-strategy-dashboard:performance'
 const LEVELS_CACHE_KEY = 'mcx-strategy-dashboard:levels'
+const PINE_ALERTS_CACHE_KEY = 'mcx-strategy-dashboard:pine-alerts'
 const ALERTS_ENABLED_KEY = 'mcx-strategy-dashboard:alerts-enabled'
 const POLL_MS = 30_000
 const SIGNALS_POLL_MS = 60_000
 const PERFORMANCE_POLL_MS = 120_000
 const LEVELS_POLL_MS = 30_000
+const PINE_ALERTS_POLL_MS = 30_000
 const RANK_MEDALS = ['🥇', '🥈', '🥉']
 
 // Web Audio beep (no external asset needed) -- two quick blips, pitched
@@ -100,6 +102,12 @@ function panelHref(contract: string): string {
   if (contract === 'GOLDGUINEA') return '/mcx/metals/goldguinea'
   if (contract === 'SILVER100') return '/mcx/metals/silver100'
   return '/mcx/ngmini'
+}
+
+function contractLabel(contract: string): string {
+  if (contract === 'GOLDGUINEA') return '🥇 Gold Guinea'
+  if (contract === 'SILVER100') return '🥈 Silver100'
+  return '⛽ NG Mini'
 }
 
 function HeatTile({ row, rank }: { row: StrategyDashboardRow; rank: number }) {
@@ -317,10 +325,9 @@ function AllSignalsTab() {
         <div className="mb-6 grid grid-cols-3 gap-3 text-center text-xs">
           {(['GOLDGUINEA', 'SILVER100', 'NGMINI'] as const).map(c => {
             const a = data.accuracy[c]
-            const label = c === 'GOLDGUINEA' ? '🥇 Gold Guinea' : c === 'SILVER100' ? '🥈 Silver100' : '⛽ NG Mini'
             return (
               <div key={c} className="rounded-xl px-3 py-2.5" style={{ background: '#141d33' }}>
-                <p className="font-semibold">{label}</p>
+                <p className="font-semibold">{contractLabel(c)}</p>
                 <p className="mt-1" style={{ color: '#94a3b8' }}>
                   {a.accuracy_pct !== null ? `${a.accuracy_pct}% (${a.wins}/${a.resolved})` : 'No resolved signals yet'}
                 </p>
@@ -584,12 +591,115 @@ function LevelsTab() {
   )
 }
 
-type MainTab = 'heatmap' | 'levels' | 'signals' | 'performance'
+const PINE_TYPE_COLOR: Record<string, string> = {
+  ...SIGNAL_LABEL_COLOR,
+  HOLD: '#94a3b8',
+}
+
+const PINE_ALERTS_HEADERS = ['Date / Time (IST)', 'Contract', 'Type', 'Strategy', 'Price', 'Message']
+
+function fmtPineDateTime(iso: string | null): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleString('en-IN', {
+    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Kolkata',
+  })
+}
+
+function PineAlertRow({ a }: { a: PineAlert }) {
+  return (
+    <tr className="border-t" style={{ borderColor: '#1e293b' }}>
+      <td className="whitespace-nowrap px-3 py-2.5 font-mono" style={{ color: '#94a3b8' }}>
+        {fmtPineDateTime(a.tv_time ?? a.received_at)}
+      </td>
+      <td className="whitespace-nowrap px-3 py-2.5">{contractLabel(a.contract)}</td>
+      <td className="px-3 py-2.5">
+        <span
+          className="whitespace-nowrap rounded px-2 py-0.5 text-[10px] font-bold"
+          style={{ background: 'rgba(255,255,255,0.08)', color: PINE_TYPE_COLOR[a.signal_type] ?? '#94a3b8' }}
+        >
+          {a.signal_type}
+        </span>
+      </td>
+      <td className="whitespace-nowrap px-3 py-2.5" style={{ color: '#94a3b8' }}>{a.strategy}</td>
+      <td className="px-3 py-2.5 text-right font-mono">{fmtPrice(a.price)}</td>
+      <td className="px-3 py-2.5" style={{ color: '#64748b' }}>{a.message || '—'}</td>
+    </tr>
+  )
+}
+
+function PineAlertsTab() {
+  const [alerts, setAlerts] = useState<PineAlert[] | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    const t = localStorage.getItem('mts_token') ?? ''
+    if (!t) return
+    const cached = readPageCache<PineAlert[]>(PINE_ALERTS_CACHE_KEY)
+    if (cached) Promise.resolve().then(() => setAlerts(cached))
+    function load() {
+      getAllPineAlerts(t, 200)
+        .then(r => { setAlerts(r); writePageCache(PINE_ALERTS_CACHE_KEY, r); setErr(null) })
+        .catch(e => setErr(e instanceof Error ? e.message : 'Failed to load Pine Alerts'))
+    }
+    load()
+    const id = setInterval(load, PINE_ALERTS_POLL_MS)
+    return () => clearInterval(id)
+  }, [])
+
+  return (
+    <>
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
+        <p className="text-sm" style={{ color: '#cbd5e1' }}>
+          What the actual Pine Scripts fired on TradingView&apos;s own servers for Gold Guinea, Silver100, and
+          NG Mini, combined — a second, independent record alongside each contract&apos;s own live-computed
+          signal above, delivered via TradingView&apos;s alert webhooks the moment a BUY/STRONG BUY/SELL/STRONG
+          SELL condition fires.
+        </p>
+        {alerts && (
+          <p className="text-right text-xs" style={{ color: '#64748b' }}>
+            Refreshes every {PINE_ALERTS_POLL_MS / 1000}s &middot; {alerts.length} recent
+          </p>
+        )}
+      </div>
+
+      {err && <div className="mb-4 rounded-xl px-4 py-3 text-xs" style={{ background: '#450a0a', color: '#fca5a5' }}>{err}</div>}
+
+      {alerts === null && !err ? (
+        <div className="flex justify-center py-16">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
+        </div>
+      ) : alerts && alerts.length === 0 ? (
+        <div className="rounded-xl px-4 py-10 text-center text-sm" style={{ background: '#141d33', color: '#94a3b8' }}>
+          No Pine Alerts received yet — TradingView will POST here the moment one of the three Pine Scripts&apos;
+          own BUY/STRONG BUY/SELL/STRONG SELL condition fires.
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-xl" style={{ background: '#141d33' }}>
+          <table className="w-full text-xs">
+            <thead>
+              <tr style={{ background: '#1e3a8a' }}>
+                {PINE_ALERTS_HEADERS.map(h => (
+                  <th key={h} className="whitespace-nowrap px-3 py-2 text-left font-semibold">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {alerts?.map((a, i) => <PineAlertRow key={i} a={a} />)}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  )
+}
+
+type MainTab = 'heatmap' | 'levels' | 'signals' | 'performance' | 'pine-alerts'
 const MAIN_TABS: { id: MainTab; label: string }[] = [
   { id: 'heatmap', label: 'Strategy Heat Map' },
   { id: 'levels', label: 'Technical Levels' },
   { id: 'signals', label: 'All Strategy Signals' },
   { id: 'performance', label: 'Performance' },
+  { id: 'pine-alerts', label: 'Pine Alerts' },
 ]
 
 export default function McxStrategyDashboardView() {
@@ -711,6 +821,7 @@ export default function McxStrategyDashboardView() {
         {tab === 'signals' && <AllSignalsTab />}
         {tab === 'performance' && <PerformanceTab />}
         {tab === 'levels' && <LevelsTab />}
+        {tab === 'pine-alerts' && <PineAlertsTab />}
 
         {tab === 'heatmap' && (
           <>

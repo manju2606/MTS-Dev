@@ -3557,6 +3557,21 @@ export async function getPineAlerts(token: string, contract: string, limit = 50)
   return res.json()
 }
 
+// All three contracts' Pine Alerts combined, newest first -- for the MTS
+// Strategy Dashboard's own "Pine Alerts" tab (vs getPineAlerts, which is
+// scoped to one contract for each dedicated strategy panel).
+export async function getAllPineAlerts(token: string, limit = 200): Promise<PineAlert[]> {
+  const res = await fetch(
+    `${BASE}/api/v1/mcx/pine-alerts?limit=${limit}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch Pine Alerts')
+  }
+  return res.json()
+}
+
 // ── Phase 3: Broker ────────────────────────────────────────────────────────
 
 export async function getBrokerStatus(token: string): Promise<BrokerStatus> {

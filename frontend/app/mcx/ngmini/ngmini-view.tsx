@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { NavBar } from '@/components/nav-bar'
+import { PineAlertsCard } from '@/components/pine-alerts-card'
 import { PriceChart } from '@/components/price-chart'
 import type { AILevels, RefLine } from '@/components/price-chart'
 import {
@@ -565,6 +566,7 @@ export default function NgMiniView() {
         <div className="mt-6">
           <NgMiniSubNav active="Live Signal" />
           <GasStrategyPanel showBacktest={false} showSignalsTable={false} />
+          <PineAlertsCard contract="NGMINI" />
         </div>
       </div>
     </div>

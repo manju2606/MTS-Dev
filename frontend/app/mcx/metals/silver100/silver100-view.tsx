@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { NavBar } from '@/components/nav-bar'
+import { PineAlertsCard } from '@/components/pine-alerts-card'
 import { SilverStrategyPanel } from '../metals-view'
 
 const SUB_NAV = [
@@ -50,6 +51,7 @@ export default function Silver100View() {
         <div className="mt-6">
           <Silver100SubNav active="Live Signal" />
           <SilverStrategyPanel contract="SILVER100" showBacktest={false} showSignalsTable={false} showDedicatedLink={false} />
+          <PineAlertsCard contract="SILVER100" />
         </div>
       </div>
     </div>

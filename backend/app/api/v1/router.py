@@ -42,6 +42,7 @@ from app.api.v1 import (
     org_api,
     paper,
     performance,
+    pine_alerts,
     portfolio,
     research,
     risk,
@@ -119,6 +120,7 @@ router.include_router(mcx_gold_strategy.router)
 router.include_router(mcx_ng_strategy.router)
 router.include_router(mcx_correlation.router)
 router.include_router(mcx_strategy_dashboard.router)
+router.include_router(pine_alerts.router)
 router.include_router(crypto.router)
 router.include_router(usa_stocks.router)
 router.include_router(international_market.router)

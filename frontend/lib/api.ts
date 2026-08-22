@@ -3530,6 +3530,33 @@ export async function getStrategyDashboardLevels(token: string): Promise<Strateg
   return res.json()
 }
 
+// Pine Alerts: raw TradingView alertcondition() firings received via the
+// /mcx/pine-alerts/webhook receiver -- the ground-truth record of what the
+// actual Pine Script running on TradingView's own infrastructure fired,
+// alongside (not instead of) this app's own independently computed
+// StrategyDashboardSignal. See pine_alerts.py (backend).
+export type PineAlert = {
+  contract: string
+  strategy: string
+  signal_type: 'BUY' | 'STRONG BUY' | 'SELL' | 'STRONG SELL' | 'HOLD'
+  price: number | null
+  message: string
+  tv_time: string | null
+  received_at: string
+}
+
+export async function getPineAlerts(token: string, contract: string, limit = 50): Promise<PineAlert[]> {
+  const res = await fetch(
+    `${BASE}/api/v1/mcx/pine-alerts?contract=${contract}&limit=${limit}`,
+    { headers: authHeaders(token) },
+  )
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch Pine Alerts')
+  }
+  return res.json()
+}
+
 // ── Phase 3: Broker ────────────────────────────────────────────────────────
 
 export async function getBrokerStatus(token: string): Promise<BrokerStatus> {

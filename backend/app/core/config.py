@@ -34,6 +34,14 @@ class Settings(BaseSettings):
     # secret above.
     CHARTINK_WEBHOOK_SECRET: str | None = None
 
+    # Pine Alerts -- shared secret TradingView's alert "Webhook URL" must
+    # carry as a ?token= query param (TradingView alerts can't send custom
+    # headers, unlike Chartink/Alertmanager above, so this can't use the
+    # Authorization-header pattern those two use) so the receiver at
+    # /api/v1/mcx/pine-alerts/webhook, also proxied publicly, can't have fake
+    # signals injected by strangers.
+    PINE_ALERTS_WEBHOOK_SECRET: str | None = None
+
     # Phase 2
     ANTHROPIC_API_KEY: str | None = None
     PAPER_CAPITAL: float = 100_000.0  # default paper trading capital in INR

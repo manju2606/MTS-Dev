@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { NavBar } from '@/components/nav-bar'
+import { PineAlertsCard } from '@/components/pine-alerts-card'
 import { GoldStrategyPanel } from '../metals-view'
 
 const SUB_NAV = [
@@ -55,6 +56,7 @@ export default function GoldGuineaView() {
         <div className="mt-6">
           <GoldGuineaSubNav active="Live Signal" />
           <GoldStrategyPanel contract="GOLDGUINEA" showBacktest={false} showSignalsTable={false} showDedicatedLink={false} />
+          <PineAlertsCard contract="GOLDGUINEA" />
         </div>
       </div>
     </div>

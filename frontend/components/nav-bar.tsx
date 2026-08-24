@@ -129,6 +129,7 @@ const NAV_GROUPS: NavGroup[] = [
     icon:  'activity',
     roles: ['trader', 'admin'],
     items: [
+      { href: '/mcx/live-prices', label: 'Live Prices', icon: 'trendingUp', desc: 'LTP for Gold Guinea, Silver100 & NG Mini at a glance — no chart clutter' },
       { href: '/mcx-heatmap', label: 'MCX Heatmap', icon: 'squares',  desc: 'Live commodity-wide heatmap from MCX India' },
       { href: '/my-trading-dashboard', label: 'My Trading Dashboard', icon: 'star', desc: 'Every tracked NG + Metals contract, ranked together by AI Strength' },
       { href: '/mcx-strategy-dashboard', label: 'MTS Strategy Dashboard', icon: 'star', desc: 'Gold Guinea, Silver100 & NG Mini MTS Strategy engines, ranked together live' },

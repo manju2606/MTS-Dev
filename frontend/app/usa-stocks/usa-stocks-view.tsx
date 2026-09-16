@@ -48,6 +48,84 @@ function fmtUsd(v: number | null): string {
   return v.toLocaleString('en-US', { maximumFractionDigits: 2 })
 }
 
+// ── Ticker search/add: typeahead over the local directory, but submitting
+// (Enter or the button) always works for ANY ticker -- even one absent from
+// the directory (e.g. HOOD) -- since it's passed straight to onAdd, which
+// hits POST /usa-stocks/custom and lets the backend validate it via yfinance.
+function TickerAddSearch({
+  onAdd, placeholder,
+}: { onAdd: (code: string) => Promise<void>; placeholder: string }) {
+  const [query, setQuery] = useState('')
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const suggestions = useMemo(() => {
+    const q = query.trim().toUpperCase()
+    if (!q) return []
+    return USA_STOCK_DIRECTORY
+      .filter(s => s.code.startsWith(q) || s.name.toUpperCase().includes(q))
+      .slice(0, 8)
+  }, [query])
+
+  async function submit(code: string) {
+    const c = code.trim().toUpperCase()
+    if (!c || busy) return
+    setBusy(true)
+    setErr(null)
+    setShowSuggestions(false)
+    try {
+      await onAdd(c)
+      setQuery('')
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed to add stock')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <form onSubmit={e => { e.preventDefault(); submit(query) }} className="flex items-center gap-2">
+        <div className="relative">
+          <input
+            value={query}
+            onChange={e => { setQuery(e.target.value); setShowSuggestions(true) }}
+            onFocus={() => setShowSuggestions(true)}
+            onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+            placeholder={placeholder}
+            className="w-64 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 placeholder:text-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+          />
+          {showSuggestions && suggestions.length > 0 && (
+            <ul className="absolute left-0 top-full z-10 mt-1 w-72 overflow-hidden rounded-lg border border-zinc-200 bg-white text-sm shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+              {suggestions.map(s => (
+                <li key={s.code}>
+                  <button
+                    type="button"
+                    onMouseDown={() => submit(s.code)}
+                    className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                  >
+                    <span className="font-semibold text-zinc-800 dark:text-zinc-100">{s.code}</span>
+                    <span className="truncate text-xs text-zinc-500 dark:text-zinc-400">{s.name}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <button
+          type="submit"
+          disabled={busy || !query.trim()}
+          className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
+        >
+          {busy ? 'Searching…' : '🔍 Search'}
+        </button>
+      </form>
+      {err && <span className="text-xs text-red-500 dark:text-red-400">{err}</span>}
+    </div>
+  )
+}
+
 function HeatTile({
   quote, rank, selected, onClick, onRemove,
 }: { quote: UsaStockQuote; rank: number; selected: boolean; onClick: () => void; onRemove: (code: string) => void }) {
@@ -219,8 +297,13 @@ function HorizonPredictionCard({
 }
 
 function AnalyseStockTab({
-  quotes, selectedStock, onSelectStock,
-}: { quotes: UsaStockQuote[] | null; selectedStock: UsaStockCode; onSelectStock: (code: UsaStockCode) => void }) {
+  quotes, selectedStock, onSelectStock, onAddStock,
+}: {
+  quotes: UsaStockQuote[] | null
+  selectedStock: UsaStockCode
+  onSelectStock: (code: UsaStockCode) => void
+  onAddStock: (code: string) => Promise<void>
+}) {
   const [horizon, setHorizon] = useState<UsaHorizon>('1D')
   const [predictions, setPredictions] = useState<Partial<Record<UsaHorizon, UsaStockPrediction>>>({})
   const [ohlc, setOhlc] = useState<HistoryBar[]>([])
@@ -286,6 +369,8 @@ function AnalyseStockTab({
         >
           {(quotes ?? []).map(q => <option key={q.code} value={q.code}>{q.code}</option>)}
         </select>
+        <span className="text-xs text-zinc-400">or</span>
+        <TickerAddSearch onAdd={onAddStock} placeholder="Type any US ticker, e.g. HOOD" />
       </div>
 
       {err && (
@@ -370,10 +455,6 @@ export default function UsaStocksView() {
   const [prediction, setPrediction] = useState<PredictionPoint[]>([])
   const [chartLoading, setChartLoading] = useState(false)
   const [ranked, setRanked] = useState<UsaStockRankedRow[] | null>(null)
-  const [addCode, setAddCode] = useState('')
-  const [addBusy, setAddBusy] = useState(false)
-  const [addErr, setAddErr] = useState<string | null>(null)
-  const [showSuggestions, setShowSuggestions] = useState(false)
   const [rankSortKey, setRankSortKey] = useState<RankedSortKey | null>(null)
   const [rankSortDir, setRankSortDir] = useState<'asc' | 'desc'>('desc')
   const tokenRef = useRef('')
@@ -460,25 +541,16 @@ export default function UsaStocksView() {
     loadChart(selectedStock, chartPeriod).catch(() => {})
   }, [selectedStock, chartPeriod, loadChart])
 
-  const handleAdd = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault()
+  // Shared by the Overview "Add Stock" search and the Analyse tab's search --
+  // validates+persists via POST /custom (backend resolves it through
+  // yfinance), then selects it so Analyse/the chart pick it up immediately.
+  const addAndSelectStock = useCallback(async (code: string) => {
     const token = tokenRef.current
-    const code = addCode.trim().toUpperCase()
     if (!token || !code) return
-    setAddBusy(true)
-    setAddErr(null)
-    setShowSuggestions(false)
-    try {
-      await addUsaStock(token, code)
-      setAddCode('')
-      setSelectedStock(code)
-      await Promise.all([loadQuotes(), loadRanked()])
-    } catch (e) {
-      setAddErr(e instanceof Error ? e.message : 'Failed to add stock')
-    } finally {
-      setAddBusy(false)
-    }
-  }, [addCode, loadQuotes, loadRanked])
+    await addUsaStock(token, code)
+    setSelectedStock(code)
+    await Promise.all([loadQuotes(), loadRanked()])
+  }, [loadQuotes, loadRanked])
 
   const handleRemove = useCallback(async (code: string) => {
     const token = tokenRef.current
@@ -488,7 +560,7 @@ export default function UsaStocksView() {
       if (selectedStock === code) setSelectedStock('AAPL')
       await Promise.all([loadQuotes(), loadRanked()])
     } catch (e) {
-      setAddErr(e instanceof Error ? e.message : 'Failed to remove stock')
+      setErr(e instanceof Error ? e.message : 'Failed to remove stock')
     }
   }, [selectedStock, loadQuotes, loadRanked])
 
@@ -500,14 +572,6 @@ export default function UsaStocksView() {
     () => [...(quotes ?? [])].sort((a, b) => (b.change_pct ?? -Infinity) - (a.change_pct ?? -Infinity)),
     [quotes],
   )
-
-  const suggestions = useMemo(() => {
-    const q = addCode.trim().toUpperCase()
-    if (!q) return []
-    return USA_STOCK_DIRECTORY
-      .filter(s => s.code.startsWith(q) || s.name.toUpperCase().includes(q))
-      .slice(0, 8)
-  }, [addCode])
 
   const sortedRanked = useMemo(() => {
     const rows = ranked ?? []
@@ -554,45 +618,17 @@ export default function UsaStocksView() {
         </div>
 
         {tab === 'analyse' ? (
-          <AnalyseStockTab quotes={quotes} selectedStock={selectedStock} onSelectStock={setSelectedStock} />
+          <AnalyseStockTab
+            quotes={quotes}
+            selectedStock={selectedStock}
+            onSelectStock={setSelectedStock}
+            onAddStock={addAndSelectStock}
+          />
         ) : (
           <>
-            <form onSubmit={handleAdd} className="mb-4 flex flex-wrap items-center gap-2">
-              <div className="relative">
-                <input
-                  value={addCode}
-                  onChange={e => { setAddCode(e.target.value); setShowSuggestions(true) }}
-                  onFocus={() => setShowSuggestions(true)}
-                  onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-                  placeholder="Add ticker or company name, e.g. UBER"
-                  className="w-64 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 placeholder:text-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-                />
-                {showSuggestions && suggestions.length > 0 && (
-                  <ul className="absolute left-0 top-full z-10 mt-1 w-72 overflow-hidden rounded-lg border border-zinc-200 bg-white text-sm shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
-                    {suggestions.map(s => (
-                      <li key={s.code}>
-                        <button
-                          type="button"
-                          onMouseDown={() => { setAddCode(s.code); setShowSuggestions(false) }}
-                          className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                        >
-                          <span className="font-semibold text-zinc-800 dark:text-zinc-100">{s.code}</span>
-                          <span className="truncate text-xs text-zinc-500 dark:text-zinc-400">{s.name}</span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-              <button
-                type="submit"
-                disabled={addBusy || !addCode.trim()}
-                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
-              >
-                {addBusy ? 'Adding…' : '+ Add Stock'}
-              </button>
-              {addErr && <span className="text-xs text-red-500 dark:text-red-400">{addErr}</span>}
-            </form>
+            <div className="mb-4">
+              <TickerAddSearch onAdd={addAndSelectStock} placeholder="Add ticker or company name, e.g. UBER" />
+            </div>
 
             {err && (
               <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">

@@ -95,6 +95,19 @@ async def usa_stocks_top_picks(current_user: CurrentUser, limit: int = 5) -> dic
         ) from exc
 
 
+@router.get("/movers")
+async def usa_stocks_movers(current_user: CurrentUser, limit: int = 5) -> dict:
+    from app.services.usa_stocks_movers_service import get_movers
+
+    try:
+        return await get_movers(limit)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"USA Stocks movers unavailable: {exc}",
+        ) from exc
+
+
 @router.post("/custom")
 async def add_usa_stock(current_user: CurrentUser, body: AddUsaStockRequest) -> dict:
     from app.services.usa_stocks_service import add_custom_stock

@@ -5,11 +5,12 @@ import { NavBar } from '@/components/nav-bar'
 import { PriceChart } from '@/components/price-chart'
 import {
   getUsaStockQuotes, getUsaStockOhlc, getUsaStockPredict, getUsaStockRanked, getUsaStockTopPicks,
-  addUsaStock, removeUsaStock,
+  getUsaStockMovers, addUsaStock, removeUsaStock,
 } from '@/lib/api'
 import type {
   UsaStockQuote, UsaStockCode, UsaStockOhlcPeriod, UsaStockRankedPeriod, UsaStockRankedRow, UsaStockPrediction,
-  UsaStockTopPick, HistoryBar, ChartPeriod,
+  UsaStockTopPick, UsaMoverPeriod, UsaStockMoverEntry, UsaStockMomentumEntry, UsaStockMoversResponse,
+  HistoryBar, ChartPeriod,
 } from '@/lib/api'
 import type { PredictionPoint } from '@/components/price-chart'
 import { USA_STOCK_DIRECTORY } from '@/lib/usa-stock-directory'
@@ -557,7 +558,186 @@ function TopPicksTab({ onAnalyse }: { onAnalyse: (code: UsaStockCode) => void })
       )}
 
       {method && <p className="mt-4 text-xs text-zinc-400">{method}</p>}
+
+      <MoversSection onAnalyse={onAnalyse} />
     </>
+  )
+}
+
+// ── Movers: Top Gainers/Losers/Most Active (Day/Week/Month) + Momentum ──────
+function fmtVolume(v: number): string {
+  if (v >= 1_000_000_000) return `${(v / 1_000_000_000).toFixed(2)}B`
+  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(2)}M`
+  if (v >= 1_000) return `${(v / 1_000).toFixed(1)}K`
+  return v.toLocaleString('en-US')
+}
+
+function MoverRow({ rank, code, price, right, onAnalyse }: {
+  rank: number; code: UsaStockCode; price: number; right: React.ReactNode; onAnalyse: (code: UsaStockCode) => void
+}) {
+  return (
+    <li>
+      <button
+        onClick={() => onAnalyse(code)}
+        className="flex w-full items-center justify-between gap-2 py-1.5 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+      >
+        <span className="flex items-center gap-2">
+          <span className="text-[10px] text-zinc-400">{rank + 1}</span>
+          <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">{code}</span>
+        </span>
+        <span className="text-right text-xs">
+          <span className="block text-zinc-500 dark:text-zinc-400">${fmtUsd(price)}</span>
+          {right}
+        </span>
+      </button>
+    </li>
+  )
+}
+
+function MoverList({
+  title, icon, rows, metric, onAnalyse,
+}: {
+  title: string
+  icon: string
+  rows: UsaStockMoverEntry[]
+  metric: 'change_pct' | 'volume'
+  onAnalyse: (code: UsaStockCode) => void
+}) {
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
+      <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{icon} {title}</h3>
+      {rows.length === 0 ? (
+        <p className="py-4 text-center text-xs text-zinc-400">No data</p>
+      ) : (
+        <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
+          {rows.map((r, i) => (
+            <MoverRow
+              key={r.code}
+              rank={i}
+              code={r.code}
+              price={r.price}
+              onAnalyse={onAnalyse}
+              right={metric === 'change_pct' ? (
+                <span className={r.change_pct !== null && r.change_pct >= 0 ? 'font-semibold text-emerald-600 dark:text-emerald-400' : 'font-semibold text-red-500 dark:text-red-400'}>
+                  {r.change_pct !== null ? `${r.change_pct >= 0 ? '+' : ''}${r.change_pct.toFixed(2)}%` : '—'}
+                </span>
+              ) : (
+                <span className="font-semibold text-zinc-700 dark:text-zinc-200">{fmtVolume(r.volume)}</span>
+              )}
+            />
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function MomentumList({ rows, onAnalyse }: { rows: UsaStockMomentumEntry[]; onAnalyse: (code: UsaStockCode) => void }) {
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
+      <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">⚡ Momentum (RSI-14)</h3>
+      {rows.length === 0 ? (
+        <p className="py-4 text-center text-xs text-zinc-400">No data</p>
+      ) : (
+        <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
+          {rows.map((r, i) => (
+            <MoverRow
+              key={r.code}
+              rank={i}
+              code={r.code}
+              price={r.price}
+              onAnalyse={onAnalyse}
+              right={
+                <span className={r.bias === 'Bullish' ? 'font-semibold text-emerald-600 dark:text-emerald-400' : 'font-semibold text-red-500 dark:text-red-400'}>
+                  RSI {r.rsi} &middot; {r.bias}
+                </span>
+              }
+            />
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+const MOVER_PERIODS: { key: UsaMoverPeriod; label: string }[] = [
+  { key: 'day', label: 'Day' },
+  { key: 'week', label: 'Week' },
+  { key: 'month', label: 'Month' },
+]
+const MOVERS_POLL_MS = 60_000
+
+function MoversSection({ onAnalyse }: { onAnalyse: (code: UsaStockCode) => void }) {
+  const [period, setPeriod] = useState<UsaMoverPeriod>('day')
+  const [movers, setMovers] = useState<UsaStockMoversResponse | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const tokenRef = useRef('')
+
+  useEffect(() => {
+    tokenRef.current = localStorage.getItem('mts_token') ?? ''
+  }, [])
+
+  const load = useCallback(async () => {
+    const token = tokenRef.current
+    if (!token) return
+    try {
+      const res = await getUsaStockMovers(token, 5)
+      setMovers(res)
+      setErr(null)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed to load movers')
+    }
+  }, [])
+
+  useEffect(() => {
+    load().catch(() => {})
+    const id = setInterval(() => { load().catch(() => {}) }, MOVERS_POLL_MS)
+    return () => clearInterval(id)
+  }, [load])
+
+  const block = movers?.[period] ?? null
+
+  return (
+    <div className="mt-8">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">📈 Movers</h2>
+        <div className="flex items-center gap-1">
+          {MOVER_PERIODS.map(p => (
+            <button
+              key={p.key}
+              onClick={() => setPeriod(p.key)}
+              className="rounded-lg px-3 py-1 text-xs font-semibold transition-colors"
+              style={period === p.key
+                ? { background: '#4f46e5', color: '#fff' }
+                : { background: '#e4e4e7', color: '#52525b' }}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {err && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+          {err}
+        </div>
+      )}
+
+      {movers === null && !err ? (
+        <div className="flex justify-center py-12">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <MoverList title="Top Gainers" icon="🚀" rows={block?.gainers ?? []} metric="change_pct" onAnalyse={onAnalyse} />
+          <MoverList title="Top Losers" icon="🔻" rows={block?.losers ?? []} metric="change_pct" onAnalyse={onAnalyse} />
+          <MoverList title="Most Active" icon="🔥" rows={block?.most_active ?? []} metric="volume" onAnalyse={onAnalyse} />
+          <MomentumList rows={movers?.momentum ?? []} onAnalyse={onAnalyse} />
+        </div>
+      )}
+
+      {movers?.method && <p className="mt-3 text-xs text-zinc-400">{movers.method}</p>}
+    </div>
   )
 }
 
@@ -565,7 +745,7 @@ type MainTab = 'overview' | 'analyse' | 'top-picks'
 const MAIN_TABS: { id: MainTab; label: string }[] = [
   { id: 'overview', label: '📊 Overview' },
   { id: 'analyse', label: '🔍 Analyse Stock' },
-  { id: 'top-picks', label: '🏆 Top 5 Picks' },
+  { id: 'top-picks', label: '🏆 Top Picks & Movers' },
 ]
 
 export default function UsaStocksView() {

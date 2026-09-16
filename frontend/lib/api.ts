@@ -2108,6 +2108,34 @@ export type UsaStockTopPick = {
 }
 export type UsaStockTopPicksResponse = { generated_at: string; method: string; picks: UsaStockTopPick[] }
 
+// Matches backend usa_stocks_movers_service.get_movers.
+export type UsaMoverPeriod = 'day' | 'week' | 'month'
+export type UsaStockMoverEntry = {
+  code: UsaStockCode
+  price: number
+  change_pct: number | null
+  volume: number
+}
+export type UsaStockMomentumEntry = {
+  code: UsaStockCode
+  price: number
+  rsi: number
+  bias: 'Bullish' | 'Bearish'
+}
+export type UsaStockMoversPeriodBlock = {
+  gainers: UsaStockMoverEntry[]
+  losers: UsaStockMoverEntry[]
+  most_active: UsaStockMoverEntry[]
+}
+export type UsaStockMoversResponse = {
+  generated_at: string
+  method: string
+  day: UsaStockMoversPeriodBlock
+  week: UsaStockMoversPeriodBlock
+  month: UsaStockMoversPeriodBlock
+  momentum: UsaStockMomentumEntry[]
+}
+
 export async function getUsaStockQuotes(token: string): Promise<UsaStockQuote[]> {
   const res = await fetch(`${BASE}/api/v1/usa-stocks/quotes`, { headers: authHeaders(token) })
   if (!res.ok) {
@@ -2160,6 +2188,15 @@ export async function getUsaStockTopPicks(token: string, limit = 5): Promise<Usa
   if (!res.ok) {
     const b = await res.json().catch(() => ({}))
     throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch USA stock top picks')
+  }
+  return res.json()
+}
+
+export async function getUsaStockMovers(token: string, limit = 5): Promise<UsaStockMoversResponse> {
+  const res = await fetch(`${BASE}/api/v1/usa-stocks/movers?limit=${limit}`, { headers: authHeaders(token) })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch USA stock movers')
   }
   return res.json()
 }

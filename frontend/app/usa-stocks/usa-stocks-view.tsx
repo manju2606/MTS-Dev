@@ -7,7 +7,8 @@ import {
   getUsaStockQuotes, getUsaStockOhlc, getUsaStockPredict, getUsaStockRanked, addUsaStock, removeUsaStock,
 } from '@/lib/api'
 import type {
-  UsaStockQuote, UsaStockCode, UsaStockOhlcPeriod, UsaStockRankedPeriod, UsaStockRankedRow, HistoryBar, ChartPeriod,
+  UsaStockQuote, UsaStockCode, UsaStockOhlcPeriod, UsaStockRankedPeriod, UsaStockRankedRow, UsaStockPrediction,
+  HistoryBar, ChartPeriod,
 } from '@/lib/api'
 import type { PredictionPoint } from '@/components/price-chart'
 import { USA_STOCK_DIRECTORY } from '@/lib/usa-stock-directory'
@@ -179,7 +180,188 @@ function RankedPredictionTable({
   )
 }
 
+// ── Analyse Stock tab: LTP + day/week/month prediction for one stock ────────
+// Reuses the same /usa-stocks/predict endpoint the Overview chart/ranked
+// table already call, just at the '1D'/'1W'/'1M' OHLC periods -- predicted[0]
+// at each of those periods is literally "next day's close" / "next week's
+// close" / "next month's close" (see usa_stocks_prediction_service.get_prediction),
+// so no new backend endpoint is needed for a day/week/month forecast.
+
+type UsaHorizon = '1D' | '1W' | '1M'
+const HORIZONS: { key: UsaHorizon; label: string }[] = [
+  { key: '1D', label: 'Day' },
+  { key: '1W', label: 'Week' },
+  { key: '1M', label: 'Month' },
+]
+
+function HorizonPredictionCard({
+  label, prediction, price,
+}: { label: string; prediction: UsaStockPrediction | null; price: number | null }) {
+  const next = prediction?.predicted[0] ?? null
+  const pct = next && price ? ((next.predicted_close - price) / price) * 100 : null
+  const color = pct === null ? 'text-zinc-500 dark:text-zinc-400' : pct >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+      <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">{label} ahead</p>
+      {next ? (
+        <>
+          <p className={`text-lg font-bold ${color}`}>${fmtUsd(next.predicted_close)}</p>
+          <p className={`text-xs font-semibold ${color}`}>
+            {pct !== null ? `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%` : '—'}
+          </p>
+          <p className="mt-1 text-[10px] text-zinc-400">Range ${fmtUsd(next.lower)} – ${fmtUsd(next.upper)}</p>
+        </>
+      ) : (
+        <p className="text-xs text-zinc-400">{prediction?.note ?? 'Loading…'}</p>
+      )}
+    </div>
+  )
+}
+
+function AnalyseStockTab({
+  quotes, selectedStock, onSelectStock,
+}: { quotes: UsaStockQuote[] | null; selectedStock: UsaStockCode; onSelectStock: (code: UsaStockCode) => void }) {
+  const [horizon, setHorizon] = useState<UsaHorizon>('1D')
+  const [predictions, setPredictions] = useState<Partial<Record<UsaHorizon, UsaStockPrediction>>>({})
+  const [ohlc, setOhlc] = useState<HistoryBar[]>([])
+  const [chartLoading, setChartLoading] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const tokenRef = useRef('')
+
+  useEffect(() => {
+    tokenRef.current = localStorage.getItem('mts_token') ?? ''
+  }, [])
+
+  const loadPredictions = useCallback(async (code: UsaStockCode) => {
+    const token = tokenRef.current
+    if (!token || !code) return
+    setPredictions({})
+    try {
+      const results = await Promise.all(HORIZONS.map(h => getUsaStockPredict(token, code, h.key)))
+      setPredictions(Object.fromEntries(HORIZONS.map((h, i) => [h.key, results[i]])) as Record<UsaHorizon, UsaStockPrediction>)
+      setErr(null)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed to load predictions')
+    }
+  }, [])
+
+  const loadHorizonChart = useCallback(async (code: UsaStockCode, period: UsaHorizon) => {
+    const token = tokenRef.current
+    if (!token || !code) return
+    setChartLoading(true)
+    try {
+      setOhlc(await getUsaStockOhlc(token, code, period))
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed to load chart')
+    } finally {
+      setChartLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadPredictions(selectedStock).catch(() => {})
+  }, [selectedStock, loadPredictions])
+
+  useEffect(() => {
+    loadHorizonChart(selectedStock, horizon).catch(() => {})
+  }, [selectedStock, horizon, loadHorizonChart])
+
+  const quote = quotes?.find(q => q.code === selectedStock) ?? null
+  const activePrediction = predictions[horizon] ?? null
+  const predictionPoints: PredictionPoint[] = (activePrediction?.predicted ?? []).map(p => ({
+    time: p.time, predictedClose: p.predicted_close, upper: p.upper, lower: p.lower,
+  }))
+
+  return (
+    <>
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <label className="text-xs font-semibold text-zinc-500 dark:text-zinc-400" htmlFor="analyse-stock-picker">
+          Analyse:
+        </label>
+        <select
+          id="analyse-stock-picker"
+          value={selectedStock}
+          onChange={e => onSelectStock(e.target.value)}
+          className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm font-semibold text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+        >
+          {(quotes ?? []).map(q => <option key={q.code} value={q.code}>{q.code}</option>)}
+        </select>
+      </div>
+
+      {err && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+          {err}
+        </div>
+      )}
+
+      {quote && (
+        <div className="mb-6 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="mb-3 flex flex-wrap items-center gap-3">
+            <span className="text-xl font-bold text-zinc-900 dark:text-zinc-50">{quote.code}</span>
+            <span className={`text-sm font-semibold ${quote.change_pct >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+              ${fmtUsd(quote.price)} ({quote.change_pct >= 0 ? '+' : ''}{quote.change_pct.toFixed(2)}%)
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+            <div className="rounded-lg bg-zinc-50 p-2 dark:bg-zinc-800">
+              <p className="text-[10px] text-zinc-400">LTP</p>
+              <p className="font-semibold text-zinc-900 dark:text-zinc-100">${fmtUsd(quote.price)}</p>
+            </div>
+            <div className="rounded-lg bg-zinc-50 p-2 dark:bg-zinc-800">
+              <p className="text-[10px] text-zinc-400">Day High / Low</p>
+              <p className="font-semibold text-zinc-900 dark:text-zinc-100">${fmtUsd(quote.day_high)} / ${fmtUsd(quote.day_low)}</p>
+            </div>
+            <div className="rounded-lg bg-zinc-50 p-2 dark:bg-zinc-800">
+              <p className="text-[10px] text-zinc-400">Prev Close</p>
+              <p className="font-semibold text-zinc-900 dark:text-zinc-100">${fmtUsd(quote.prev_close)}</p>
+            </div>
+            <div className="rounded-lg bg-zinc-50 p-2 dark:bg-zinc-800">
+              <p className="text-[10px] text-zinc-400">Volume</p>
+              <p className="font-semibold text-zinc-900 dark:text-zinc-100">{quote.volume.toLocaleString('en-US')}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+        Predictions &middot; {activePrediction?.method ?? 'ema20-slope + roc-momentum + atr-cone (local heuristic, not a trained model)'}
+      </p>
+      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {HORIZONS.map(h => (
+          <HorizonPredictionCard key={h.key} label={h.label} prediction={predictions[h.key] ?? null} price={quote?.price ?? null} />
+        ))}
+      </div>
+
+      <PriceChart
+        symbol={selectedStock}
+        data={ohlc}
+        period={horizon}
+        onPeriodChange={p => setHorizon(p as UsaHorizon)}
+        periods={['1D', '1W', '1M']}
+        periodBucketSeconds={USA_STOCK_BUCKET_SECONDS}
+        defaultVisibleBars={USA_STOCK_VISIBLE_BARS}
+        loading={chartLoading}
+        currentPrice={quote?.price ?? null}
+        exchangeLabel="NASDAQ/NYSE"
+        currencySymbol="$"
+        prediction={predictionPoints}
+      />
+
+      {activePrediction?.note && (
+        <p className="mt-2 text-xs text-zinc-400">{activePrediction.note}</p>
+      )}
+    </>
+  )
+}
+
+type MainTab = 'overview' | 'analyse'
+const MAIN_TABS: { id: MainTab; label: string }[] = [
+  { id: 'overview', label: '📊 Overview' },
+  { id: 'analyse', label: '🔍 Analyse Stock' },
+]
+
 export default function UsaStocksView() {
+  const [tab, setTab] = useState<MainTab>('overview')
   const [quotes, setQuotes] = useState<UsaStockQuote[] | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [selectedStock, setSelectedStock] = useState<UsaStockCode>('AAPL')
@@ -356,115 +538,136 @@ export default function UsaStocksView() {
           </p>
         </div>
 
-        <form onSubmit={handleAdd} className="mb-4 flex flex-wrap items-center gap-2">
-          <div className="relative">
-            <input
-              value={addCode}
-              onChange={e => { setAddCode(e.target.value); setShowSuggestions(true) }}
-              onFocus={() => setShowSuggestions(true)}
-              onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-              placeholder="Add ticker or company name, e.g. UBER"
-              className="w-64 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 placeholder:text-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-            />
-            {showSuggestions && suggestions.length > 0 && (
-              <ul className="absolute left-0 top-full z-10 mt-1 w-72 overflow-hidden rounded-lg border border-zinc-200 bg-white text-sm shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
-                {suggestions.map(s => (
-                  <li key={s.code}>
-                    <button
-                      type="button"
-                      onMouseDown={() => { setAddCode(s.code); setShowSuggestions(false) }}
-                      className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                    >
-                      <span className="font-semibold text-zinc-800 dark:text-zinc-100">{s.code}</span>
-                      <span className="truncate text-xs text-zinc-500 dark:text-zinc-400">{s.name}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-          <button
-            type="submit"
-            disabled={addBusy || !addCode.trim()}
-            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
-          >
-            {addBusy ? 'Adding…' : '+ Add Stock'}
-          </button>
-          {addErr && <span className="text-xs text-red-500 dark:text-red-400">{addErr}</span>}
-        </form>
+        <div className="mb-6 flex items-center gap-1">
+          {MAIN_TABS.map(t => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className="rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-colors"
+              style={tab === t.id
+                ? { background: '#4f46e5', color: '#fff' }
+                : { background: '#e4e4e7', color: '#52525b' }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
 
-        {err && (
-          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
-            {err}
-          </div>
-        )}
-
-        {quotes === null && !err ? (
-          <div className="flex justify-center py-16">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
-          </div>
+        {tab === 'analyse' ? (
+          <AnalyseStockTab quotes={quotes} selectedStock={selectedStock} onSelectStock={setSelectedStock} />
         ) : (
           <>
-            <h2 className="mb-3 text-sm font-semibold text-zinc-700 dark:text-zinc-200">
-              🔥 Day Performance Heat Map
-            </h2>
-            <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
-              {heatRanked.map((q, i) => (
-                <HeatTile key={q.code} quote={q} rank={i} selected={q.code === selectedStock} onClick={() => setSelectedStock(q.code)} onRemove={handleRemove} />
-              ))}
-            </div>
-
-            <h2 className="mb-3 text-sm font-semibold text-zinc-700 dark:text-zinc-200">
-              📊 Ranked USA Stocks Prediction
-            </h2>
-            {ranked === null ? (
-              <div className="mb-8 flex justify-center py-8">
-                <div className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
-              </div>
-            ) : (
-              <div className="mb-8">
-                <RankedPredictionTable
-                  rows={sortedRanked}
-                  sortKey={rankSortKey}
-                  sortDir={rankSortDir}
-                  onToggleSort={toggleRankSort}
+            <form onSubmit={handleAdd} className="mb-4 flex flex-wrap items-center gap-2">
+              <div className="relative">
+                <input
+                  value={addCode}
+                  onChange={e => { setAddCode(e.target.value); setShowSuggestions(true) }}
+                  onFocus={() => setShowSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                  placeholder="Add ticker or company name, e.g. UBER"
+                  className="w-64 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 placeholder:text-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
                 />
-                <p className="mt-2 text-xs text-zinc-400">
-                  Predicted prices are kept warm by a background job during NYSE/NASDAQ hours (same pattern
-                  Crypto/MCX use) so this loads fast &mdash; a dash (—) means that stock/period hasn&apos;t been
-                  refreshed yet or the market is closed.
-                </p>
+                {showSuggestions && suggestions.length > 0 && (
+                  <ul className="absolute left-0 top-full z-10 mt-1 w-72 overflow-hidden rounded-lg border border-zinc-200 bg-white text-sm shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+                    {suggestions.map(s => (
+                      <li key={s.code}>
+                        <button
+                          type="button"
+                          onMouseDown={() => { setAddCode(s.code); setShowSuggestions(false) }}
+                          className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                        >
+                          <span className="font-semibold text-zinc-800 dark:text-zinc-100">{s.code}</span>
+                          <span className="truncate text-xs text-zinc-500 dark:text-zinc-400">{s.name}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <button
+                type="submit"
+                disabled={addBusy || !addCode.trim()}
+                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {addBusy ? 'Adding…' : '+ Add Stock'}
+              </button>
+              {addErr && <span className="text-xs text-red-500 dark:text-red-400">{addErr}</span>}
+            </form>
+
+            {err && (
+              <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+                {err}
               </div>
             )}
 
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-                  {selectedQuote?.code ?? selectedStock} Price Chart
-                </h2>
-                {selectedQuote && (
-                  <p className="mt-0.5 text-xs text-zinc-400">
-                    ${fmtUsd(selectedQuote.price)} &middot; Day High ${fmtUsd(selectedQuote.day_high)}
-                    {' '}&middot; Day Low ${fmtUsd(selectedQuote.day_low)} &middot; Prev Close ${fmtUsd(selectedQuote.prev_close)}
-                  </p>
-                )}
+            {quotes === null && !err ? (
+              <div className="flex justify-center py-16">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
               </div>
-            </div>
+            ) : (
+              <>
+                <h2 className="mb-3 text-sm font-semibold text-zinc-700 dark:text-zinc-200">
+                  🔥 Day Performance Heat Map
+                </h2>
+                <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
+                  {heatRanked.map((q, i) => (
+                    <HeatTile key={q.code} quote={q} rank={i} selected={q.code === selectedStock} onClick={() => setSelectedStock(q.code)} onRemove={handleRemove} />
+                  ))}
+                </div>
 
-            <PriceChart
-              symbol={selectedStock}
-              data={ohlc}
-              period={chartPeriod}
-              onPeriodChange={p => setChartPeriod(p as UsaStockOhlcPeriod)}
-              periods={CHART_PERIODS}
-              periodBucketSeconds={USA_STOCK_BUCKET_SECONDS}
-              defaultVisibleBars={USA_STOCK_VISIBLE_BARS}
-              loading={chartLoading}
-              currentPrice={selectedQuote?.price ?? null}
-              exchangeLabel="NASDAQ/NYSE"
-              currencySymbol="$"
-              prediction={prediction}
-            />
+                <h2 className="mb-3 text-sm font-semibold text-zinc-700 dark:text-zinc-200">
+                  📊 Ranked USA Stocks Prediction
+                </h2>
+                {ranked === null ? (
+                  <div className="mb-8 flex justify-center py-8">
+                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+                  </div>
+                ) : (
+                  <div className="mb-8">
+                    <RankedPredictionTable
+                      rows={sortedRanked}
+                      sortKey={rankSortKey}
+                      sortDir={rankSortDir}
+                      onToggleSort={toggleRankSort}
+                    />
+                    <p className="mt-2 text-xs text-zinc-400">
+                      Predicted prices are kept warm by a background job during NYSE/NASDAQ hours (same pattern
+                      Crypto/MCX use) so this loads fast &mdash; a dash (—) means that stock/period hasn&apos;t been
+                      refreshed yet or the market is closed.
+                    </p>
+                  </div>
+                )}
+
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                      {selectedQuote?.code ?? selectedStock} Price Chart
+                    </h2>
+                    {selectedQuote && (
+                      <p className="mt-0.5 text-xs text-zinc-400">
+                        ${fmtUsd(selectedQuote.price)} &middot; Day High ${fmtUsd(selectedQuote.day_high)}
+                        {' '}&middot; Day Low ${fmtUsd(selectedQuote.day_low)} &middot; Prev Close ${fmtUsd(selectedQuote.prev_close)}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <PriceChart
+                  symbol={selectedStock}
+                  data={ohlc}
+                  period={chartPeriod}
+                  onPeriodChange={p => setChartPeriod(p as UsaStockOhlcPeriod)}
+                  periods={CHART_PERIODS}
+                  periodBucketSeconds={USA_STOCK_BUCKET_SECONDS}
+                  defaultVisibleBars={USA_STOCK_VISIBLE_BARS}
+                  loading={chartLoading}
+                  currentPrice={selectedQuote?.price ?? null}
+                  exchangeLabel="NASDAQ/NYSE"
+                  currencySymbol="$"
+                  prediction={prediction}
+                />
+              </>
+            )}
           </>
         )}
       </div>

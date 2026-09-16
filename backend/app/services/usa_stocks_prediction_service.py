@@ -114,3 +114,79 @@ async def get_ranked_predictions() -> dict:
 
     rows.sort(key=_sort_key, reverse=True)
     return {"generated_at": datetime.utcnow().isoformat(), "ranked": rows}
+
+
+# ── Top Picks: "5 best stocks to trade today" ────────────────────────────────
+# Not a separate model -- turns the same 1D/1W get_prediction heuristic each
+# stock already gets into a 0-100 "AI score" (50 = neutral) and a BUY/SELL/
+# HOLD call, then ranks by conviction (distance from 50) so the most
+# lopsided calls surface first, in either direction -- a confident SELL is as
+# tradeable as a confident BUY, so this doesn't only surface bullish names.
+TOP_PICKS_HORIZONS: tuple[str, ...] = ("1D", "1W")
+_SCORE_PCT_SCALE = 10.0  # +/-5% predicted move saturates the score at 0/100
+BUY_SCORE_THRESHOLD = 60
+SELL_SCORE_THRESHOLD = 40
+
+
+def _score_and_signal(pct_1d: float) -> tuple[int, str]:
+    score = round(max(0.0, min(100.0, 50.0 + pct_1d * _SCORE_PCT_SCALE)))
+    if score >= BUY_SCORE_THRESHOLD:
+        signal = "BUY"
+    elif score <= SELL_SCORE_THRESHOLD:
+        signal = "SELL"
+    else:
+        signal = "HOLD"
+    return score, signal
+
+
+async def _top_pick_row(code: str, quote: dict | None) -> dict | None:
+    try:
+        day_pred, week_pred = await asyncio.gather(
+            get_prediction(code, "1D"), get_prediction(code, "1W")
+        )
+    except Exception:
+        return None
+
+    day_next = next(iter(day_pred.get("predicted") or []), None)
+    if day_next is None:
+        return None
+    price = quote["price"] if quote else day_pred.get("last_actual_close")
+    if not price:
+        return None
+
+    week_next = next(iter(week_pred.get("predicted") or []), None)
+    pct_1d = (day_next["predicted_close"] - price) / price * 100
+    pct_1w = (week_next["predicted_close"] - price) / price * 100 if week_next else None
+    score, signal = _score_and_signal(pct_1d)
+
+    return {
+        "code": code,
+        "price": price,
+        "change_pct": quote.get("change_pct") if quote else None,
+        "signal": signal,
+        "ai_score": score,
+        "day": {"predicted_close": day_next["predicted_close"], "change_pct": round(pct_1d, 2)},
+        "week": {
+            "predicted_close": week_next["predicted_close"] if week_next else None,
+            "change_pct": round(pct_1w, 2) if pct_1w is not None else None,
+        },
+    }
+
+
+async def get_top_picks(limit: int = 5) -> dict:
+    quotes = await get_quotes()
+    quotes_by_code = {q["code"]: q for q in quotes}
+    codes = await get_tracked_codes()
+    rows = await asyncio.gather(*[_top_pick_row(c, quotes_by_code.get(c)) for c in codes])
+    picks = [r for r in rows if r is not None]
+    picks.sort(key=lambda r: abs(r["ai_score"] - 50), reverse=True)
+
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "method": (
+            "ema20-slope + roc-momentum + atr-cone (local heuristic, not a trained model) -- "
+            "AI score rescales the predicted next-day % move to 0-100 (50=neutral); "
+            "not a substitute for real risk management (no entry/stop/target here)"
+        ),
+        "picks": picks[:limit],
+    }

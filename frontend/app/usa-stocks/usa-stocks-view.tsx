@@ -4,11 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NavBar } from '@/components/nav-bar'
 import { PriceChart } from '@/components/price-chart'
 import {
-  getUsaStockQuotes, getUsaStockOhlc, getUsaStockPredict, getUsaStockRanked, addUsaStock, removeUsaStock,
+  getUsaStockQuotes, getUsaStockOhlc, getUsaStockPredict, getUsaStockRanked, getUsaStockTopPicks,
+  addUsaStock, removeUsaStock,
 } from '@/lib/api'
 import type {
   UsaStockQuote, UsaStockCode, UsaStockOhlcPeriod, UsaStockRankedPeriod, UsaStockRankedRow, UsaStockPrediction,
-  HistoryBar, ChartPeriod,
+  UsaStockTopPick, HistoryBar, ChartPeriod,
 } from '@/lib/api'
 import type { PredictionPoint } from '@/components/price-chart'
 import { USA_STOCK_DIRECTORY } from '@/lib/usa-stock-directory'
@@ -439,10 +440,132 @@ function AnalyseStockTab({
   )
 }
 
-type MainTab = 'overview' | 'analyse'
+// ── Top Picks: "5 best stocks to trade today" ────────────────────────────────
+const TOP_PICKS_POLL_MS = 60_000
+const SIGNAL_STYLES: Record<UsaStockTopPick['signal'], string> = {
+  BUY: 'bg-emerald-600 text-white',
+  SELL: 'bg-red-600 text-white',
+  HOLD: 'bg-zinc-400 text-white',
+}
+
+function ScoreBar({ score }: { score: number }) {
+  const color = score >= 60 ? '#10b981' : score <= 40 ? '#ef4444' : '#a1a1aa'
+  return (
+    <div className="flex items-center gap-2">
+      <div className="h-1.5 w-16 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
+        <div className="h-full rounded-full" style={{ width: `${score}%`, background: color }} />
+      </div>
+      <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">{score}</span>
+    </div>
+  )
+}
+
+function TopPickCard({ pick, rank, onAnalyse }: { pick: UsaStockTopPick; rank: number; onAnalyse: (code: UsaStockCode) => void }) {
+  const day = pick.day
+  const week = pick.week
+  return (
+    <button
+      onClick={() => onAnalyse(pick.code)}
+      className="flex flex-col items-start rounded-2xl border border-zinc-200 bg-white p-4 text-left shadow-sm transition-transform hover:scale-[1.02] dark:border-zinc-800 dark:bg-zinc-900"
+    >
+      <div className="mb-2 flex w-full items-center justify-between">
+        <span className="text-xs font-semibold text-zinc-400">#{rank + 1}</span>
+        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${SIGNAL_STYLES[pick.signal]}`}>{pick.signal}</span>
+      </div>
+      <span className="text-lg font-bold text-zinc-900 dark:text-zinc-50">{pick.code}</span>
+      <span className="text-sm text-zinc-500 dark:text-zinc-400">${fmtUsd(pick.price)}</span>
+      <div className="mt-2 w-full">
+        <ScoreBar score={pick.ai_score} />
+      </div>
+      <div className="mt-3 grid w-full grid-cols-2 gap-2 text-xs">
+        <div>
+          <p className="text-[10px] text-zinc-400">Day</p>
+          <p className={day.change_pct >= 0 ? 'font-semibold text-emerald-600 dark:text-emerald-400' : 'font-semibold text-red-500 dark:text-red-400'}>
+            ${fmtUsd(day.predicted_close)} ({day.change_pct >= 0 ? '+' : ''}{day.change_pct.toFixed(2)}%)
+          </p>
+        </div>
+        <div>
+          <p className="text-[10px] text-zinc-400">Week</p>
+          {week.predicted_close !== null && week.change_pct !== null ? (
+            <p className={week.change_pct >= 0 ? 'font-semibold text-emerald-600 dark:text-emerald-400' : 'font-semibold text-red-500 dark:text-red-400'}>
+              ${fmtUsd(week.predicted_close)} ({week.change_pct >= 0 ? '+' : ''}{week.change_pct.toFixed(2)}%)
+            </p>
+          ) : <p className="text-zinc-400">—</p>}
+        </div>
+      </div>
+    </button>
+  )
+}
+
+function TopPicksTab({ onAnalyse }: { onAnalyse: (code: UsaStockCode) => void }) {
+  const [picks, setPicks] = useState<UsaStockTopPick[] | null>(null)
+  const [method, setMethod] = useState<string | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const tokenRef = useRef('')
+
+  useEffect(() => {
+    tokenRef.current = localStorage.getItem('mts_token') ?? ''
+  }, [])
+
+  const load = useCallback(async () => {
+    const token = tokenRef.current
+    if (!token) return
+    try {
+      const res = await getUsaStockTopPicks(token, 5)
+      setPicks(res.picks)
+      setMethod(res.method)
+      setErr(null)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed to load top picks')
+    }
+  }, [])
+
+  useEffect(() => {
+    load().catch(() => {})
+    const id = setInterval(() => { load().catch(() => {}) }, TOP_PICKS_POLL_MS)
+    return () => clearInterval(id)
+  }, [load])
+
+  return (
+    <>
+      <p className="mb-4 text-sm text-zinc-500 dark:text-zinc-400">
+        Today&apos;s 5 highest-conviction calls among tracked USA stocks, ranked by AI score (0-100, 50=neutral)
+        &mdash; the same local heuristic prediction Analyse Stock uses, just turned into a sortable score and a
+        BUY/SELL/HOLD call. Not a trained model or formal recommendation &mdash; no entry/stop/target here, click
+        a card to open it in Analyse Stock.
+      </p>
+
+      {err && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+          {err}
+        </div>
+      )}
+
+      {picks === null && !err ? (
+        <div className="flex justify-center py-16">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {(picks ?? []).map((p, i) => (
+            <TopPickCard key={p.code} pick={p} rank={i} onAnalyse={onAnalyse} />
+          ))}
+          {picks && picks.length === 0 && (
+            <p className="col-span-full text-sm text-zinc-400">No picks available yet.</p>
+          )}
+        </div>
+      )}
+
+      {method && <p className="mt-4 text-xs text-zinc-400">{method}</p>}
+    </>
+  )
+}
+
+type MainTab = 'overview' | 'analyse' | 'top-picks'
 const MAIN_TABS: { id: MainTab; label: string }[] = [
   { id: 'overview', label: '📊 Overview' },
   { id: 'analyse', label: '🔍 Analyse Stock' },
+  { id: 'top-picks', label: '🏆 Top 5 Picks' },
 ]
 
 export default function UsaStocksView() {
@@ -624,6 +747,8 @@ export default function UsaStocksView() {
             onSelectStock={setSelectedStock}
             onAddStock={addAndSelectStock}
           />
+        ) : tab === 'top-picks' ? (
+          <TopPicksTab onAnalyse={code => { setSelectedStock(code); setTab('analyse') }} />
         ) : (
           <>
             <div className="mb-4">

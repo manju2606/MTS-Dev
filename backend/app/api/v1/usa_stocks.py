@@ -82,6 +82,19 @@ async def usa_stocks_ranked(current_user: CurrentUser) -> dict:
         ) from exc
 
 
+@router.get("/top-picks")
+async def usa_stocks_top_picks(current_user: CurrentUser, limit: int = 5) -> dict:
+    from app.services.usa_stocks_prediction_service import get_top_picks
+
+    try:
+        return await get_top_picks(limit)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"USA Stocks top picks unavailable: {exc}",
+        ) from exc
+
+
 @router.post("/custom")
 async def add_usa_stock(current_user: CurrentUser, body: AddUsaStockRequest) -> dict:
     from app.services.usa_stocks_service import add_custom_stock

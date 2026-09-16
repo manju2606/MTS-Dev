@@ -2095,6 +2095,19 @@ export type UsaStockRankedRow = {
 }
 export type UsaStockRankedResponse = { generated_at: string; ranked: UsaStockRankedRow[] }
 
+// Matches backend usa_stocks_prediction_service.get_top_picks.
+export type UsaStockSignal = 'BUY' | 'SELL' | 'HOLD'
+export type UsaStockTopPick = {
+  code: UsaStockCode
+  price: number
+  change_pct: number | null
+  signal: UsaStockSignal
+  ai_score: number
+  day: { predicted_close: number; change_pct: number }
+  week: { predicted_close: number | null; change_pct: number | null }
+}
+export type UsaStockTopPicksResponse = { generated_at: string; method: string; picks: UsaStockTopPick[] }
+
 export async function getUsaStockQuotes(token: string): Promise<UsaStockQuote[]> {
   const res = await fetch(`${BASE}/api/v1/usa-stocks/quotes`, { headers: authHeaders(token) })
   if (!res.ok) {
@@ -2138,6 +2151,15 @@ export async function getUsaStockRanked(token: string): Promise<UsaStockRankedRe
   if (!res.ok) {
     const b = await res.json().catch(() => ({}))
     throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch ranked USA stock predictions')
+  }
+  return res.json()
+}
+
+export async function getUsaStockTopPicks(token: string, limit = 5): Promise<UsaStockTopPicksResponse> {
+  const res = await fetch(`${BASE}/api/v1/usa-stocks/top-picks?limit=${limit}`, { headers: authHeaders(token) })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({}))
+    throw new Error((b as { detail?: string }).detail ?? 'Failed to fetch USA stock top picks')
   }
   return res.json()
 }

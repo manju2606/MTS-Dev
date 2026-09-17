@@ -9,8 +9,8 @@ import {
 } from '@/lib/api'
 import type {
   UsaStockQuote, UsaStockCode, UsaStockOhlcPeriod, UsaStockRankedPeriod, UsaStockRankedRow, UsaStockPrediction,
-  UsaStockTopPick, UsaMoverPeriod, UsaStockMoverEntry, UsaStockMomentumEntry, UsaStockMoversResponse,
-  HistoryBar, ChartPeriod,
+  UsaStockTopPick, UsaStockTopPicksResponse, UsaMoverPeriod, UsaStockMoverEntry, UsaStockMomentumEntry,
+  UsaStockMoversResponse, HistoryBar, ChartPeriod,
 } from '@/lib/api'
 import type { PredictionPoint } from '@/components/price-chart'
 import { USA_STOCK_DIRECTORY } from '@/lib/usa-stock-directory'
@@ -18,6 +18,8 @@ import { readPageCache, writePageCache } from '@/lib/page-cache'
 
 const QUOTES_CACHE_KEY = 'usa-stocks:quotes'
 const RANKED_CACHE_KEY = 'usa-stocks:ranked'
+const TOP_PICKS_CACHE_KEY = 'usa-stocks:top-picks'
+const MOVERS_CACHE_KEY = 'usa-stocks:movers'
 const QUOTES_POLL_MS = 30_000
 const RANK_MEDALS = ['🥇', '🥈', '🥉']
 
@@ -504,10 +506,6 @@ function TopPicksTab({ onAnalyse }: { onAnalyse: (code: UsaStockCode) => void })
   const [err, setErr] = useState<string | null>(null)
   const tokenRef = useRef('')
 
-  useEffect(() => {
-    tokenRef.current = localStorage.getItem('mts_token') ?? ''
-  }, [])
-
   const load = useCallback(async () => {
     const token = tokenRef.current
     if (!token) return
@@ -516,12 +514,25 @@ function TopPicksTab({ onAnalyse }: { onAnalyse: (code: UsaStockCode) => void })
       setPicks(res.picks)
       setMethod(res.method)
       setErr(null)
+      writePageCache(TOP_PICKS_CACHE_KEY, res)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to load top picks')
     }
   }, [])
 
   useEffect(() => {
+    tokenRef.current = localStorage.getItem('mts_token') ?? ''
+    // Show the last-known picks instantly (from a previous visit) instead
+    // of a blank spinner, then load() below fetches fresh data in the
+    // background and overwrites both state and the cache -- same pattern
+    // as the Overview tab's quotes/ranked cache.
+    const cached = readPageCache<UsaStockTopPicksResponse>(TOP_PICKS_CACHE_KEY)
+    if (cached) {
+      Promise.resolve().then(() => {
+        setPicks(cached.picks)
+        setMethod(cached.method)
+      })
+    }
     load().catch(() => {})
     const id = setInterval(() => { load().catch(() => {}) }, TOP_PICKS_POLL_MS)
     return () => clearInterval(id)
@@ -673,10 +684,6 @@ function MoversSection({ onAnalyse }: { onAnalyse: (code: UsaStockCode) => void 
   const [err, setErr] = useState<string | null>(null)
   const tokenRef = useRef('')
 
-  useEffect(() => {
-    tokenRef.current = localStorage.getItem('mts_token') ?? ''
-  }, [])
-
   const load = useCallback(async () => {
     const token = tokenRef.current
     if (!token) return
@@ -684,12 +691,21 @@ function MoversSection({ onAnalyse }: { onAnalyse: (code: UsaStockCode) => void 
       const res = await getUsaStockMovers(token, 5)
       setMovers(res)
       setErr(null)
+      writePageCache(MOVERS_CACHE_KEY, res)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to load movers')
     }
   }, [])
 
   useEffect(() => {
+    tokenRef.current = localStorage.getItem('mts_token') ?? ''
+    // Show the last-known movers instantly (from a previous visit) instead
+    // of a blank spinner, then load() below fetches fresh data in the
+    // background and overwrites both state and the cache.
+    const cached = readPageCache<UsaStockMoversResponse>(MOVERS_CACHE_KEY)
+    if (cached) {
+      Promise.resolve().then(() => setMovers(cached))
+    }
     load().catch(() => {})
     const id = setInterval(() => { load().catch(() => {}) }, MOVERS_POLL_MS)
     return () => clearInterval(id)

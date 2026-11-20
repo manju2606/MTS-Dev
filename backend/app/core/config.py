@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     # signals injected by strangers.
     PINE_ALERTS_WEBHOOK_SECRET: str | None = None
 
+    # Liquidity Flow (SMC / order-flow analytics page). Set false to hide the
+    # module entirely without touching any other MTS feature.
+    ENABLE_LIQUIDITY_AI: bool = True
+
     # Phase 2
     ANTHROPIC_API_KEY: str | None = None
     PAPER_CAPITAL: float = 100_000.0  # default paper trading capital in INR

@@ -82,6 +82,11 @@ const NAV_GROUPS: NavGroup[] = [
     icon:  'barChart',
     roles: ['viewer', 'trader', 'admin'],
     items: [
+      // Gated by ENABLE_LIQUIDITY_AI (backend) / NEXT_PUBLIC_ENABLE_LIQUIDITY_AI (frontend).
+      // Unset or "true" shows the item; "false" hides it.
+      ...(process.env.NEXT_PUBLIC_ENABLE_LIQUIDITY_AI !== 'false'
+        ? [{ href: '/liquidity-flow', label: 'Liquidity Flow', icon: 'layers', desc: 'Smart Money Concepts: order blocks, liquidity sweeps, BOS/CHoCH & AI bias' }]
+        : []),
       { href: '/market-pulse', label: 'Market Pulse',  icon: 'activity',  desc: 'Live prices, indices & news' },
       { href: '/scanner',      label: 'Scanner',       icon: 'search',    desc: '16 technical & institutional scans' },
       { href: '/chartink',     label: 'Chartink',      icon: 'activity',  desc: 'Scan-alert candidates scored by RSI/ADX/volume/MACD · entry/SL/target' },

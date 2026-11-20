@@ -3866,6 +3866,152 @@ export async function toggleEmailRecipient(token: string, id: string): Promise<E
   return res.json()
 }
 
+// ── Liquidity Flow (Smart Money Concepts analytics) ──────────────────────────
+
+export type LiquiditySwing = { kind: 'high' | 'low'; index: number; price: number; time: number; confirm_index: number }
+export type LiquidityStructureEvent = {
+  kind: 'BOS_UP' | 'BOS_DOWN' | 'CHOCH_UP' | 'CHOCH_DOWN'
+  index: number; time: number; level: number; close: number; origin_index: number | null
+}
+export type LiquidityOrderBlock = {
+  side: 'bullish' | 'bearish'; index: number; time: number; top: number; bottom: number
+  status: 'active' | 'mitigated'; source_event: string
+}
+export type LiquidityPool = {
+  side: 'buy_side' | 'sell_side'; level: number; touches: number; last_index: number; last_time: number
+}
+export type LiquiditySweep = {
+  side: 'bullish' | 'bearish'; index: number; time: number; level: number; wick_extreme: number
+}
+export type LiquidityRecommendation = {
+  signal: 'BUY' | 'SELL' | 'HOLD'
+  confidence: number
+  entry_price: number
+  stop_loss: number
+  target: number
+  risk_reward_ratio: number
+  holding_period: string
+  explanation: string
+  net_score: number
+  bullish_score: number
+  bearish_score: number
+}
+export type LiquidityFlowResult = {
+  symbol: string
+  interval: '1d' | '1h'
+  last_close: number
+  atr: number
+  n_bars: number
+  trend: 'bullish' | 'bearish' | 'undefined'
+  structure_events: LiquidityStructureEvent[]
+  order_blocks: LiquidityOrderBlock[]
+  liquidity_pools: LiquidityPool[]
+  sweeps: LiquiditySweep[]
+  swing_highs: LiquiditySwing[]
+  swing_lows: LiquiditySwing[]
+  recommendation: LiquidityRecommendation
+  candles: HistoryBar[]
+  disclaimer: string
+}
+
+export async function getLiquidityFlow(
+  token: string,
+  symbol: string,
+  interval: '1d' | '1h' = '1d',
+): Promise<LiquidityFlowResult> {
+  const params = new URLSearchParams({ symbol, interval })
+  const res = await fetch(`${BASE}/api/v1/liquidity-flow/analyze?${params}`, { headers: authHeaders(token) })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Analysis failed') }
+  return res.json()
+}
+
+export type LiquidityMtfResult = {
+  symbol: string
+  confirmation: {
+    higher_signal: string; lower_signal: string; higher_trend: string; lower_trend: string
+    aligned: boolean; verdict: string; note: string
+  }
+  daily: { signal: string; confidence: number; trend: string; recommendation: LiquidityRecommendation }
+  hourly: { signal: string; confidence: number; trend: string; recommendation: LiquidityRecommendation }
+  disclaimer: string
+}
+
+export type LiquidityBacktestMetrics = {
+  trades: number; wins: number; losses: number; win_rate: number | null; avg_r: number | null
+  expectancy_r: number | null; profit_factor: number | null; total_r: number; max_drawdown_r: number
+  avg_bars_held: number | null; long: number; short: number
+}
+
+export type LiquidityBacktestTrade = {
+  side: 'BUY' | 'SELL'; entry_time: number; entry: number; stop: number; target: number
+  exit_time: number; exit_price: number; reason: 'stop' | 'target' | 'time'; r_multiple: number; confidence: number
+}
+
+export type LiquidityBacktestResult = {
+  symbol: string
+  interval: '1d' | '1h'
+  bars: number
+  config: { max_hold_bars: number; slippage_pct: number; warmup: number; entry: string; ambiguous_bar: string }
+  metrics: LiquidityBacktestMetrics
+  walk_forward: {
+    folds: number
+    segments: { fold: number; from: number; to: number; bars: number; metrics: LiquidityBacktestMetrics }[]
+    positive_expectancy_folds: number
+    stability: number
+  }
+  monte_carlo: { sims?: number; method?: string; final_r_p5?: number; final_r_p50?: number;
+    final_r_p95?: number; max_dd_r_p50?: number; max_dd_r_p95?: number; prob_profit?: number }
+  trades: LiquidityBacktestTrade[]
+  disclaimer: string
+}
+
+export type LiquidityScanRow = {
+  symbol: string; signal: 'BUY' | 'SELL' | 'HOLD'; confidence: number; entry_price: number
+  stop_loss: number; target: number; risk_reward_ratio: number; trend: string; last_close: number; net_score: number
+}
+
+export type LiquidityScanResult = {
+  universe: string; side: 'bullish' | 'bearish' | 'all'; scanned: number; analysed: number
+  failed_count: number; matches: number; results: LiquidityScanRow[]; generated_at: number; disclaimer: string
+}
+
+export type LiquidityOrderFlowResult = {
+  symbol: string
+  interval: '1d' | '1h'
+  volume_profile: {
+    source: string; note: string; poc: number | null; value_area_high: number | null
+    value_area_low: number | null; total_volume: number
+    buckets: { low: number; high: number; volume: number }[]
+  }
+  cvd: { source: string; note: string; series: { time: number; delta: number; cvd: number }[] }
+  footprint: { source: string; available: boolean; reason: string }
+  bid_ask_imbalance: { source: string; available: boolean; reason: string }
+  open_interest: { source: string; available: boolean; reason: string }
+  disclaimer: string
+}
+
+async function liquidityGet<T>(token: string, path: string, params: Record<string, string>): Promise<T> {
+  const qs = new URLSearchParams(params)
+  const res = await fetch(`${BASE}/api/v1/liquidity-flow/${path}?${qs}`, { headers: authHeaders(token) })
+  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error((b as { detail?: string }).detail ?? 'Request failed') }
+  return res.json()
+}
+
+export const getLiquidityMtf = (token: string, symbol: string) =>
+  liquidityGet<LiquidityMtfResult>(token, 'mtf', { symbol })
+
+export const getLiquidityBacktest = (token: string, symbol: string, interval: '1d' | '1h' = '1d') =>
+  liquidityGet<LiquidityBacktestResult>(token, 'backtest', { symbol, interval })
+
+export const getLiquidityScan = (
+  token: string,
+  universe: 'nifty50' | 'nifty100' | 'nifty200',
+  side: 'bullish' | 'bearish' | 'all' = 'all',
+) => liquidityGet<LiquidityScanResult>(token, 'scan', { universe, side, limit: '20' })
+
+export const getLiquidityOrderFlow = (token: string, symbol: string, interval: '1d' | '1h' = '1d') =>
+  liquidityGet<LiquidityOrderFlowResult>(token, 'order-flow', { symbol, interval })
+
 // ── Market Pulse ───────────────────────────────────────────────────────────
 
 export async function getMarketPulse(

@@ -60,7 +60,11 @@ async def _cache_rsi_signal(user_id: str, version: str, capital: float, payload:
         from app.core.config import settings
 
         r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
-        await r.set(_rsi_signal_cache_key(user_id, version, capital), json.dumps(payload), ex=_RSI_SIGNAL_CACHE_TTL)
+        await r.set(
+            _rsi_signal_cache_key(user_id, version, capital),
+            json.dumps(payload),
+            ex=_RSI_SIGNAL_CACHE_TTL,
+        )
         await r.aclose()
     except Exception as exc:
         log.warning("mcx.rsi_signal_cache.write_failed", error=str(exc))
@@ -164,16 +168,22 @@ def _serialize(version: str, state: strat.LiveSignalState, trades: list[strat.Li
     }
 
 
-async def _compute(user_id: str, version: str, capital: float) -> tuple[strat.LiveSignalState, list[strat.LiveTrade]]:
+async def _compute(
+    user_id: str, version: str, capital: float
+) -> tuple[strat.LiveSignalState, list[strat.LiveTrade]]:
     if version not in RSI_REVERSION_VERSIONS:
-        raise ValueError(f"Unknown RSI Reversion version '{version}' -- expected one of "
-                          f"{list(RSI_REVERSION_VERSIONS)}")
+        raise ValueError(
+            f"Unknown RSI Reversion version '{version}' -- expected one of "
+            f"{list(RSI_REVERSION_VERSIONS)}"
+        )
     bars = await get_history(user_id, "5m", RSI_SIGNAL_CONTRACT)
     candles = _to_candles(bars)
     return strat.compute_live_state(candles, capital, RSI_REVERSION_VERSIONS[version])
 
 
-async def get_live_rsi_signal(user_id: str, capital: float = 100_000.0, version: str = "v1.0") -> dict:
+async def get_live_rsi_signal(
+    user_id: str, capital: float = 100_000.0, version: str = "v1.0"
+) -> dict:
     cached = await _get_cached_rsi_signal(user_id, version, capital)
     if cached is not None:
         return cached
@@ -230,9 +240,14 @@ async def _send_rsi_signal_alert(user_id: str, version: str, state: strat.LiveSi
             state.stop_loss,  # type: ignore[arg-type]
             state.target,  # type: ignore[arg-type]
         )
-        subject = f"Natural Gas Mini {direction_label} Signal (RSI Reversion {version}) — Entry {state.entry_price:.2f}"
+        subject = (
+            f"Natural Gas Mini {direction_label} Signal (RSI Reversion {version}) "
+            f"— Entry {state.entry_price:.2f}"
+        )
         await send_email(to=user.email, subject=subject, html=html, priority=True)
-        log.info("mcx.rsi_signal_alert.sent", user_id=user_id, version=version, direction=state.direction)
+        log.info(
+            "mcx.rsi_signal_alert.sent", user_id=user_id, version=version, direction=state.direction
+        )
     except Exception as exc:
         log.warning("mcx.rsi_signal_alert.email_failed", error=str(exc))
 
@@ -260,7 +275,11 @@ async def sync_and_alert_rsi_signal(
 
     await _send_rsi_signal_alert(user_id, version, state)
     await alert_repo.mark_alerted(
-        user_id, RSI_SIGNAL_CONTRACT, version, state.direction, state.entry_time  # type: ignore[arg-type]
+        user_id,
+        RSI_SIGNAL_CONTRACT,
+        version,
+        state.direction,
+        state.entry_time,  # type: ignore[arg-type]
     )
     return True
 
@@ -305,11 +324,11 @@ async def _send_blocked_signal_notice(user_id: str, version: str, reason: str) -
             return
 
         html = (
-            "<!DOCTYPE html><html><body style=\"font-family:Arial,sans-serif;padding:24px;\">"
+            '<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;padding:24px;">'
             f"<h2>RSI Reversion {version} — Entry Held Back</h2>"
             f"<p>An RSI-14 entry condition fired on Natural Gas Mini, but the trade was skipped "
             f"due to <strong>{reason_label}</strong>.</p>"
-            "<p style=\"color:#6b7280;font-size:12px;\">This is informational, not an actionable "
+            '<p style="color:#6b7280;font-size:12px;">This is informational, not an actionable '
             "signal -- see the MCX page's RSI Strategy tab for the live state.</p>"
             "</body></html>"
         )
@@ -334,12 +353,18 @@ async def sync_and_alert_blocked_signal(
     under a distinct "<contract>_BLOCKED" tag reuses RsiSignalAlertRepository
     without a schema change. Returns True if a new notice was sent."""
     state, _ = await _compute(user_id, version, capital)
-    if not (state.blocked_by_time_filter or state.blocked_by_regime_filter or state.blocked_by_volatility_filter):
+    if not (
+        state.blocked_by_time_filter
+        or state.blocked_by_regime_filter
+        or state.blocked_by_volatility_filter
+    ):
         return False
 
     reason = (
-        "TIME_FILTER" if state.blocked_by_time_filter
-        else "REGIME_FILTER" if state.blocked_by_regime_filter
+        "TIME_FILTER"
+        if state.blocked_by_time_filter
+        else "REGIME_FILTER"
+        if state.blocked_by_regime_filter
         else "VOLATILITY_FILTER"
     )
     day_key = datetime(state.as_of.year, state.as_of.month, state.as_of.day)
@@ -347,7 +372,9 @@ async def sync_and_alert_blocked_signal(
 
     marker = await alert_repo.get(user_id, contract_key, version)
     already_alerted = (
-        marker is not None and marker.get("direction") == reason and marker.get("entry_time") == day_key
+        marker is not None
+        and marker.get("direction") == reason
+        and marker.get("entry_time") == day_key
     )
     if already_alerted:
         return False

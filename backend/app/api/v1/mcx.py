@@ -21,9 +21,20 @@ _trader_or_admin = Depends(require_role(UserRole.ADMIN, UserRole.TRADER))
 router = APIRouter(prefix="/mcx", tags=["mcx"])
 
 McxContract = Literal[
-    "NG", "NGMINI",
-    "NG_JAN", "NG_FEB", "NG_MAR", "NG_APR", "NG_MAY", "NG_JUN",
-    "NG_JUL", "NG_AUG", "NG_SEP", "NG_OCT", "NG_NOV", "NG_DEC",
+    "NG",
+    "NGMINI",
+    "NG_JAN",
+    "NG_FEB",
+    "NG_MAR",
+    "NG_APR",
+    "NG_MAY",
+    "NG_JUN",
+    "NG_JUL",
+    "NG_AUG",
+    "NG_SEP",
+    "NG_OCT",
+    "NG_NOV",
+    "NG_DEC",
 ]
 
 
@@ -77,7 +88,9 @@ async def ng_ai_score(
     from app.services.mcx_service import McxNotConnectedError
 
     try:
-        return await compute_ng_ai_score(str(current_user.id), direction.value, capital, contract, version)
+        return await compute_ng_ai_score(
+            str(current_user.id), direction.value, capital, contract, version
+        )
     except McxNotConnectedError as exc:
         raise HTTPException(status_code=http_status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ValueError as exc:
@@ -111,7 +124,9 @@ async def ng_rsi_signal(
     except McxNotConnectedError as exc:
         raise HTTPException(status_code=http_status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
     except Exception as exc:
         raise HTTPException(
             status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,

@@ -117,7 +117,7 @@ def chartink_breakout_html(scan_name: str, symbols: list[str]) -> str:
         f"""
     <tr style="border-bottom:1px solid #f3f4f6;">
       <td style="padding:10px 8px;font-size:14px;font-weight:800;color:#111827;">
-        {sym.replace('.NS', '').replace('.BO', '')}
+        {sym.replace(".NS", "").replace(".BO", "")}
       </td>
       <td style="padding:10px 8px;font-size:12px;color:#6b7280;">3 consecutive scans</td>
     </tr>"""

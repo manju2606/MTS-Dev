@@ -48,7 +48,9 @@ class MonteCarloResult:
     net_pnl_pct_p95: float
 
     probability_of_loss_pct: float  # simulations ending below starting capital
-    probability_of_ruin_pct: float  # simulations where equity ever fell to ruin_threshold_pct of capital
+    probability_of_ruin_pct: (
+        float  # simulations where equity ever fell to ruin_threshold_pct of capital
+    )
 
 
 def run_monte_carlo(

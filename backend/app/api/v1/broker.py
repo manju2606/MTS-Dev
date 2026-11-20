@@ -41,7 +41,10 @@ async def broker_status(current_user: CurrentUser) -> dict:
             return {
                 "broker": "zerodha",
                 "connected": True,
-                "note": "Using a shared Zerodha session — connect your own account to place live orders",
+                "note": (
+                    "Using a shared Zerodha session — "
+                    "connect your own account to place live orders"
+                ),
             }
     return {"broker": broker.name, "connected": broker.is_connected}
 

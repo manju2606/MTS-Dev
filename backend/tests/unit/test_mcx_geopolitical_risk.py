@@ -60,7 +60,9 @@ def test_score_news_category_weight_reflects_two_checks():
 
 
 def test_score_metal_news_geopolitical_check_supports_buy_when_detected():
-    items = [_article("Middle East tension escalates as hostilities spread near Gulf shipping lanes")]
+    items = [
+        _article("Middle East tension escalates as hostilities spread near Gulf shipping lanes")
+    ]
     cat = _score_metal_news(items, "BUY")
     geo = next(c for c in cat["checks"] if c["label"] == "Geopolitical risk keywords")
     assert geo["passed"] is True

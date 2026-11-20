@@ -476,9 +476,7 @@ async def _run_mcx_trend_check() -> None:
                         error=str(exc),
                     )
                 await asyncio.sleep(0)
-        log.info(
-            "scheduler.mcx_trend.done", users=len(user_ids), checked=checked, alerted=alerted
-        )
+        log.info("scheduler.mcx_trend.done", users=len(user_ids), checked=checked, alerted=alerted)
     except Exception as exc:
         log.error("scheduler.mcx_trend.error", error=str(exc))
 
@@ -896,7 +894,10 @@ async def _run_ng_rsi_v2_signal_check() -> None:
     try:
         from app.infra.brokers import session_store
         from app.infra.db.repositories.mcx_rsi_signal_alert_repo import RsiSignalAlertRepository
-        from app.services.mcx_rsi_signal_service import sync_and_alert_blocked_signal, sync_and_alert_rsi_signal
+        from app.services.mcx_rsi_signal_service import (
+            sync_and_alert_blocked_signal,
+            sync_and_alert_rsi_signal,
+        )
 
         alert_repo = RsiSignalAlertRepository()
         user_ids = await session_store.list_connected_user_ids()
@@ -908,7 +909,9 @@ async def _run_ng_rsi_v2_signal_check() -> None:
                 else:
                     await sync_and_alert_blocked_signal(user_id, "v2.2", alert_repo)
             except Exception as exc:
-                log.warning("scheduler.ng_rsi_v2_signal.user_error", user_id=user_id, error=str(exc))
+                log.warning(
+                    "scheduler.ng_rsi_v2_signal.user_error", user_id=user_id, error=str(exc)
+                )
             await asyncio.sleep(0)
         log.info("scheduler.ng_rsi_v2_signal.done", users=len(user_ids), alerted=alerted)
     except Exception as exc:
@@ -1155,7 +1158,10 @@ async def _run_mcx_silver_strategy_check() -> None:
                 await asyncio.sleep(0)
         log.info(
             "scheduler.mcx_silver_strategy.done",
-            users=len(user_ids), logged=logged, changed=changed, blocked=blocked,
+            users=len(user_ids),
+            logged=logged,
+            changed=changed,
+            blocked=blocked,
         )
     except Exception as exc:
         log.error("scheduler.mcx_silver_strategy.error", error=str(exc))
@@ -1210,7 +1216,10 @@ async def _run_mcx_gold_strategy_check() -> None:
                 await asyncio.sleep(0)
         log.info(
             "scheduler.mcx_gold_strategy.done",
-            users=len(user_ids), logged=logged, changed=changed, blocked=blocked,
+            users=len(user_ids),
+            logged=logged,
+            changed=changed,
+            blocked=blocked,
         )
     except Exception as exc:
         log.error("scheduler.mcx_gold_strategy.error", error=str(exc))
@@ -1251,9 +1260,7 @@ async def _run_mcx_ng_strategy_check() -> None:
                         score = await compute_ng_strategy_score(
                             user_id, direction, contract, 100_000.0
                         )
-                        if await check_and_log_ng_signal(
-                            user_id, contract, direction, score, repo
-                        ):
+                        if await check_and_log_ng_signal(user_id, contract, direction, score, repo):
                             logged += 1
                 except Exception as exc:
                     log.warning(
@@ -1265,7 +1272,10 @@ async def _run_mcx_ng_strategy_check() -> None:
                 await asyncio.sleep(0)
         log.info(
             "scheduler.mcx_ng_strategy.done",
-            users=len(user_ids), logged=logged, changed=changed, blocked=blocked,
+            users=len(user_ids),
+            logged=logged,
+            changed=changed,
+            blocked=blocked,
         )
     except Exception as exc:
         log.error("scheduler.mcx_ng_strategy.error", error=str(exc))
@@ -1335,7 +1345,9 @@ async def _run_crypto_prediction_prewarm() -> None:
                     warmed += 1
                 except Exception as exc:
                     log.warning(
-                        "scheduler.crypto_prewarm.pair_error", coin=coin, period=period,
+                        "scheduler.crypto_prewarm.pair_error",
+                        coin=coin,
+                        period=period,
                         error=str(exc),
                     )
         log.info("scheduler.crypto_prewarm.done", warmed=warmed)
@@ -1366,7 +1378,9 @@ async def _run_usa_stocks_prediction_prewarm() -> None:
                     warmed += 1
                 except Exception as exc:
                     log.warning(
-                        "scheduler.usa_stocks_prewarm.pair_error", code=code, period=period,
+                        "scheduler.usa_stocks_prewarm.pair_error",
+                        code=code,
+                        period=period,
                         error=str(exc),
                     )
         log.info("scheduler.usa_stocks_prewarm.done", warmed=warmed)
@@ -1812,7 +1826,10 @@ def start_scheduler() -> None:
     _scheduler.add_job(
         _run_kotegawa_early_scan,
         CronTrigger(
-            day_of_week="mon-fri", hour="10-14", minute="0,15,30,45", second=5,
+            day_of_week="mon-fri",
+            hour="10-14",
+            minute="0,15,30,45",
+            second=5,
             timezone="Asia/Kolkata",
         ),
         id="kotegawa_early_scan_mid",
@@ -1823,7 +1840,11 @@ def start_scheduler() -> None:
     _scheduler.add_job(
         _check_kotegawa_early_outcomes,
         CronTrigger(
-            day_of_week="mon-fri", hour="9-15", minute="*/5", second=20, timezone="Asia/Kolkata",
+            day_of_week="mon-fri",
+            hour="9-15",
+            minute="*/5",
+            second=20,
+            timezone="Asia/Kolkata",
         ),
         id="kotegawa_early_check",
         name="Kotegawa Early Reversal — Target/Stop-Loss Check",
@@ -1855,7 +1876,10 @@ def start_scheduler() -> None:
     _scheduler.add_job(
         _run_kotegawa_intraday_scan,
         CronTrigger(
-            day_of_week="mon-fri", hour="10-14", minute="0,15,30,45", second=10,
+            day_of_week="mon-fri",
+            hour="10-14",
+            minute="0,15,30,45",
+            second=10,
             timezone="Asia/Kolkata",
         ),
         id="kotegawa_intraday_scan_mid",
@@ -1866,7 +1890,11 @@ def start_scheduler() -> None:
     _scheduler.add_job(
         _check_kotegawa_intraday_outcomes,
         CronTrigger(
-            day_of_week="mon-fri", hour="9-15", minute="*/5", second=25, timezone="Asia/Kolkata",
+            day_of_week="mon-fri",
+            hour="9-15",
+            minute="*/5",
+            second=25,
+            timezone="Asia/Kolkata",
         ),
         id="kotegawa_intraday_check",
         name="Kotegawa Intraday — Target/Stop-Loss Check",
@@ -1949,7 +1977,10 @@ def start_scheduler() -> None:
     _scheduler.add_job(
         _run_mcx_trend_check,
         CronTrigger(
-            day_of_week="mon-fri", hour="9-23", minute="0,15,30,45", second=5,
+            day_of_week="mon-fri",
+            hour="9-23",
+            minute="0,15,30,45",
+            second=5,
             timezone="Asia/Kolkata",
         ),
         id="mcx_trend_check",
@@ -1964,7 +1995,10 @@ def start_scheduler() -> None:
     _scheduler.add_job(
         _run_mcx_extreme_alert_check,
         CronTrigger(
-            day_of_week="mon-fri", hour="9-23", minute="0,15,30,45", second=10,
+            day_of_week="mon-fri",
+            hour="9-23",
+            minute="0,15,30,45",
+            second=10,
             timezone="Asia/Kolkata",
         ),
         id="mcx_extreme_alert_check",
@@ -1980,7 +2014,10 @@ def start_scheduler() -> None:
     _scheduler.add_job(
         _run_mcx_prediction_check,
         CronTrigger(
-            day_of_week="mon-fri", hour="9-23", minute="*/5", second=10,
+            day_of_week="mon-fri",
+            hour="9-23",
+            minute="*/5",
+            second=10,
             timezone="Asia/Kolkata",
         ),
         id="mcx_prediction_check",
@@ -2000,7 +2037,10 @@ def start_scheduler() -> None:
     _scheduler.add_job(
         _run_chartink_scan_link_poll,
         CronTrigger(
-            day_of_week="mon-fri", hour="9-15", minute="15", second=20,
+            day_of_week="mon-fri",
+            hour="9-15",
+            minute="15",
+            second=20,
             timezone="Asia/Kolkata",
         ),
         id="chartink_scan_link_poll",
@@ -2015,7 +2055,10 @@ def start_scheduler() -> None:
     _scheduler.add_job(
         _run_chartink_breakout_resolve,
         CronTrigger(
-            day_of_week="mon-fri", hour="9-15", minute="*/15", second=30,
+            day_of_week="mon-fri",
+            hour="9-15",
+            minute="*/15",
+            second=30,
             timezone="Asia/Kolkata",
         ),
         id="chartink_breakout_resolve",
@@ -2031,7 +2074,10 @@ def start_scheduler() -> None:
     _scheduler.add_job(
         _run_mcx_candle_collect,
         CronTrigger(
-            day_of_week="mon-fri", hour="9-23", minute="*/5", second=20,
+            day_of_week="mon-fri",
+            hour="9-23",
+            minute="*/5",
+            second=20,
             timezone="Asia/Kolkata",
         ),
         id="mcx_candle_collect",
@@ -2069,7 +2115,10 @@ def start_scheduler() -> None:
     _scheduler.add_job(
         _run_mcx_signal_check,
         CronTrigger(
-            day_of_week="mon-fri", hour="9-23", minute="*/5", second=20,
+            day_of_week="mon-fri",
+            hour="9-23",
+            minute="*/5",
+            second=20,
             timezone="Asia/Kolkata",
         ),
         id="mcx_signal_check",
@@ -2084,7 +2133,10 @@ def start_scheduler() -> None:
     _scheduler.add_job(
         _run_ng_rsi_v2_signal_check,
         CronTrigger(
-            day_of_week="mon-fri", hour="9-23", minute="*/5", second=25,
+            day_of_week="mon-fri",
+            hour="9-23",
+            minute="*/5",
+            second=25,
             timezone="Asia/Kolkata",
         ),
         id="ng_rsi_v2_signal_check",
@@ -2098,7 +2150,10 @@ def start_scheduler() -> None:
     _scheduler.add_job(
         _run_mcx_metals_trend_check,
         CronTrigger(
-            day_of_week="mon-fri", hour="9-23", minute="0,15,30,45", second=35,
+            day_of_week="mon-fri",
+            hour="9-23",
+            minute="0,15,30,45",
+            second=35,
             timezone="Asia/Kolkata",
         ),
         id="mcx_metals_trend_check",
@@ -2109,7 +2164,10 @@ def start_scheduler() -> None:
     _scheduler.add_job(
         _run_mcx_metals_prediction_check,
         CronTrigger(
-            day_of_week="mon-fri", hour="9-23", minute="*/5", second=40,
+            day_of_week="mon-fri",
+            hour="9-23",
+            minute="*/5",
+            second=40,
             timezone="Asia/Kolkata",
         ),
         id="mcx_metals_prediction_check",
@@ -2136,7 +2194,10 @@ def start_scheduler() -> None:
     _scheduler.add_job(
         _run_mcx_metals_signal_check,
         CronTrigger(
-            day_of_week="mon-fri", hour="9-23", minute="*/5", second=50,
+            day_of_week="mon-fri",
+            hour="9-23",
+            minute="*/5",
+            second=50,
             timezone="Asia/Kolkata",
         ),
         id="mcx_metals_signal_check",
@@ -2147,7 +2208,10 @@ def start_scheduler() -> None:
     _scheduler.add_job(
         _run_mcx_silver_strategy_check,
         CronTrigger(
-            day_of_week="mon-fri", hour="9-23", minute="*/5", second=35,
+            day_of_week="mon-fri",
+            hour="9-23",
+            minute="*/5",
+            second=35,
             timezone="Asia/Kolkata",
         ),
         id="mcx_silver_strategy_check",
@@ -2158,7 +2222,10 @@ def start_scheduler() -> None:
     _scheduler.add_job(
         _run_mcx_gold_strategy_check,
         CronTrigger(
-            day_of_week="mon-fri", hour="9-23", minute="*/5", second=5,
+            day_of_week="mon-fri",
+            hour="9-23",
+            minute="*/5",
+            second=5,
             timezone="Asia/Kolkata",
         ),
         id="mcx_gold_strategy_check",
@@ -2169,7 +2236,10 @@ def start_scheduler() -> None:
     _scheduler.add_job(
         _run_mcx_ng_strategy_check,
         CronTrigger(
-            day_of_week="mon-fri", hour="9-23", minute="*/5", second=50,
+            day_of_week="mon-fri",
+            hour="9-23",
+            minute="*/5",
+            second=50,
             timezone="Asia/Kolkata",
         ),
         id="mcx_ng_strategy_check",

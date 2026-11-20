@@ -83,7 +83,8 @@ async def _send_signal_alert(user_id: str, contract: str, direction: str, score:
             user_id,
             "mcx.signal_alert",
             f"{market_label} {contract} {direction} Signal",
-            f"Entry {entry['entry_price']:.2f} · SL {entry['stop_loss']:.2f} · Target {entry['target_1']:.2f}",
+            f"Entry {entry['entry_price']:.2f} · SL {entry['stop_loss']:.2f} "
+            f"· Target {entry['target_1']:.2f}",
             link,
         )
     except Exception as exc:

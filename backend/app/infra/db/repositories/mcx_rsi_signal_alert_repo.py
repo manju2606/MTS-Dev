@@ -40,6 +40,12 @@ class RsiSignalAlertRepository:
     ) -> None:
         await self._col.update_one(
             {"user_id": user_id, "contract": contract.upper(), "version": version},
-            {"$set": {"direction": direction, "entry_time": entry_time, "alerted_at": datetime.utcnow()}},
+            {
+                "$set": {
+                    "direction": direction,
+                    "entry_time": entry_time,
+                    "alerted_at": datetime.utcnow(),
+                }
+            },
             upsert=True,
         )

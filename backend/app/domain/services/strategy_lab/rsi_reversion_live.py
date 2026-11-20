@@ -22,7 +22,11 @@ from datetime import datetime
 
 from app.domain.models.historical_candle import HistoricalCandle
 from app.domain.services.strategy_lab import indicators as ind
-from app.domain.services.strategy_lab.engine import TransactionCosts, brokerage_cost, capped_quantity
+from app.domain.services.strategy_lab.engine import (
+    TransactionCosts,
+    brokerage_cost,
+    capped_quantity,
+)
 from app.domain.services.strategy_lab.rsi_reversion_v2 import (
     RsiReversionParams,
     _rolling_atr_avg,
@@ -91,7 +95,9 @@ def compute_live_state(
     lows = [c.low for c in candles]
     rsi_vals = ind.rsi(closes, p.period)
     atr_vals = ind.atr(highs, lows, closes, 14) if p.atr_filter_enabled else [None] * n
-    atr_avg_vals = _rolling_atr_avg(atr_vals, p.atr_avg_period) if p.atr_filter_enabled else [None] * n
+    atr_avg_vals = (
+        _rolling_atr_avg(atr_vals, p.atr_avg_period) if p.atr_filter_enabled else [None] * n
+    )
     adx_vals = ind.adx(highs, lows, closes, 14) if p.regime_filter_enabled else [None] * n
     costs = TransactionCosts()
 
@@ -150,9 +156,17 @@ def compute_live_state(
         last_signal, last_signal_time, last_signal_price = "SELL", candles[i].time, fill
 
     def close_position(i: int, exit_price: float, reason: str) -> None:
-        nonlocal direction, equity, last_signal, last_signal_time, last_signal_price, last_exit_reason
+        nonlocal \
+            direction, \
+            equity, \
+            last_signal, \
+            last_signal_time, \
+            last_signal_price, \
+            last_exit_reason
         is_long = direction == 1
-        fill = exit_price * (1 - costs.slippage_pct / 100 if is_long else 1 + costs.slippage_pct / 100)
+        fill = exit_price * (
+            1 - costs.slippage_pct / 100 if is_long else 1 + costs.slippage_pct / 100
+        )
         entry_cost = brokerage_cost(entry_price * qty, costs)
         exit_cost = brokerage_cost(fill * qty, costs) + fill * qty * costs.stt_pct / 100
         raw_pnl = (fill - entry_price) * qty if is_long else (entry_price - fill) * qty
@@ -182,7 +196,9 @@ def compute_live_state(
 
         if direction == 1:
             candidate_trail = bar.close * (1 - p.trailing_stop_pct / 100)
-            trail_price = candidate_trail if trail_price is None else max(trail_price, candidate_trail)
+            trail_price = (
+                candidate_trail if trail_price is None else max(trail_price, candidate_trail)
+            )
             effective_stop = max(stop_price, trail_price)
 
             if bar.low <= effective_stop:
@@ -195,7 +211,9 @@ def compute_live_state(
 
         elif direction == -1:
             candidate_trail = bar.close * (1 + p.trailing_stop_pct / 100)
-            trail_price = candidate_trail if trail_price is None else min(trail_price, candidate_trail)
+            trail_price = (
+                candidate_trail if trail_price is None else min(trail_price, candidate_trail)
+            )
             effective_stop = min(stop_price, trail_price)
 
             if bar.high >= effective_stop:
@@ -226,12 +244,18 @@ def compute_live_state(
                     # reflects just the final bar, not any historical block.
                     blocked_by_time_filter = blocked_time
                     blocked_by_regime_filter = blocked_regime
-                    blocked_by_volatility_filter = vol_state == "skip" and not blocked_time and not blocked_regime
+                    blocked_by_volatility_filter = (
+                        vol_state == "skip" and not blocked_time and not blocked_regime
+                    )
                 else:
                     blocked_by_time_filter = False
                     blocked_by_regime_filter = False
                     blocked_by_volatility_filter = False
-                    stop_pct = p.stop_loss_pct * p.atr_widen_factor if vol_state == "widen" else p.stop_loss_pct
+                    stop_pct = (
+                        p.stop_loss_pct * p.atr_widen_factor
+                        if vol_state == "widen"
+                        else p.stop_loss_pct
+                    )
                     if wants_long:
                         open_long(i, stop_pct)
                     else:
@@ -255,7 +279,9 @@ def compute_live_state(
             trailing_stop=round(trail_price, 4) if trail_price is not None else None,
             last_signal=last_signal,
             last_signal_time=last_signal_time,
-            last_signal_price=round(last_signal_price, 4) if last_signal_price is not None else None,
+            last_signal_price=round(last_signal_price, 4)
+            if last_signal_price is not None
+            else None,
             last_exit_reason=last_exit_reason,
         )
     else:
@@ -266,7 +292,9 @@ def compute_live_state(
             as_of=as_of,
             last_signal=last_signal,
             last_signal_time=last_signal_time,
-            last_signal_price=round(last_signal_price, 4) if last_signal_price is not None else None,
+            last_signal_price=round(last_signal_price, 4)
+            if last_signal_price is not None
+            else None,
             last_exit_reason=last_exit_reason,
             blocked_by_time_filter=blocked_by_time_filter,
             blocked_by_regime_filter=blocked_by_regime_filter,

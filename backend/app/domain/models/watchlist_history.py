@@ -43,7 +43,9 @@ class WatchlistHistoryPick:
     stop_loss: float | None = None
     target: float | None = None
     source_ref_id: str | None = None  # id of the underlying source doc, for traceability
-    source_score: float | None = None  # composite_score (SotD) or confidence_score (BTST/Golden Stock)
+    source_score: float | None = (
+        None  # composite_score (SotD) or confidence_score (BTST/Golden Stock)
+    )
 
     window_days: int = WATCHLIST_HISTORY_WINDOW_DAYS
     trading_day_count: int = 0  # increments every EOD job run attempted, success or not

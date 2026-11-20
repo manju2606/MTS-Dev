@@ -26,6 +26,7 @@ from app.api.v1 import (
     kotegawa,
     kotegawa_early,
     kotegawa_intraday,
+    liquidity_flow,
     live,
     market_pulse,
     market_sources,
@@ -60,6 +61,7 @@ from app.api.v1 import (
     webhook_api,
     ws,
 )
+from app.core.config import settings
 
 router = APIRouter()
 
@@ -127,3 +129,8 @@ router.include_router(international_market.router)
 router.include_router(historical_data.router)
 router.include_router(strategy_lab.router)
 router.include_router(performance.router)
+
+# Liquidity Flow is behind a feature flag so it can be disabled without
+# touching any other route (ENABLE_LIQUIDITY_AI in .env).
+if settings.ENABLE_LIQUIDITY_AI:
+    router.include_router(liquidity_flow.router)

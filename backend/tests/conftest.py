@@ -88,12 +88,31 @@ _p_get_quotes = patch(
     "app.infra.market_data.yfinance_client.YFinanceClient.get_quotes",
     new=_fake_get_quotes,
 )
+# The app's market-data dependency is CompositeMarketDataClient, so it must be
+# patched too. Otherwise requests go to the live sources and prices drift.
+_p_composite_get_quote = patch(
+    "app.infra.market_data.composite_client.CompositeMarketDataClient.get_quote",
+    new=_fake_get_quote,
+)
+# Market orders are rejected outside NSE hours. Pin the clock so the suite gives
+# the same result at any time of day, instead of passing only during market hours.
+_p_market_open = patch(
+    "app.api.v1.paper.is_market_open_ist",
+    new=lambda: True,
+)
+_p_composite_get_quotes = patch(
+    "app.infra.market_data.composite_client.CompositeMarketDataClient.get_quotes",
+    new=_fake_get_quotes,
+)
 _p_fetch_indicators = patch(
     "app.api.v1.ai.fetch_indicators",
     new=_fake_fetch_indicators,
 )
 _p_get_quote.start()
 _p_get_quotes.start()
+_p_composite_get_quote.start()
+_p_composite_get_quotes.start()
+_p_market_open.start()
 _p_fetch_indicators.start()
 
 
@@ -104,6 +123,9 @@ def event_loop():
     yield loop
     _p_get_quote.stop()
     _p_get_quotes.stop()
+    _p_composite_get_quote.stop()
+    _p_composite_get_quotes.stop()
+    _p_market_open.stop()
     _p_fetch_indicators.stop()
     loop.close()
 

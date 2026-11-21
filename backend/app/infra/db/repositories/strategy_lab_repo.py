@@ -84,7 +84,12 @@ class StrategyLabRepository:
     }
 
     async def list_runs(
-        self, user_id: str, limit: int = 20, offset: int = 0, sort_by: str = "created_at", sort_dir: int = -1,
+        self,
+        user_id: str,
+        limit: int = 20,
+        offset: int = 0,
+        sort_by: str = "created_at",
+        sort_dir: int = -1,
     ) -> list[StrategyLabRun]:
         field = self.RUN_SORT_FIELDS.get(sort_by, "created_at")
         cursor = (
@@ -110,13 +115,10 @@ class StrategyLabRepository:
     # so per-instrument grouping has to happen in Python against a stable
     # family key -- see strategy_lab_service._symbol_family_key.
     async def list_completed_scored_runs(self, user_id: str) -> list[StrategyLabRun]:
-        cursor = (
-            self._runs.find(
-                {"user_id": user_id, "status": "completed", "best_composite_score": {"$ne": None}},
-                {"_id": 0},
-            )
-            .sort("best_composite_score", -1)
-        )
+        cursor = self._runs.find(
+            {"user_id": user_id, "status": "completed", "best_composite_score": {"$ne": None}},
+            {"_id": 0},
+        ).sort("best_composite_score", -1)
         return [StrategyLabRun(**doc) async for doc in cursor]
 
     # ── Results ──────────────────────────────────────────────────────────────

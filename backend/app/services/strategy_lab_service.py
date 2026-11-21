@@ -54,6 +54,7 @@ MIN_TREND_PULLBACK_1H_CANDLES = 50
 MIN_ORB_CANDLES = 100
 MIN_RSI_REVERSION_CANDLES = 100
 
+
 @dataclass(frozen=True)
 class IndexUniverse:
     exchange: str  # the run's exchange must match this exactly
@@ -66,16 +67,56 @@ class IndexUniverse:
 # wired up. Good enough for "scan the current large-cap universe" -- not a
 # guarantee of exact membership on any given day.
 NIFTY_50_SYMBOLS = [
-    "ADANIENT", "ADANIPORTS", "APOLLOHOSP", "ASIANPAINT", "AXISBANK",
-    "BAJAJ-AUTO", "BAJFINANCE", "BAJAJFINSV", "BEL", "BPCL",
-    "BHARTIARTL", "BRITANNIA", "CIPLA", "COALINDIA", "DRREDDY",
-    "EICHERMOT", "GRASIM", "HCLTECH", "HDFCBANK", "HDFCLIFE",
-    "HEROMOTOCO", "HINDALCO", "HINDUNILVR", "ICICIBANK", "ITC",
-    "INDUSINDBK", "INFY", "JSWSTEEL", "KOTAKBANK", "LT",
-    "M&M", "MARUTI", "NTPC", "NESTLEIND", "ONGC",
-    "POWERGRID", "RELIANCE", "SBILIFE", "SHRIRAMFIN", "SBIN",
-    "SUNPHARMA", "TCS", "TATACONSUM", "TATAMOTORS", "TATASTEEL",
-    "TECHM", "TITAN", "TRENT", "ULTRACEMCO", "WIPRO",
+    "ADANIENT",
+    "ADANIPORTS",
+    "APOLLOHOSP",
+    "ASIANPAINT",
+    "AXISBANK",
+    "BAJAJ-AUTO",
+    "BAJFINANCE",
+    "BAJAJFINSV",
+    "BEL",
+    "BPCL",
+    "BHARTIARTL",
+    "BRITANNIA",
+    "CIPLA",
+    "COALINDIA",
+    "DRREDDY",
+    "EICHERMOT",
+    "GRASIM",
+    "HCLTECH",
+    "HDFCBANK",
+    "HDFCLIFE",
+    "HEROMOTOCO",
+    "HINDALCO",
+    "HINDUNILVR",
+    "ICICIBANK",
+    "ITC",
+    "INDUSINDBK",
+    "INFY",
+    "JSWSTEEL",
+    "KOTAKBANK",
+    "LT",
+    "M&M",
+    "MARUTI",
+    "NTPC",
+    "NESTLEIND",
+    "ONGC",
+    "POWERGRID",
+    "RELIANCE",
+    "SBILIFE",
+    "SHRIRAMFIN",
+    "SBIN",
+    "SUNPHARMA",
+    "TCS",
+    "TATACONSUM",
+    "TATAMOTORS",
+    "TATASTEEL",
+    "TECHM",
+    "TITAN",
+    "TRENT",
+    "ULTRACEMCO",
+    "WIPRO",
 ]
 
 # NIFTY MIDCAP 50 -- same staleness caveat as NIFTY_50_SYMBOLS above, but
@@ -86,32 +127,112 @@ NIFTY_50_SYMBOLS = [
 # than corrupting anything -- but treat this list as best-effort, not
 # authoritative, and expect a few misses.
 NIFTY_MIDCAP_50_SYMBOLS = [
-    "ABCAPITAL", "ALKEM", "APLAPOLLO", "ASHOKLEY", "ASTRAL",
-    "AUBANK", "BALKRISIND", "BANDHANBNK", "BHARATFORGE", "BHEL",
-    "CGPOWER", "COFORGE", "COLPAL", "CONCOR", "COROMANDEL",
-    "CROMPTON", "CUMMINSIND", "DALBHARAT", "DIXON", "ESCORTS",
-    "EXIDEIND", "FEDERALBNK", "FORTIS", "GMRAIRPORT", "GODREJPROP",
-    "HDFCAMC", "HONAUT", "IDFCFIRSTB", "IEX", "INDHOTEL",
-    "INDUSTOWER", "IPCALAB", "JUBLFOOD", "LICHSGFIN", "LUPIN",
-    "MANAPPURAM", "MAXHEALTH", "MFSL", "NMDC", "OBEROIRLTY",
-    "OFSS", "PAGEIND", "PERSISTENT", "PIIND", "POLYCAB",
-    "PRESTIGE", "SRF", "SUPREMEIND", "SUZLON", "VOLTAS",
+    "ABCAPITAL",
+    "ALKEM",
+    "APLAPOLLO",
+    "ASHOKLEY",
+    "ASTRAL",
+    "AUBANK",
+    "BALKRISIND",
+    "BANDHANBNK",
+    "BHARATFORGE",
+    "BHEL",
+    "CGPOWER",
+    "COFORGE",
+    "COLPAL",
+    "CONCOR",
+    "COROMANDEL",
+    "CROMPTON",
+    "CUMMINSIND",
+    "DALBHARAT",
+    "DIXON",
+    "ESCORTS",
+    "EXIDEIND",
+    "FEDERALBNK",
+    "FORTIS",
+    "GMRAIRPORT",
+    "GODREJPROP",
+    "HDFCAMC",
+    "HONAUT",
+    "IDFCFIRSTB",
+    "IEX",
+    "INDHOTEL",
+    "INDUSTOWER",
+    "IPCALAB",
+    "JUBLFOOD",
+    "LICHSGFIN",
+    "LUPIN",
+    "MANAPPURAM",
+    "MAXHEALTH",
+    "MFSL",
+    "NMDC",
+    "OBEROIRLTY",
+    "OFSS",
+    "PAGEIND",
+    "PERSISTENT",
+    "PIIND",
+    "POLYCAB",
+    "PRESTIGE",
+    "SRF",
+    "SUPREMEIND",
+    "SUZLON",
+    "VOLTAS",
 ]
 
 # NIFTY SMALLCAP 50 -- same caveat as MIDCAP above, with even lower
 # confidence: smallcap index membership shifts the most and these are the
 # least "famous" names to verify from memory alone. Best-effort.
 NIFTY_SMALLCAP_50_SYMBOLS = [
-    "AARTIIND", "AAVAS", "ACE", "AEGISLOG", "AFFLE",
-    "ALKYLAMINE", "AMBER", "ANANTRAJ", "ANGELONE", "APOLLOTYRE",
-    "APTUS", "ATUL", "BALRAMCHIN", "BASF", "BATAINDIA",
-    "BSOFT", "BLUEDART", "BLUESTARCO", "CAMS", "CAPLIPOINT",
-    "CARBORUNIV", "CEATLTD", "CENTURYPLY", "CERA", "CHAMBLFERT",
-    "CHOLAHLDNG", "CYIENT", "DEEPAKFERT", "EIDPARRY", "EIHOTEL",
-    "ELGIEQUIP", "EMAMILTD", "FINEORG", "FINCABLES", "GALAXYSURF",
-    "GESHIP", "GRINDWELL", "GRSE", "HAPPSTMNDS", "HEG",
-    "IFBIND", "IIFL", "JBCHEPHARM", "JKCEMENT", "JKLAKSHMI",
-    "JUBLINGREA", "JUSTDIAL", "KAJARIACER", "KEI", "KPRMILL",
+    "AARTIIND",
+    "AAVAS",
+    "ACE",
+    "AEGISLOG",
+    "AFFLE",
+    "ALKYLAMINE",
+    "AMBER",
+    "ANANTRAJ",
+    "ANGELONE",
+    "APOLLOTYRE",
+    "APTUS",
+    "ATUL",
+    "BALRAMCHIN",
+    "BASF",
+    "BATAINDIA",
+    "BSOFT",
+    "BLUEDART",
+    "BLUESTARCO",
+    "CAMS",
+    "CAPLIPOINT",
+    "CARBORUNIV",
+    "CEATLTD",
+    "CENTURYPLY",
+    "CERA",
+    "CHAMBLFERT",
+    "CHOLAHLDNG",
+    "CYIENT",
+    "DEEPAKFERT",
+    "EIDPARRY",
+    "EIHOTEL",
+    "ELGIEQUIP",
+    "EMAMILTD",
+    "FINEORG",
+    "FINCABLES",
+    "GALAXYSURF",
+    "GESHIP",
+    "GRINDWELL",
+    "GRSE",
+    "HAPPSTMNDS",
+    "HEG",
+    "IFBIND",
+    "IIFL",
+    "JBCHEPHARM",
+    "JKCEMENT",
+    "JKLAKSHMI",
+    "JUBLINGREA",
+    "JUSTDIAL",
+    "KAJARIACER",
+    "KEI",
+    "KPRMILL",
 ]
 
 
@@ -240,8 +361,15 @@ async def _process_run(
         to_dt = datetime.strptime(to_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
 
         candles = await _ensure_candles(
-            user_id, symbol, effective_symbol, exchange, interval, from_dt, to_dt,
-            candle_repo, MIN_CANDLES_REQUIRED,
+            user_id,
+            symbol,
+            effective_symbol,
+            exchange,
+            interval,
+            from_dt,
+            to_dt,
+            candle_repo,
+            MIN_CANDLES_REQUIRED,
         )
 
         await repo.update_run(run_id, status="generating")
@@ -258,7 +386,9 @@ async def _process_run(
                 await repo.update_run(run_id, completed_candidates=completed)
 
         await repo.update_run(
-            run_id, status="completed", completed_at=datetime.utcnow(),
+            run_id,
+            status="completed",
+            completed_at=datetime.utcnow(),
             best_candidate_name=best.candidate.name if best else None,
             best_composite_score=best.composite_score if best else None,
         )
@@ -363,8 +493,13 @@ async def _process_index_scan(
         for completed, symbol in enumerate(symbols, start=1):
             try:
                 child_run_id = await start_run(
-                    user_id=user_id, symbol=symbol, exchange=exchange,
-                    interval=interval, from_date=from_date, to_date=to_date, capital=capital,
+                    user_id=user_id,
+                    symbol=symbol,
+                    exchange=exchange,
+                    interval=interval,
+                    from_date=from_date,
+                    to_date=to_date,
+                    capital=capital,
                 )
                 child_run_ids[symbol] = child_run_id
 
@@ -381,15 +516,24 @@ async def _process_index_scan(
                     failed_symbols.append(symbol)
                     log.warning(
                         "strategy_lab.index_scan.symbol_failed",
-                        scan_id=scan_id, symbol=symbol,
+                        scan_id=scan_id,
+                        symbol=symbol,
                         error=child.error if child else "run not found",
                     )
             except Exception as exc:
                 failed_symbols.append(symbol)
-                log.warning("strategy_lab.index_scan.symbol_error", scan_id=scan_id, symbol=symbol, error=str(exc))
+                log.warning(
+                    "strategy_lab.index_scan.symbol_error",
+                    scan_id=scan_id,
+                    symbol=symbol,
+                    error=str(exc),
+                )
 
             await repo.update_index_scan(
-                scan_id, completed_symbols=completed, child_run_ids=child_run_ids, failed_symbols=failed_symbols,
+                scan_id,
+                completed_symbols=completed,
+                child_run_ids=child_run_ids,
+                failed_symbols=failed_symbols,
             )
 
         await repo.update_index_scan(scan_id, status="completed", completed_at=datetime.utcnow())
@@ -434,8 +578,10 @@ async def start_trend_pullback_run(
     version: str = "v1.0",
 ) -> str:
     if version not in TREND_PULLBACK_VERSIONS:
-        raise ValueError(f"Unknown Trend Pullback version '{version}' -- expected one of "
-                          f"{list(TREND_PULLBACK_VERSIONS)}")
+        raise ValueError(
+            f"Unknown Trend Pullback version '{version}' -- expected one of "
+            f"{list(TREND_PULLBACK_VERSIONS)}"
+        )
 
     repo = StrategyLabRepository()
     await repo.ensure_indexes()
@@ -484,12 +630,26 @@ async def _process_trend_pullback_run(
         to_dt = datetime.strptime(to_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
 
         candles_5m = await _ensure_candles(
-            user_id, symbol, effective_symbol, exchange, "5minute", from_dt, to_dt,
-            candle_repo, MIN_TREND_PULLBACK_5M_CANDLES,
+            user_id,
+            symbol,
+            effective_symbol,
+            exchange,
+            "5minute",
+            from_dt,
+            to_dt,
+            candle_repo,
+            MIN_TREND_PULLBACK_5M_CANDLES,
         )
         candles_1h = await _ensure_candles(
-            user_id, symbol, effective_symbol, exchange, "60minute", from_dt, to_dt,
-            candle_repo, MIN_TREND_PULLBACK_1H_CANDLES,
+            user_id,
+            symbol,
+            effective_symbol,
+            exchange,
+            "60minute",
+            from_dt,
+            to_dt,
+            candle_repo,
+            MIN_TREND_PULLBACK_1H_CANDLES,
         )
 
         await repo.update_run(run_id, status="running", total_candidates=1)
@@ -497,8 +657,12 @@ async def _process_trend_pullback_run(
         result = await _backtest_trend_pullback(run_id, candles_5m, candles_1h, capital, version)
         await repo.save_result(result)
         await repo.update_run(
-            run_id, status="completed", completed_candidates=1, completed_at=datetime.utcnow(),
-            best_candidate_name=result.candidate.name, best_composite_score=result.composite_score,
+            run_id,
+            status="completed",
+            completed_candidates=1,
+            completed_at=datetime.utcnow(),
+            best_candidate_name=result.candidate.name,
+            best_composite_score=result.composite_score,
         )
 
     except Exception as exc:
@@ -640,8 +804,15 @@ async def _process_orb_run(
         to_dt = datetime.strptime(to_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
 
         candles = await _ensure_candles(
-            user_id, symbol, effective_symbol, exchange, interval, from_dt, to_dt,
-            candle_repo, MIN_ORB_CANDLES,
+            user_id,
+            symbol,
+            effective_symbol,
+            exchange,
+            interval,
+            from_dt,
+            to_dt,
+            candle_repo,
+            MIN_ORB_CANDLES,
         )
 
         await repo.update_run(run_id, status="running", total_candidates=1)
@@ -649,8 +820,12 @@ async def _process_orb_run(
         result = await _backtest_orb(run_id, candles, capital, interval)
         await repo.save_result(result)
         await repo.update_run(
-            run_id, status="completed", completed_candidates=1, completed_at=datetime.utcnow(),
-            best_candidate_name=result.candidate.name, best_composite_score=result.composite_score,
+            run_id,
+            status="completed",
+            completed_candidates=1,
+            completed_at=datetime.utcnow(),
+            best_candidate_name=result.candidate.name,
+            best_composite_score=result.composite_score,
         )
 
     except Exception as exc:
@@ -722,8 +897,10 @@ async def start_rsi_reversion_run(
     version: str = "v1.0",
 ) -> str:
     if version not in RSI_REVERSION_VERSIONS:
-        raise ValueError(f"Unknown RSI Reversion version '{version}' -- expected one of "
-                          f"{list(RSI_REVERSION_VERSIONS)}")
+        raise ValueError(
+            f"Unknown RSI Reversion version '{version}' -- expected one of "
+            f"{list(RSI_REVERSION_VERSIONS)}"
+        )
 
     repo = StrategyLabRepository()
     await repo.ensure_indexes()
@@ -741,7 +918,9 @@ async def start_rsi_reversion_run(
     )
     await repo.create_run(run)
     asyncio.create_task(
-        _process_rsi_reversion_run(run.id, user_id, symbol, exchange, from_date, to_date, capital, version)
+        _process_rsi_reversion_run(
+            run.id, user_id, symbol, exchange, from_date, to_date, capital, version
+        )
     )
     return run.id
 
@@ -770,8 +949,15 @@ async def _process_rsi_reversion_run(
         to_dt = datetime.strptime(to_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
 
         candles = await _ensure_candles(
-            user_id, symbol, effective_symbol, exchange, "5minute", from_dt, to_dt,
-            candle_repo, MIN_RSI_REVERSION_CANDLES,
+            user_id,
+            symbol,
+            effective_symbol,
+            exchange,
+            "5minute",
+            from_dt,
+            to_dt,
+            candle_repo,
+            MIN_RSI_REVERSION_CANDLES,
         )
 
         await repo.update_run(run_id, status="running", total_candidates=1)
@@ -779,8 +965,12 @@ async def _process_rsi_reversion_run(
         result = await _backtest_rsi_reversion(run_id, candles, capital, version)
         await repo.save_result(result)
         await repo.update_run(
-            run_id, status="completed", completed_candidates=1, completed_at=datetime.utcnow(),
-            best_candidate_name=result.candidate.name, best_composite_score=result.composite_score,
+            run_id,
+            status="completed",
+            completed_candidates=1,
+            completed_at=datetime.utcnow(),
+            best_candidate_name=result.candidate.name,
+            best_composite_score=result.composite_score,
         )
 
     except Exception as exc:
@@ -853,7 +1043,8 @@ async def _backtest_rsi_reversion(
             )
         if params.partial_exit_enabled:
             description += (
-                f" v4.0 Partial Profit-Taking (experimental): {params.partial_exit_fraction * 100:g}% of "
+                f" v4.0 Partial Profit-Taking (experimental): "
+                f"{params.partial_exit_fraction * 100:g}% of "
                 f"the position is closed at the normal target, and the remainder runs with no "
                 f"fixed target -- only the stop/trailing-stop/RSI exit -- so a trade that keeps "
                 f"extending captures more of the move."
@@ -863,7 +1054,11 @@ async def _backtest_rsi_reversion(
             id=StrategyCandidate.new_id(),
             name=f"RSI-14 Reversion ({params.oversold:g}/{params.overbought:g}) {version}"
             + (" [Long+Short]" if params.allow_short else " [Long-only]")
-            + (" [Time+Vol Filters]" if params.time_filter_enabled or params.atr_filter_enabled else "")
+            + (
+                " [Time+Vol Filters]"
+                if params.time_filter_enabled or params.atr_filter_enabled
+                else ""
+            )
             + (" [Regime Filter]" if params.regime_filter_enabled else "")
             + (" [Partial Exit]" if params.partial_exit_enabled else ""),
             family="rsi_reversion_v2",
@@ -899,6 +1094,7 @@ async def _backtest_rsi_reversion(
 
 
 # ── Symbol Sweep (inverse of Index Scan -- every strategy, one symbol) ─────
+
 
 # Ordered so the fast hand-designed strategies (ORB, Trend Pullback, RSI
 # Reversion -- one backtest each) complete before the slow 392-candidate
@@ -942,7 +1138,15 @@ async def start_symbol_sweep_run(
     await repo.create_symbol_sweep(sweep)
     asyncio.create_task(
         _process_symbol_sweep(
-            sweep.id, user_id, symbol, exchange, interval, from_date, to_date, capital, steps,
+            sweep.id,
+            user_id,
+            symbol,
+            exchange,
+            interval,
+            from_date,
+            to_date,
+            capital,
+            steps,
         )
     )
     return sweep.id
@@ -966,17 +1170,35 @@ async def _start_sweep_step_run(
         return await start_run(user_id, symbol, exchange, interval, from_date, to_date, capital)
     if strategy_key == "opening_range_breakout":
         return await start_orb_run(
-            user_id, symbol, exchange, "5minute", from_date, to_date, capital,
+            user_id,
+            symbol,
+            exchange,
+            "5minute",
+            from_date,
+            to_date,
+            capital,
         )
     if strategy_key.startswith("trend_pullback_"):
         version = strategy_key.removeprefix("trend_pullback_")
         return await start_trend_pullback_run(
-            user_id, symbol, exchange, from_date, to_date, capital, version,
+            user_id,
+            symbol,
+            exchange,
+            from_date,
+            to_date,
+            capital,
+            version,
         )
     if strategy_key.startswith("rsi_reversion_"):
         version = strategy_key.removeprefix("rsi_reversion_")
         return await start_rsi_reversion_run(
-            user_id, symbol, exchange, from_date, to_date, capital, version,
+            user_id,
+            symbol,
+            exchange,
+            from_date,
+            to_date,
+            capital,
+            version,
         )
     raise ValueError(f"Unknown symbol sweep strategy_key '{strategy_key}'")
 
@@ -1009,7 +1231,14 @@ async def _process_symbol_sweep(
         for completed, strategy_key in enumerate(steps, start=1):
             try:
                 child_run_id = await _start_sweep_step_run(
-                    strategy_key, user_id, symbol, exchange, interval, from_date, to_date, capital,
+                    strategy_key,
+                    user_id,
+                    symbol,
+                    exchange,
+                    interval,
+                    from_date,
+                    to_date,
+                    capital,
                 )
                 child_run_ids[strategy_key] = child_run_id
 
@@ -1027,18 +1256,23 @@ async def _process_symbol_sweep(
                     failed_strategies.append(strategy_key)
                     log.warning(
                         "strategy_lab.symbol_sweep.strategy_failed",
-                        sweep_id=sweep_id, strategy_key=strategy_key,
+                        sweep_id=sweep_id,
+                        strategy_key=strategy_key,
                         error=child.error if child else "run not found",
                     )
             except Exception as exc:
                 failed_strategies.append(strategy_key)
                 log.warning(
                     "strategy_lab.symbol_sweep.strategy_error",
-                    sweep_id=sweep_id, strategy_key=strategy_key, error=str(exc),
+                    sweep_id=sweep_id,
+                    strategy_key=strategy_key,
+                    error=str(exc),
                 )
 
             await repo.update_symbol_sweep(
-                sweep_id, completed_strategies=completed, child_run_ids=child_run_ids,
+                sweep_id,
+                completed_strategies=completed,
+                child_run_ids=child_run_ids,
                 failed_strategies=failed_strategies,
             )
 
@@ -1092,14 +1326,16 @@ async def get_symbol_comparison(user_id: str, symbol: str, limit: int = 10) -> d
     for run in top:
         results = await repo.list_results(run.id, limit=1)
         top_result = results[0] if results else None
-        rows.append({
-            "run_id": run.id,
-            "created_at": run.created_at.isoformat(),
-            "candidate_name": run.best_candidate_name,
-            "family": top_result["candidate"]["family"] if top_result else None,
-            "composite_score": run.best_composite_score,
-            "metrics": top_result["full_metrics"] if top_result else None,
-        })
+        rows.append(
+            {
+                "run_id": run.id,
+                "created_at": run.created_at.isoformat(),
+                "candidate_name": run.best_candidate_name,
+                "family": top_result["candidate"]["family"] if top_result else None,
+                "composite_score": run.best_composite_score,
+                "metrics": top_result["full_metrics"] if top_result else None,
+            }
+        )
 
     return {"symbol": target_key, "total_completed_runs": total, "rows": rows}
 

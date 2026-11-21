@@ -12,7 +12,9 @@ def _fresh_key(monkeypatch):
     """Each test gets its own key + a cleared lru_cache, so tests don't leak
     state into each other or depend on whatever ZERODHA_CREDS_ENCRYPTION_KEY
     happens to be set in the environment."""
-    monkeypatch.setattr(crypto.settings, "ZERODHA_CREDS_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    monkeypatch.setattr(
+        crypto.settings, "ZERODHA_CREDS_ENCRYPTION_KEY", Fernet.generate_key().decode()
+    )
     crypto._fernet.cache_clear()
     yield
     crypto._fernet.cache_clear()

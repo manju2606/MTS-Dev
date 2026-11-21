@@ -216,7 +216,9 @@ async def get_report(period: str, date: str) -> dict:
                     continue
                 current_price = close_price
                 if current_price is None:
-                    current_price = checkpoints[-1]["price"] if checkpoints else pick.get("entry_price")
+                    current_price = (
+                        checkpoints[-1]["price"] if checkpoints else pick.get("entry_price")
+                    )
                 per_bucket[bucket].append(
                     {
                         "symbol": pick["symbol"],

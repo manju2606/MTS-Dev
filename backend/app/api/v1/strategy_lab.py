@@ -202,7 +202,9 @@ class StartRsiReversionRequest(BaseModel):
 
 
 @router.post("/runs/rsi-reversion", status_code=status.HTTP_202_ACCEPTED)
-async def start_rsi_reversion_run(body: StartRsiReversionRequest, current_user: CurrentUser) -> dict:
+async def start_rsi_reversion_run(
+    body: StartRsiReversionRequest, current_user: CurrentUser
+) -> dict:
     """The hand-designed RSI-14 Reversion strategy (oversold=20/overbought=80,
     SL 2.5%/target 5.0%/trailing stop 2.0%, 5-min candles) -- the AI Strategy
     Lab's #1 ranked, walk-forward-validated candidate for Natural Gas Mini,
@@ -232,8 +234,11 @@ async def start_rsi_reversion_run(body: StartRsiReversionRequest, current_user: 
 
 @router.get("/runs")
 async def list_runs(
-    current_user: CurrentUser, limit: int = 20, offset: int = 0,
-    sort_by: str = "created_at", sort_dir: int = -1,
+    current_user: CurrentUser,
+    limit: int = 20,
+    offset: int = 0,
+    sort_by: str = "created_at",
+    sort_dir: int = -1,
 ) -> dict:
     """Paginated -- an Index Scan alone creates one run per symbol (50 for
     NIFTY 50), so the old flat unpaginated list (fixed limit=20) silently
@@ -251,7 +256,11 @@ async def list_runs(
 
     repo = StrategyLabRepository()
     runs = await repo.list_runs(
-        str(current_user.id), limit=limit, offset=offset, sort_by=sort_by, sort_dir=sort_dir,
+        str(current_user.id),
+        limit=limit,
+        offset=offset,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
     )
     total = await repo.count_runs(str(current_user.id))
     return {"runs": [dataclasses.asdict(r) for r in runs], "total": total}
@@ -310,7 +319,9 @@ async def get_symbol_sweep(sweep_id: str, current_user: CurrentUser) -> dict:
 
 
 @router.get("/compare/{symbol}")
-async def compare_symbol_strategies(symbol: str, current_user: CurrentUser, limit: int = 10) -> dict:
+async def compare_symbol_strategies(
+    symbol: str, current_user: CurrentUser, limit: int = 10
+) -> dict:
     """Top `limit` completed backtest runs for `symbol` (any strategy
     family/version), ranked by composite score -- "which strategy is
     actually best for this instrument" across everything ever run, not
@@ -354,9 +365,14 @@ async def live_strategy_backtest(
     from app.services.strategy_lab_live_backtest_service import run_live_strategy_backtest
 
     return await run_live_strategy_backtest(
-        source, from_date, to_date, capital,
-        min_confidence=min_confidence, max_rsi=max_rsi,
-        min_volume_ratio=min_volume_ratio, min_adx=min_adx,
+        source,
+        from_date,
+        to_date,
+        capital,
+        min_confidence=min_confidence,
+        max_rsi=max_rsi,
+        min_volume_ratio=min_volume_ratio,
+        min_adx=min_adx,
     )
 
 
@@ -392,8 +408,11 @@ async def get_result(run_id: str, result_id: str, current_user: CurrentUser) -> 
 
 @router.get("/runs/{run_id}/results/{result_id}/monte-carlo")
 async def get_result_monte_carlo(
-    run_id: str, result_id: str, current_user: CurrentUser,
-    simulations: int = 2000, ruin_threshold_pct: float = 50.0,
+    run_id: str,
+    result_id: str,
+    current_user: CurrentUser,
+    simulations: int = 2000,
+    ruin_threshold_pct: float = 50.0,
 ) -> dict:
     """Bootstrap-resamples this result's own trade returns thousands of
     times to build a distribution of possible outcomes -- works for any
@@ -417,12 +436,15 @@ async def get_result_monte_carlo(
         raise HTTPException(status_code=404, detail="Result not found")
 
     mc = run_monte_carlo(
-        result.trades, run.capital, num_simulations=simulations, ruin_threshold_pct=ruin_threshold_pct,
+        result.trades,
+        run.capital,
+        num_simulations=simulations,
+        ruin_threshold_pct=ruin_threshold_pct,
     )
     if mc is None:
         raise HTTPException(
             status_code=422,
             detail=f"Not enough trades for a meaningful Monte Carlo simulation "
-                   f"(need at least 10, this result has {len(result.trades)})",
+            f"(need at least 10, this result has {len(result.trades)})",
         )
     return dataclasses.asdict(mc)

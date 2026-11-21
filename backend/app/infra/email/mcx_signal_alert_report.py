@@ -25,28 +25,39 @@ def mcx_signal_alert_html(
 <div style="max-width:640px;margin:24px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
   <div style="background:linear-gradient(135deg,{accent},#18181b);padding:24px 32px;">
     <p style="margin:0;font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:rgba(255,255,255,0.75);">Manju Trade AI Pro &middot; High Priority</p>
-    <h1 style="margin:6px 0 0;font-size:22px;font-weight:800;color:#fff;">{direction} Signal — {market_label} {contract}</h1>
-    <p style="margin:4px 0 0;color:rgba(255,255,255,0.85);font-size:13px;">{tradingsymbol} &middot; AI Score {score_pct:.1f}%</p>
+    <h1 style="margin:6px 0 0;font-size:22px;font-weight:800;color:#fff;">{direction} Signal — {
+        market_label
+    } {contract}</h1>
+    <p style="margin:4px 0 0;color:rgba(255,255,255,0.85);font-size:13px;">{
+        tradingsymbol
+    } &middot; AI Score {score_pct:.1f}%</p>
   </div>
   <div style="padding:24px 32px;">
     <table style="width:100%;border-collapse:collapse;">
       <tbody>
         <tr style="border-bottom:1px solid #f3f4f6;">
           <td style="padding:10px 8px;color:#6b7280;">Entry Price</td>
-          <td style="padding:10px 8px;font-family:monospace;font-weight:700;text-align:right;">₹{entry_price:,.2f}</td>
+          <td style="padding:10px 8px;font-family:monospace;font-weight:700;text-align:right;">₹{
+        entry_price:,.2f}</td>
         </tr>
         <tr style="border-bottom:1px solid #f3f4f6;">
           <td style="padding:10px 8px;color:#6b7280;">Stop Loss</td>
-          <td style="padding:10px 8px;font-family:monospace;font-weight:700;color:#ef4444;text-align:right;">₹{stop_loss:,.2f}</td>
+          <td style="padding:10px 8px;font-family:monospace;font-weight:700;color:#ef4444;text-align:right;">₹{
+        stop_loss:,.2f}</td>
         </tr>
         <tr style="border-bottom:1px solid #f3f4f6;">
           <td style="padding:10px 8px;color:#6b7280;">Target 1</td>
-          <td style="padding:10px 8px;font-family:monospace;font-weight:700;color:#22c55e;text-align:right;">₹{target_1:,.2f}</td>
+          <td style="padding:10px 8px;font-family:monospace;font-weight:700;color:#22c55e;text-align:right;">₹{
+        target_1:,.2f}</td>
         </tr>
-        {f'''<tr>
+        {
+        f'''<tr>
           <td style="padding:10px 8px;color:#6b7280;">Target 2</td>
           <td style="padding:10px 8px;font-family:monospace;font-weight:700;color:#22c55e;text-align:right;">₹{target_2:,.2f}</td>
-        </tr>''' if target_2 is not None else ''}
+        </tr>'''
+        if target_2 is not None
+        else ""
+    }
       </tbody>
     </table>
   </div>

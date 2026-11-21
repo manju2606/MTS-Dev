@@ -128,14 +128,20 @@ RSI_REVERSION_VERSIONS: dict[str, RsiReversionParams] = {
     # stacking more filters on top could over-filter into too few trades to
     # mean anything).
     "v3.1": RsiReversionParams(
-        allow_short=True, time_filter_enabled=True, atr_filter_enabled=True, regime_filter_enabled=True,
+        allow_short=True,
+        time_filter_enabled=True,
+        atr_filter_enabled=True,
+        regime_filter_enabled=True,
     ),
     # v2.2's regime-filtered base (the current live default) + partial
     # profit-taking (see RsiReversionParams' own docstring) -- isolates the
     # effect of the new exit mechanic against the current best, rather than
     # bundling it with an unrelated entry-filter change.
     "v4.0": RsiReversionParams(
-        allow_short=True, regime_filter_enabled=True, regime_adx_max=30.0, partial_exit_enabled=True,
+        allow_short=True,
+        regime_filter_enabled=True,
+        regime_adx_max=30.0,
+        partial_exit_enabled=True,
     ),
 }
 
@@ -174,10 +180,8 @@ def _rolling_atr_avg(atr_series: list[float | None], period: int) -> list[float 
     return out
 
 
-def _volatility_state(
-    atr_now: float | None, atr_avg: float | None, p: RsiReversionParams
-) -> str:
-    """"normal" | "widen" | "skip" -- see RsiReversionParams' own docstring
+def _volatility_state(atr_now: float | None, atr_avg: float | None, p: RsiReversionParams) -> str:
+    """ "normal" | "widen" | "skip" -- see RsiReversionParams' own docstring
     on the elevated/extreme thresholds."""
     if not p.atr_filter_enabled or atr_now is None or atr_avg is None or atr_avg <= 0:
         return "normal"
@@ -207,15 +211,17 @@ def run_rsi_reversion_backtest(
     lows = [c.low for c in candles]
     rsi_vals = ind.rsi(closes, p.period)
     atr_vals = ind.atr(highs, lows, closes, 14) if p.atr_filter_enabled else [None] * n
-    atr_avg_vals = _rolling_atr_avg(atr_vals, p.atr_avg_period) if p.atr_filter_enabled else [None] * n
+    atr_avg_vals = (
+        _rolling_atr_avg(atr_vals, p.atr_avg_period) if p.atr_filter_enabled else [None] * n
+    )
     adx_vals = ind.adx(highs, lows, closes, 14) if p.regime_filter_enabled else [None] * n
 
     equity = capital
     direction = 0  # 0 flat, 1 long, -1 short
     entry_price = 0.0
     entry_time: datetime | None = None
-    qty = 0            # remaining open quantity (shrinks on a partial exit)
-    original_qty = 0   # total quantity at entry -- used for the trade record + blended exit price
+    qty = 0  # remaining open quantity (shrinks on a partial exit)
+    original_qty = 0  # total quantity at entry -- used for the trade record + blended exit price
     stop_price = 0.0
     target_price = 0.0
     trail_price: float | None = None
@@ -223,12 +229,18 @@ def run_rsi_reversion_backtest(
     partial_pnl = 0.0
     partial_notional = 0.0
 
-    outcome.equity_curve.append(
-        {"time": candles[0].time.isoformat(), "equity": round(equity, 2)}
-    )
+    outcome.equity_curve.append({"time": candles[0].time.isoformat(), "equity": round(equity, 2)})
 
     def open_long(i: int, stop_pct: float) -> None:
-        nonlocal direction, entry_price, entry_time, qty, original_qty, stop_price, target_price, trail_price
+        nonlocal \
+            direction, \
+            entry_price, \
+            entry_time, \
+            qty, \
+            original_qty, \
+            stop_price, \
+            target_price, \
+            trail_price
         nonlocal partial_taken, partial_pnl, partial_notional
         fill = candles[i].close * (1 + costs.slippage_pct / 100)
         risk_amount = equity * POSITION_SIZE_PCT / 100
@@ -250,7 +262,15 @@ def run_rsi_reversion_backtest(
         partial_notional = 0.0
 
     def open_short(i: int, stop_pct: float) -> None:
-        nonlocal direction, entry_price, entry_time, qty, original_qty, stop_price, target_price, trail_price
+        nonlocal \
+            direction, \
+            entry_price, \
+            entry_time, \
+            qty, \
+            original_qty, \
+            stop_price, \
+            target_price, \
+            trail_price
         nonlocal partial_taken, partial_pnl, partial_notional
         fill = candles[i].close * (1 - costs.slippage_pct / 100)
         risk_amount = equity * POSITION_SIZE_PCT / 100
@@ -279,7 +299,9 @@ def run_rsi_reversion_backtest(
         trailing-stop/RSI signal."""
         nonlocal qty, partial_taken, partial_pnl, partial_notional, equity
         is_long = direction == 1
-        fill = exit_price * (1 - costs.slippage_pct / 100 if is_long else 1 + costs.slippage_pct / 100)
+        fill = exit_price * (
+            1 - costs.slippage_pct / 100 if is_long else 1 + costs.slippage_pct / 100
+        )
         leg_qty = int(original_qty * p.partial_exit_fraction)
         if leg_qty <= 0 or leg_qty >= qty:
             return
@@ -296,7 +318,9 @@ def run_rsi_reversion_backtest(
     def close_position(i: int, exit_price: float, reason: str) -> None:
         nonlocal direction, equity
         is_long = direction == 1
-        fill = exit_price * (1 - costs.slippage_pct / 100 if is_long else 1 + costs.slippage_pct / 100)
+        fill = exit_price * (
+            1 - costs.slippage_pct / 100 if is_long else 1 + costs.slippage_pct / 100
+        )
         entry_cost = brokerage_cost(entry_price * qty, costs)
         exit_cost = brokerage_cost(fill * qty, costs) + fill * qty * costs.stt_pct / 100
         raw_pnl = (fill - entry_price) * qty if is_long else (entry_price - fill) * qty
@@ -309,7 +333,9 @@ def run_rsi_reversion_backtest(
         total_pnl = pnl + partial_pnl
         total_notional = fill * qty + partial_notional
         blended_exit_price = total_notional / original_qty if original_qty else fill
-        pnl_pct = total_pnl / (entry_price * original_qty) * 100 if entry_price * original_qty else 0.0
+        pnl_pct = (
+            total_pnl / (entry_price * original_qty) * 100 if entry_price * original_qty else 0.0
+        )
         combined_reason = f"partial_target+{reason}" if partial_taken else reason
         assert entry_time is not None
         outcome.trades.append(
@@ -333,7 +359,9 @@ def run_rsi_reversion_backtest(
 
         if direction == 1:
             candidate_trail = bar.close * (1 - p.trailing_stop_pct / 100)
-            trail_price = candidate_trail if trail_price is None else max(trail_price, candidate_trail)
+            trail_price = (
+                candidate_trail if trail_price is None else max(trail_price, candidate_trail)
+            )
             effective_stop = max(stop_price, trail_price)
 
             if bar.low <= effective_stop:
@@ -348,7 +376,9 @@ def run_rsi_reversion_backtest(
 
         elif direction == -1:
             candidate_trail = bar.close * (1 + p.trailing_stop_pct / 100)
-            trail_price = candidate_trail if trail_price is None else min(trail_price, candidate_trail)
+            trail_price = (
+                candidate_trail if trail_price is None else min(trail_price, candidate_trail)
+            )
             effective_stop = min(stop_price, trail_price)
 
             if bar.high >= effective_stop:
@@ -377,7 +407,11 @@ def run_rsi_reversion_backtest(
                 )
                 vol_state = _volatility_state(atr_vals[i], atr_avg_vals[i], p)
                 if not blocked_by_time and not blocked_by_regime and vol_state != "skip":
-                    stop_pct = p.stop_loss_pct * p.atr_widen_factor if vol_state == "widen" else p.stop_loss_pct
+                    stop_pct = (
+                        p.stop_loss_pct * p.atr_widen_factor
+                        if vol_state == "widen"
+                        else p.stop_loss_pct
+                    )
                     if wants_long:
                         open_long(i, stop_pct)
                     else:

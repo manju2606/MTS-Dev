@@ -17,7 +17,7 @@ Two independent daily steps, run in the 15:35-16:00 IST EOD cluster
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import structlog
 
@@ -175,13 +175,13 @@ async def run_daily_price_snapshot() -> dict:
         *[client.get_quote(sym) for sym in symbols], return_exceptions=True
     )
     prices: dict[str, float] = {}
-    for sym, r in zip(symbols, results):
+    for sym, r in zip(symbols, results, strict=True):
         if not isinstance(r, Exception):
             prices[sym] = r.price
 
     frozen_count = 0
     quote_failures = 0
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     for pick in active:
         new_count = pick.trading_day_count + 1

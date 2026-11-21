@@ -61,10 +61,16 @@ class NgAiScoreParams:
 NG_AI_SCORE_VERSIONS: dict[str, NgAiScoreParams] = {
     "v1.0": NgAiScoreParams(),
     "v2.0": NgAiScoreParams(
-        rsi_bull_lo=55.0, rsi_bull_hi=68.0, rsi_bear_lo=32.0, rsi_bear_hi=45.0,
-        stoch_bull_max=75.0, stoch_bear_min=25.0,
-        adx_min=30.0, choppiness_max=35.0,
-        trade_threshold=88.0, watchlist_threshold=75.0,
+        rsi_bull_lo=55.0,
+        rsi_bull_hi=68.0,
+        rsi_bear_lo=32.0,
+        rsi_bear_hi=45.0,
+        stoch_bull_max=75.0,
+        stoch_bear_min=25.0,
+        adx_min=30.0,
+        choppiness_max=35.0,
+        trade_threshold=88.0,
+        watchlist_threshold=75.0,
     ),
 }
 
@@ -91,17 +97,32 @@ _NEWS_SENTIMENT_DEADBAND = 0.1
 # itself only keeps articles mentioning an NG-specific keyword -- a
 # geopolitical story that never mentions gas/energy won't reach this list.
 _GEOPOLITICAL_KEYWORDS = [
-    "iran", "israel", "houthi", "strait of hormuz", "red sea",
-    "hostilit", "military strike", "airstrike", "missile attack",
-    "war", "conflict escalat", "sanctions", "pipeline attack",
-    "naval blockade", "tanker attack", "gulf tension",
-    "middle east tension", "supply disruption", "opec+ cut",
+    "iran",
+    "israel",
+    "houthi",
+    "strait of hormuz",
+    "red sea",
+    "hostilit",
+    "military strike",
+    "airstrike",
+    "missile attack",
+    "war",
+    "conflict escalat",
+    "sanctions",
+    "pipeline attack",
+    "naval blockade",
+    "tanker attack",
+    "gulf tension",
+    "middle east tension",
+    "supply disruption",
+    "opec+ cut",
 ]
 
 
 def _mentions_geopolitical_risk(item: dict) -> bool:
     text = f"{item.get('title', '')} {item.get('summary', '')}".lower()
     return any(kw in text for kw in _GEOPOLITICAL_KEYWORDS)
+
 
 # yfinance tickers for the Correlation category.
 _CORRELATION_TICKERS = {
@@ -336,7 +357,12 @@ def _score_volatility(candles: list[dict], direction: str, params: NgAiScorePara
     checks = [
         _check("ATR expansion", atr_expanding, pts),
         _check("Bollinger breakout", bb_ok, pts, f"bands={bb}" if bb else "unavailable"),
-        _check(f"ADX > {params.adx_min:g}", adx_ok, pts, f"ADX={adx}" if adx is not None else "unavailable"),
+        _check(
+            f"ADX > {params.adx_min:g}",
+            adx_ok,
+            pts,
+            f"ADX={adx}" if adx is not None else "unavailable",
+        ),
         _check("Choppiness (trending, not choppy)", chop_ok, pts, chop_note),
         _check("Keltner breakout", kelt_ok, pts),
     ]
@@ -379,7 +405,9 @@ def _score_news(news_items: list[dict], direction: str) -> dict:
     ]
     if not news_items:
         return _category(
-            "News Filter", 10, [],
+            "News Filter",
+            10,
+            [],
             [
                 "Recent NG news sentiment (no articles fetched yet)",
                 "Geopolitical risk keywords (no articles fetched yet)",
@@ -399,7 +427,7 @@ def _score_news(news_items: list[dict], direction: str) -> dict:
     geo_detected = len(geo_hits) > 0
     geo_aligned = geo_detected if bull else not geo_detected
     geo_note = (
-        f"{len(geo_hits)} article(s), e.g. \"{geo_hits[0]['title']}\""
+        f'{len(geo_hits)} article(s), e.g. "{geo_hits[0]["title"]}"'
         if geo_hits
         else "no geopolitical risk keywords in recent coverage"
     )
@@ -462,9 +490,7 @@ def _reason_for(
     return " ".join(parts)
 
 
-def build_reasoning(
-    categories: list[dict], direction: str, price: float, stop_loss: float
-) -> dict:
+def build_reasoning(categories: list[dict], direction: str, price: float, stop_loss: float) -> dict:
     """Technical/Fundamental/Sentiment/Macro reasons + an alternative
     scenario + an invalidation level, all derived from the same category
     checks compute_ng_ai_score()/compute_metal_ai_score() already ran --
@@ -482,7 +508,9 @@ def build_reasoning(
     macro = _reason_for(categories, ["Correlation"], "Macro")
     sentiment = _reason_for(categories, ["News Filter"], "Sentiment")
     fundamental = _reason_for(
-        categories, ["Order Flow"], "Fundamental",
+        categories,
+        ["Order Flow"],
+        "Fundamental",
         caveat=(
             "No earnings/balance-sheet data applies to commodity futures -- "
             "showing Open Interest positioning as the closest available supply/demand proxy."
@@ -533,8 +561,10 @@ async def compute_ng_ai_score(
     from app.services.mcx_service import resolve_contract as resolve_mcx_contract
 
     if version not in NG_AI_SCORE_VERSIONS:
-        raise ValueError(f"Unknown NG-AI Score version '{version}' -- expected one of "
-                          f"{list(NG_AI_SCORE_VERSIONS)}")
+        raise ValueError(
+            f"Unknown NG-AI Score version '{version}' -- expected one of "
+            f"{list(NG_AI_SCORE_VERSIONS)}"
+        )
     params = NG_AI_SCORE_VERSIONS[version]
 
     broker = await get_zerodha_broker(user_id)
